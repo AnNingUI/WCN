@@ -1,0 +1,20 @@
+# Clangd configuration for GLFW examples
+---
+# 指定编译标志
+CompileFlags:
+  # 添加包含目录
+  Add:
+    - -I${workspaceFolder}/include
+    - -I${workspaceFolder}/external/wgpu/include
+    - -I${workspaceFolder}/src
+    - -std=c11
+  # 移除可能导致问题的标志
+  Remove: 
+    - -pedantic
+    - -Wpedantic
+
+# 索引配置
+Index:
+  # 从根目录加载 compile_commands.json
+  External:
+    File: ${workspaceFolder}/build/compile_commands.json

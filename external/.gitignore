@@ -1,0 +1,12 @@
+build
+.cache
+.codebuddy
+.vscode
+.idea
+.DS_Store
+DS_Store
+
+res.list.md
+
+# external lib
+wgpu

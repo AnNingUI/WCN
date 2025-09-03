@@ -1,0 +1,40 @@
+# Clang-Format configuration for WCN project
+---
+# 基于 LLVM 风格
+BasedOnStyle: LLVM
+
+# 缩进设置
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# 括号样式
+BreakBeforeBraces: Attach
+
+# 指针和引用的对齐方式
+PointerAlignment: Left
+
+# 函数声明的格式
+AllowAllDeclarationsOfSameName: true
+
+# 每行最大字符数
+ColumnLimit: 100
+
+# 控制语句括号
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# 空格设置
+SpacesBeforeTrailingComments: 2
+SpacesInContainerLiterals: false
+SpacesInSquareBrackets: false
+
+# 对齐设置
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+# 其他设置
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: false
