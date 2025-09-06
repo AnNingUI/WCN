@@ -1,14 +1,26 @@
-# Clangd configuration for WCN project
+# .clangd configuration file
 ---
-# 指定编译标志
 CompileFlags:
-  # 添加包含目录
+  # The compiler to use
+  Compiler: gcc
+  # Add these flags to the compilation command
+  # 这里请自行适配
   Add:
+    - -D__WIN32__=1
+    - -D_WIN32=1
     - -I${workspaceFolder}/include
     - -I${workspaceFolder}/external/wgpu/include
     - -I${workspaceFolder}/src
-    - -std=c11
-  # 移除可能导致问题的标志
-  Remove: 
-    - -pedantic
-    - -Wpedantic
+    - -Wno-pragma-pack
+
+---
+If:
+  PathMatch: .*\.c$
+CompileFlags:
+  Add: [-std=c99]
+
+---
+If:
+  PathMatch: .*\.h$
+CompileFlags:
+  Add: [-std=c99, -x, c-header]
