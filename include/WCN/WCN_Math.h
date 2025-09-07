@@ -21,13 +21,13 @@ extern "C" {
 
 // CONST
 
-static float EPSILON = 0.000001f;
+extern float EPSILON;
 float wcn_math_set_epsilon(float epsilon) {
   float old_epsilon = EPSILON;
   EPSILON = epsilon;
-  return old_epsilon;
+  return old_epsilon ? old_epsilon : epsilon;
 }
-float wcn_math_get_epsilon() { return EPSILON; }
+float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 #define WCN_GET_EPSILON() wcn_math_get_epsilon()
 
 #define WMATH_PI 3.14159265358979323846f
@@ -462,6 +462,7 @@ WMATH_SUB(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   WMATH_TYPE(Vec2) vec2;
   vec2.v[0] = a.v[0] - b.v[0];
   vec2.v[1] = a.v[1] - b.v[1];
+  return vec2;
 }
 
 // angle
@@ -992,6 +993,268 @@ WMATH_MIDPOINT(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 // END Vec3
 
 // BEGIN Vec4
+
+WMATH_TYPE(Vec4) WMATH_CREATE(Vec4)(WMATH_CREATE_TYPE(Vec4) vec4_c) {
+  WMATH_TYPE(Vec4) vec4;
+  vec4.v[0] = WMATH_OR_ELSE_ZERO(vec4_c.v_x);
+  vec4.v[1] = WMATH_OR_ELSE_ZERO(vec4_c.v_y);
+  vec4.v[2] = WMATH_OR_ELSE_ZERO(vec4_c.v_z);
+  vec4.v[3] = WMATH_OR_ELSE_ZERO(vec4_c.v_w);
+  return vec4;
+}
+
+WMATH_TYPE(Vec4)
+WMATH_SET(Vec4)(WMATH_TYPE(Vec4) vec4, float x, float y, float z, float w) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = x;
+  result.v[1] = y;
+  result.v[2] = z;
+  result.v[3] = w;
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_COPY(Vec4)(WMATH_TYPE(Vec4) vec4) {
+  WMATH_TYPE(Vec4) result;
+  memcpy(&result, &vec4, sizeof(WMATH_TYPE(Vec4)));
+  return result;
+}
+
+// 0
+WMATH_TYPE(Vec4) WMATH_ZERO(Vec4)() {
+  return (WMATH_TYPE(Vec4)){.v = {0.0f, 0.0f, 0.0f, 0.0f}};
+}
+
+// 1
+WMATH_TYPE(Vec4) WMATH_IDENTITY(Vec4)() {
+  return (WMATH_TYPE(Vec4)){.v = {0.0f, 0.0f, 0.0f, 1.0f}};
+}
+
+WMATH_TYPE(Vec4) WMATH_CEIL(Vec4)(WMATH_TYPE(Vec4) a) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = ceilf(a.v[0]);
+  result.v[1] = ceilf(a.v[1]);
+  result.v[2] = ceilf(a.v[2]);
+  result.v[3] = ceilf(a.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_FLOOR(Vec4)(WMATH_TYPE(Vec4) a) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = floorf(a.v[0]);
+  result.v[1] = floorf(a.v[1]);
+  result.v[2] = floorf(a.v[2]);
+  result.v[3] = floorf(a.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_ROUND(Vec4)(WMATH_TYPE(Vec4) a) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = roundf(a.v[0]);
+  result.v[1] = roundf(a.v[1]);
+  result.v[2] = roundf(a.v[2]);
+  result.v[3] = roundf(a.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4)
+WMATH_CLAMP(Vec4)(WMATH_TYPE(Vec4) a, float min_val, float max_val) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = fminf(fmaxf(a.v[0], min_val), max_val);
+  result.v[1] = fminf(fmaxf(a.v[1], min_val), max_val);
+  result.v[2] = fminf(fmaxf(a.v[2], min_val), max_val);
+  result.v[3] = fminf(fmaxf(a.v[3], min_val), max_val);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_ADD(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] + b.v[0];
+  result.v[1] = a.v[1] + b.v[1];
+  result.v[2] = a.v[2] + b.v[2];
+  result.v[3] = a.v[3] + b.v[3];
+  return result;
+}
+
+WMATH_TYPE(Vec4)
+WMATH_ADD_SCALED(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b, float scale) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] + b.v[0] * scale;
+  result.v[1] = a.v[1] + b.v[1] * scale;
+  result.v[2] = a.v[2] + b.v[2] * scale;
+  result.v[3] = a.v[3] + b.v[3] * scale;
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_SUB(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] - b.v[0];
+  result.v[1] = a.v[1] - b.v[1];
+  result.v[2] = a.v[2] - b.v[2];
+  result.v[3] = a.v[3] - b.v[3];
+  return result;
+}
+
+bool WMATH_EQUALS_APPROXIMATELY(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  float ep = WCN_GET_EPSILON();
+  return (fabsf(a.v[0] - b.v[0]) < ep && fabsf(a.v[1] - b.v[1]) < ep &&
+          fabsf(a.v[2] - b.v[2]) < ep && fabsf(a.v[3] - b.v[3]) < ep);
+}
+
+bool WMATH_EQUALS(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  return (a.v[0] == b.v[0] && a.v[1] == b.v[1] && a.v[2] == b.v[2] &&
+          a.v[3] == b.v[3]);
+}
+
+WMATH_TYPE(Vec4)
+WMATH_LERP(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b, float t) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = WMATH_LERP(float)(a.v[0], b.v[0], t);
+  result.v[1] = WMATH_LERP(float)(a.v[1], b.v[1], t);
+  result.v[2] = WMATH_LERP(float)(a.v[2], b.v[2], t);
+  result.v[3] = WMATH_LERP(float)(a.v[3], b.v[3], t);
+  return result;
+}
+
+WMATH_TYPE(Vec4)
+WMATH_LERP_V(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b, WMATH_TYPE(Vec4) t) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = WMATH_LERP(float)(a.v[0], b.v[0], t.v[0]);
+  result.v[1] = WMATH_LERP(float)(a.v[1], b.v[1], t.v[1]);
+  result.v[2] = WMATH_LERP(float)(a.v[2], b.v[2], t.v[2]);
+  result.v[3] = WMATH_LERP(float)(a.v[3], b.v[3], t.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_FMAX(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = fmaxf(a.v[0], b.v[0]);
+  result.v[1] = fmaxf(a.v[1], b.v[1]);
+  result.v[2] = fmaxf(a.v[2], b.v[2]);
+  result.v[3] = fmaxf(a.v[3], b.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_FMIN(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = fminf(a.v[0], b.v[0]);
+  result.v[1] = fminf(a.v[1], b.v[1]);
+  result.v[2] = fminf(a.v[2], b.v[2]);
+  result.v[3] = fminf(a.v[3], b.v[3]);
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_MULTIPLY(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] * b.v[0];
+  result.v[1] = a.v[1] * b.v[1];
+  result.v[2] = a.v[2] * b.v[2];
+  result.v[3] = a.v[3] * b.v[3];
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_MULTIPLY_SCALAR(Vec4)(WMATH_TYPE(Vec4) a, float scalar) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] * scalar;
+  result.v[1] = a.v[1] * scalar;
+  result.v[2] = a.v[2] * scalar;
+  result.v[3] = a.v[3] * scalar;
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_DIV(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] / b.v[0];
+  result.v[1] = a.v[1] / b.v[1];
+  result.v[2] = a.v[2] / b.v[2];
+  result.v[3] = a.v[3] / b.v[3];
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_DIV_SCALAR(Vec4)(WMATH_TYPE(Vec4) a, float scalar) {
+  if (scalar == 0) {
+    return WMATH_ZERO(Vec4)();
+  }
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = a.v[0] / scalar;
+  result.v[1] = a.v[1] / scalar;
+  result.v[2] = a.v[2] / scalar;
+  result.v[3] = a.v[3] / scalar;
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_INVERSE(Vec4)(WMATH_TYPE(Vec4) a) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = 1.0f / a.v[0];
+  result.v[1] = 1.0f / a.v[1];
+  result.v[2] = 1.0f / a.v[2];
+  result.v[3] = 1.0f / a.v[3];
+  return result;
+}
+
+float WMATH_DOT(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  return a.v[0] * b.v[0] + a.v[1] * b.v[1] + a.v[2] * b.v[2] + a.v[3] * b.v[3];
+}
+
+float WMATH_LENGTH_SQ(Vec4)(WMATH_TYPE(Vec4) v) {
+  return v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2] + v.v[3] * v.v[3];
+}
+
+float WMATH_LENGTH(Vec4)(WMATH_TYPE(Vec4) v) {
+  return sqrtf(WMATH_LENGTH_SQ(Vec4)(v));
+}
+
+float WMATH_DISTANCE_SQ(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  float dx = a.v[0] - b.v[0];
+  float dy = a.v[1] - b.v[1];
+  float dz = a.v[2] - b.v[2];
+  float dw = a.v[3] - b.v[3];
+  return dx * dx + dy * dy + dz * dz + dw * dw;
+}
+
+float WMATH_DISTANCE(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  return sqrtf(WMATH_DISTANCE_SQ(Vec4)(a, b));
+}
+
+WMATH_TYPE(Vec4) WMATH_NORMALIZE(Vec4)(WMATH_TYPE(Vec4) v) {
+  WMATH_TYPE(Vec4) result;
+  float len = WMATH_LENGTH(Vec4)(v);
+
+  if (len > 0.00001f) {
+    result.v[0] = v.v[0] / len;
+    result.v[1] = v.v[1] / len;
+    result.v[2] = v.v[2] / len;
+    result.v[3] = v.v[3] / len;
+  } else {
+    result = WMATH_ZERO(Vec4)();
+  }
+
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_NEGATE(Vec4)(WMATH_TYPE(Vec4) a) {
+  WMATH_TYPE(Vec4) result;
+  result.v[0] = -a.v[0];
+  result.v[1] = -a.v[1];
+  result.v[2] = -a.v[2];
+  result.v[3] = -a.v[3];
+  return result;
+}
+
+WMATH_TYPE(Vec4) WMATH_SET_LENGTH(Vec4)(WMATH_TYPE(Vec4) v, float length) {
+  return WMATH_MULTIPLY_SCALAR(Vec4)(WMATH_NORMALIZE(Vec4)(v), length);
+}
+
+WMATH_TYPE(Vec4) WMATH_TRUNCATE(Vec4)(WMATH_TYPE(Vec4) v, float max_length) {
+  if (WMATH_LENGTH(Vec4)(v) > max_length) {
+    return WMATH_SET_LENGTH(Vec4)(v, max_length);
+  }
+  return WMATH_COPY(Vec4)(v);
+}
+
+WMATH_TYPE(Vec4) WMATH_MIDPOINT(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+  return WMATH_LERP(Vec4)(a, b, 0.5f);
+}
+
 // END Vec4
 
 // BEGIN Mat3
@@ -2425,6 +2688,7 @@ WMATH_TRANSPOSE(Mat4)(WMATH_TYPE(Mat4) a) {
 
 // BEGIN Quat
 
+// 0
 WMATH_TYPE(Quat)
 WMATH_ZERO(Quat)(void) {
   return (WMATH_TYPE(Quat)){
@@ -2432,7 +2696,7 @@ WMATH_ZERO(Quat)(void) {
   };
 }
 
-// identity
+// 1
 WMATH_TYPE(Quat)
 WMATH_IDENTITY(Quat)(void) {
   return (WMATH_TYPE(Quat)){
@@ -2482,36 +2746,61 @@ WMATH_LERP(Quat)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b, float t) {
       .v_w = a.v[3] + (b.v[3] - a.v[3]) * t,
   });
 }
-// sqlerp
+// slerp
 WMATH_TYPE(Quat)
-WMATH_CALL(Quat, slerp)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b,
-                        WMATH_TYPE(Quat) c, WMATH_TYPE(Quat) d, float t) {
+WMATH_CALL(Quat, slerp)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b, float t) {
   WMATH_TYPE(Quat) result;
-  float cosOmega = WMATH_DOT(Quat)(a, b);
-  float ep = wcn_math_get_epsilon();
-  if (cosOmega < 0.0f) {
+  float a_x = a.v[0];
+  float a_y = a.v[1];
+  float a_z = a.v[2];
+  float a_w = a.v[3];
+  float b_x = b.v[0];
+  float b_y = b.v[1];
+  float b_z = b.v[2];
+  float b_w = b.v[3];
+
+  float cosOmega = a_x * b_x + a_y * b_y + a_z * b_z + a_w * b_w;
+  if (cosOmega < 0) {
     cosOmega = -cosOmega;
-    b.v[0] = -b.v[0];
-    b.v[1] = -b.v[1];
-    b.v[2] = -b.v[2];
-    b.v[3] = -b.v[3];
+    b_x = -b_x;
+    b_y = -b_y;
+    b_z = -b_z;
+    b_w = -b_w;
   }
-  float scale0;
-  float scale1;
+
+  float scale_0;
+  float scale_1;
+  float ep = WCN_GET_EPSILON();
   if (1.0f - cosOmega > ep) {
     float omega = acosf(cosOmega);
     float sinOmega = sinf(omega);
-    scale0 = sinf((1.0f - t) * omega) / sinOmega;
-    scale1 = sinf(t * omega) / sinOmega;
+    scale_0 = sinf((1.0f - t) * omega) / sinOmega;
+    scale_1 = sinf(t * omega) / sinOmega;
   } else {
-    scale0 = 1.0f - t;
-    scale1 = t;
+    scale_0 = 1.0f - t;
+    scale_1 = t;
   }
-  result.v[0] = scale0 * a.v[0] + scale1 * b.v[0];
-  result.v[1] = scale0 * a.v[1] + scale1 * b.v[1];
-  result.v[2] = scale0 * a.v[2] + scale1 * b.v[2];
-  result.v[3] = scale0 * a.v[3] + scale1 * b.v[3];
+
+  result.v[0] = scale_0 * a_x + scale_1 * b_x;
+  result.v[1] = scale_0 * a_y + scale_1 * b_y;
+  result.v[2] = scale_0 * a_z + scale_1 * b_z;
+  result.v[3] = scale_0 * a_w + scale_1 * b_w;
   return result;
+}
+
+// sqlerp
+WMATH_TYPE(Quat)
+WMATH_CALL(Quat, sqlerp)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b,
+                         WMATH_TYPE(Quat) c, WMATH_TYPE(Quat) d, float t) {
+
+  WMATH_TYPE(Quat) temp_quat_1 = WMATH_CALL(Quat, slerp)(a, b, t);
+  WMATH_TYPE(Quat) temp_quat_2 = WMATH_CALL(Quat, slerp)(b, c, t);
+  float vt = 2 * t * (1 - t);
+  return WMATH_CALL(Quat, slerp)(
+    temp_quat_1,
+    temp_quat_2,
+    vt
+  );
 }
 
 float WMATH_LENGTH(Quat)(WMATH_TYPE(Quat) a) {
@@ -2567,6 +2856,95 @@ WMATH_CALL(Quat, rotation_to)(WMATH_TYPE(Vec3) a_unit,
   float dot = WMATH_DOT(Vec3)(a_unit, b_unit);
   if (dot < -0.999999f) {
   }
+}
+
+// *
+WMATH_TYPE(Quat)
+WMATH_MULTIPLY(Quat)
+(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b) {
+  WMATH_TYPE(Quat) r;
+  float a_x = a.v[0];
+  float a_y = a.v[1];
+  float a_z = a.v[2];
+  float a_w = a.v[3];
+  float b_x = b.v[0];
+  float b_y = b.v[1];
+  float b_z = b.v[2];
+  float b_w = b.v[3];
+  r.v[0] = a_x * b_w + a_w * b_x + a_y * b_z - a_z * b_y;
+  r.v[1] = a_y * b_w + a_w * b_y + a_z * b_x - a_x * b_z;
+  r.v[2] = a_z * b_w + a_w * b_z + a_x * b_y - a_y * b_x;
+  r.v[3] = a_w * b_w - a_x * b_x - a_y * b_y - a_z * b_z;
+  return r;
+}
+
+// .*
+WMATH_TYPE(Quat)
+WMATH_MULTIPLY_SCALAR(Quat)(WMATH_TYPE(Quat) a, float b) {
+  WMATH_TYPE(Quat) r;
+  r.v[0] = a.v[0] * b;
+  r.v[1] = a.v[1] * b;
+  r.v[2] = a.v[2] * b;
+  r.v[3] = a.v[3] * b;
+  return r;
+}
+
+// -
+WMATH_TYPE(Quat)
+WMATH_SUB(Quat)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b) {
+  WMATH_TYPE(Quat) r;
+  r.v[0] = a.v[0] - b.v[0];
+  r.v[1] = a.v[1] - b.v[1];
+  r.v[2] = a.v[2] - b.v[2];
+  r.v[3] = a.v[3] - b.v[3];
+  return r;
+}
+
+// +
+WMATH_TYPE(Quat)
+WMATH_ADD(Quat)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b) {
+  WMATH_TYPE(Quat) r;
+  r.v[0] = a.v[0] + b.v[0];
+  r.v[1] = a.v[1] + b.v[1];
+  r.v[2] = a.v[2] + b.v[2];
+  r.v[3] = a.v[3] + b.v[3];
+  return r;
+}
+
+// inverse
+WMATH_TYPE(Quat)
+WMATH_INVERSE(Quat)(WMATH_TYPE(Quat) q) {
+  WMATH_TYPE(Quat) r;
+  float a_0 = q.v[0];
+  float a_1 = q.v[1];
+  float a_2 = q.v[2];
+  float a_3 = q.v[3];
+  float dot = a_0 * a_0 + a_1 * a_1 + a_2 * a_2 + a_3 * a_3;
+  float invDot = dot ? 1 / dot : 0;
+  r.v[0] = -a_0 * invDot;
+  r.v[1] = -a_1 * invDot;
+  r.v[2] = -a_2 * invDot;
+  r.v[3] = a_3 * invDot;
+  return r;
+}
+
+// conjugate
+WMATH_TYPE(Quat)
+WMATH_CALL(Quat, conjugate)(WMATH_TYPE(Quat) q) {
+  return (WMATH_TYPE(Quat)){
+      .v = {-q.v[0], -q.v[1], -q.v[2], q.v[3]},
+  };
+}
+
+// divScalar
+WMATH_TYPE(Quat)
+WMATH_DIV_SCALAR(Quat)(WMATH_TYPE(Quat) a, float v) {
+  return WMATH_CREATE(Quat)((WMATH_CREATE_TYPE(Quat)){
+      .v_x = a.v[0] / v,
+      .v_y = a.v[1] / v,
+      .v_z = a.v[2] / v,
+      .v_w = a.v[3] / v,
+  });
 }
 
 // END Quat
@@ -2744,6 +3122,131 @@ WMATH_CALL(Vec3, transform_quat)
   return r;
 }
 
+// Quat fromMat
+WMATH_TYPE(Quat)
+WMATH_CALL(Quat, from_mat4)(WMATH_TYPE(Mat4) m) {
+  WMATH_TYPE(Quat) r;
+  float trace = m.m[0] + m.m[5] + m.m[10];
+  if (trace > 0.0) {
+    float root = sqrtf(trace + 1.0f);
+    r.v[3] = 0.5f * root;
+    float invRoot = 0.5f / root;
+    r.v[0] = (m.m[6] - m.m[9]) * invRoot;
+    r.v[1] = (m.m[8] - m.m[2]) * invRoot;
+    r.v[2] = (m.m[1] - m.m[4]) * invRoot;
+  } else {
+    int i = 0;
+    if (m.m[5] > m.m[0]) {
+      i = 1;
+    }
+    if (m.m[10] > m.m[i * 4 + i]) {
+      i = 2;
+    }
+
+    int j = (i + 1) % 3;
+    int k = (i + 2) % 3;
+
+    int root = sqrtf(m.m[i * 4 + i] - m.m[j * 4 + j] - m.m[k * 4 + k] + 1.0f);
+    r.v[i] = 0.5f * root;
+    float invRoot = 0.5f / root;
+    r.v[3] = (m.m[j * 4 + k] - m.m[k * 4 + j]) * invRoot;
+    r.v[j] = (m.m[j * 4 + i] + m.m[i * 4 + j]) * invRoot;
+    r.v[k] = (m.m[k * 4 + i] + m.m[i * 4 + k]) * invRoot;
+  }
+  return r;
+}
+
+WMATH_TYPE(Quat)
+WMATH_CALL(Quat, from_mat3)(WMATH_TYPE(Mat3) m) {
+  WMATH_TYPE(Quat) r;
+  float trace = m.m[0] + m.m[5] + m.m[10];
+  if (trace > 0.0) {
+    float root = sqrtf(trace + 1.0f);
+    r.v[3] = 0.5f * root;
+    float invRoot = 0.5f / root;
+    r.v[0] = (m.m[6] - m.m[9]) * invRoot;
+    r.v[1] = (m.m[8] - m.m[2]) * invRoot;
+    r.v[2] = (m.m[1] - m.m[4]) * invRoot;
+  } else {
+    int i = 0;
+    if (m.m[5] > m.m[0]) {
+      i = 1;
+    }
+    if (m.m[10] > m.m[i * 4 + i]) {
+      i = 2;
+    }
+
+    int j = (i + 1) % 3;
+    int k = (i + 2) % 3;
+
+    int root = sqrtf(m.m[i * 4 + i] - m.m[j * 4 + j] - m.m[k * 4 + k] + 1.0f);
+    r.v[i] = 0.5f * root;
+    float invRoot = 0.5f / root;
+    r.v[3] = (m.m[j * 4 + k] - m.m[k * 4 + j]) * invRoot;
+    r.v[j] = (m.m[j * 4 + i] + m.m[i * 4 + j]) * invRoot;
+    r.v[k] = (m.m[k * 4 + i] + m.m[i * 4 + k]) * invRoot;
+  }
+  return r;
+}
+
+// fromEuler
+WMATH_TYPE(Quat)
+WMATH_CALL(Quat, from_euler)(float x_angle_in_radians, float y_angle_in_radians,
+                             float z_angle_in_radians,
+                             enum WCN_Math_RotationOrder order) {
+  WMATH_TYPE(Quat) r;
+  float x_half_angle = x_angle_in_radians * 0.5f;
+  float y_half_angle = y_angle_in_radians * 0.5f;
+  float z_half_angle = z_angle_in_radians * 0.5f;
+  float s_x = sinf(x_half_angle);
+  float c_x = cosf(x_half_angle);
+  float s_y = sinf(y_half_angle);
+  float c_y = cosf(y_half_angle);
+  float s_z = sinf(z_half_angle);
+  float c_z = cosf(z_half_angle);
+  switch (order) {
+  case WCN_Math_RotationOrder_XYZ:
+    r.v[0] = s_x * c_y * c_z + c_x * s_y * s_z;
+    r.v[1] = c_x * s_y * c_z - s_x * c_y * s_z;
+    r.v[2] = c_x * c_y * s_z + s_x * s_y * c_z;
+    r.v[3] = c_x * c_y * c_z - s_x * s_y * s_z;
+    break;
+  case WCN_Math_RotationOrder_XZY:
+    r.v[0] = s_x * c_y * c_z - c_x * s_y * s_z;
+    r.v[1] = c_x * s_y * c_z - s_x * c_y * s_z;
+    r.v[2] = c_x * c_y * s_z + s_x * s_y * c_z;
+    r.v[3] = c_x * c_y * c_z + s_x * s_y * s_z;
+    break;
+  case WCN_Math_RotationOrder_YXZ:
+    r.v[0] = s_y * c_x * c_z + c_y * s_x * s_z;
+    r.v[1] = c_y * s_x * c_z - s_y * c_x * s_z;
+    r.v[2] = c_y * c_x * s_z - s_y * s_x * c_z;
+    r.v[3] = c_y * c_x * c_z + s_y * s_x * s_z;
+    break;
+  case WCN_Math_RotationOrder_YZX:
+    r.v[0] = s_y * c_x * c_z + c_y * s_x * s_z;
+    r.v[1] = c_y * s_x * c_z + s_y * c_x * s_z;
+    r.v[2] = c_y * c_x * s_z - s_y * s_x * c_z;
+    r.v[3] = c_y * c_x * c_z - s_y * s_x * s_z;
+    break;
+  case WCN_Math_RotationOrder_ZXY:
+    r.v[0] = s_z * c_x * c_y - c_z * s_x * s_y;
+    r.v[1] = c_z * s_x * c_y + s_z * c_x * s_y;
+    r.v[2] = c_z * c_x * s_y + s_z * s_x * c_y;
+    r.v[3] = c_z * c_x * c_y - s_z * s_x * s_y;
+    break;
+  case WCN_Math_RotationOrder_ZYX:
+    r.v[0] = s_z * c_x * c_y - c_z * s_x * s_y;
+    r.v[1] = c_z * s_x * c_y + s_z * c_x * s_y;
+    r.v[2] = c_z * c_x * s_y - s_z * s_x * c_y;
+    r.v[3] = c_z * c_x * c_y + s_z * s_x * s_y;
+    break;
+  default:
+    break;
+    return r;
+  }
+}
+
 // 3D
 // vec3 getTranslation
 WMATH_TYPE(Vec3)
@@ -2760,9 +3263,9 @@ WMATH_TYPE(Vec3)
 WMATH_CALL(Vec3, get_axis)(WMATH_TYPE(Mat4) m, int axis) {
   int off = axis * 4;
   return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
-    .v_x = m.m[off + 0],
-    .v_y = m.m[off + 1],
-    .v_z = m.m[off + 2],
+      .v_x = m.m[off + 0],
+      .v_y = m.m[off + 1],
+      .v_z = m.m[off + 2],
   });
 }
 
@@ -2779,9 +3282,9 @@ WMATH_CALL(Vec3, get_scale)(WMATH_TYPE(Mat4) m) {
   float z_y = m.m[9];
   float z_z = m.m[10];
   return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
-    .v_x = sqrtf(x_x * x_x + x_y * x_y + x_z * x_z),
-    .v_y = sqrtf(y_x * y_x + y_y * y_y + y_z * y_z),
-    .v_z = sqrtf(z_x * z_x + z_y * z_y + z_z * z_z),
+      .v_x = sqrtf(x_x * x_x + x_y * x_y + x_z * x_z),
+      .v_y = sqrtf(y_x * y_x + y_y * y_y + y_z * y_z),
+      .v_z = sqrtf(z_x * z_x + z_y * z_y + z_z * z_z),
   });
 }
 
@@ -2837,6 +3340,80 @@ WMATH_ROTATE_Z(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
   vec3.v[1] = r.v[1] + b.v[1];
   vec3.v[2] = r.v[2] + b.v[2];
   return vec3;
+}
+
+// vec4 transformMat4
+WMATH_TYPE(Vec4)
+WMATH_CALL(Vec4, transform_mat4)(WMATH_TYPE(Vec4) v, WMATH_TYPE(Mat4) m) {
+  WMATH_TYPE(Vec4) result;
+  float x = v.v[0];
+  float y = v.v[1];
+  float z = v.v[2];
+  float w = v.v[3];
+
+  result.v[0] = m.m[0] * x + m.m[4] * y + m.m[8] * z + m.m[12] * w;
+  result.v[1] = m.m[1] * x + m.m[5] * y + m.m[9] * z + m.m[13] * w;
+  result.v[2] = m.m[2] * x + m.m[6] * y + m.m[10] * z + m.m[14] * w;
+  result.v[3] = m.m[3] * x + m.m[7] * y + m.m[11] * z + m.m[15] * w;
+
+  return result;
+}
+
+// Quat rotate_x
+WMATH_TYPE(Quat)
+WMATH_ROTATE_X(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
+  WMATH_TYPE(Quat) result;
+  float half_angle = angleInRadians * 0.5f;
+  float q_x = q.v[0];
+  float q_y = q.v[1];
+  float q_z = q.v[2];
+  float q_w = q.v[3];
+
+  float b_x = sinf(half_angle);
+  float b_w = cosf(half_angle);
+  result.v[0] = q_x * b_w + q_w * b_x;
+  result.v[1] = q_y * b_w + q_z * b_x;
+  result.v[2] = q_z * b_w - q_y * b_x;
+  result.v[3] = q_w * b_w - q_x * b_x;
+  return result;
+}
+
+// Quat rotate_y
+WMATH_TYPE(Quat)
+WMATH_ROTATE_Y(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
+  WMATH_TYPE(Quat) result;
+  float half_angle = angleInRadians * 0.5f;
+  float q_x = q.v[0];
+  float q_y = q.v[1];
+  float q_z = q.v[2];
+  float q_w = q.v[3];
+
+  float b_y = sinf(half_angle);
+  float b_w = cosf(half_angle);
+  result.v[0] = q_x * b_w - q_z * b_y;
+  result.v[1] = q_y * b_w + q_w * b_y;
+  result.v[2] = q_z * b_w + q_x * b_y;
+  result.v[3] = q_w * b_w - q_y * b_y;
+  return result;
+}
+
+// Quat rotate_z
+WMATH_TYPE(Quat)
+WMATH_ROTATE_Z(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
+  WMATH_TYPE(Quat) result;
+  float half_angle = angleInRadians * 0.5f;
+  float q_x = q.v[0];
+  float q_y = q.v[1];
+  float q_z = q.v[2];
+  float q_w = q.v[3];
+
+  float b_z = sinf(half_angle);
+  float b_w = cosf(half_angle);
+  result.v[0] = q_x * b_w + q_y * b_z;
+  result.v[1] = q_y * b_w - q_x * b_z;
+  result.v[2] = q_z * b_w + q_w * b_z;
+  result.v[3] = q_w * b_w - q_z * b_z;
+  return result;
 }
 
 #ifdef __cplusplus
