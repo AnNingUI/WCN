@@ -188,6 +188,10 @@ float wcn_math_get_epsilon() { return EPSILON; }
 // rotate_z
 #define WMATH_ROTATE_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateZ
 
+// getTranslation
+#define WMATH_GET_TRANSLATION(WCN_Math_TYPE)                                   \
+  wcn_math_##WCN_Math_TYPE##getTranslation
+
 #define T$(WCN_Math_TYPE) WMATH_TYPE(WCN_Math_TYPE)
 
 // BEGIN Utils
@@ -659,7 +663,6 @@ WMATH_SET_LENGTH(Vec2)(WMATH_TYPE(Vec2) a, float length) {
 // truncate
 WMATH_TYPE(Vec2)
 WMATH_TRUNCATE(Vec2)(WMATH_TYPE(Vec2) a, float length) {
-  WMATH_TYPE(Vec2) vec2;
   if (WMATH_LENGTH(Vec2)(a) > length) {
     return WMATH_SET_LENGTH(Vec2)(a, length);
   }
@@ -669,7 +672,6 @@ WMATH_TRUNCATE(Vec2)(WMATH_TYPE(Vec2) a, float length) {
 // midpoint
 WMATH_TYPE(Vec2)
 WMATH_MIDPOINT(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
-  WMATH_TYPE(Vec2) vec2;
   return WMATH_LERP(Vec2)(a, b, 0.5f);
 }
 
@@ -704,6 +706,10 @@ WMATH_SET(Vec3)(WMATH_TYPE(Vec3) a, float x, float y, float z) {
   vec3.v[2] = z;
   return vec3;
 }
+
+// 0
+WMATH_TYPE(Vec3)
+WMATH_ZERO(Vec3)() { return (WMATH_TYPE(Vec3)){.v = {0.0f, 0.0f, 0.0f}}; }
 
 // ceil
 WMATH_TYPE(Vec3)
@@ -836,7 +842,8 @@ bool WMATH_EQUALS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 }
 
 // lerp
-WMATH_TYPE(Vec3) WMATH_LERP(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float t) {
+WMATH_TYPE(Vec3)
+WMATH_LERP(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float t) {
   WMATH_TYPE(Vec3) vec3;
   vec3.v[0] = a.v[0] + (b.v[0] - a.v[0]) * t;
   vec3.v[1] = a.v[1] + (b.v[1] - a.v[1]) * t;
@@ -854,8 +861,133 @@ WMATH_LERP_V(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, WMATH_TYPE(Vec3) t) {
   return vec3;
 }
 
+// fmax
+WMATH_TYPE(Vec3)
+WMATH_FMAX(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = fmaxf(a.v[0], b.v[0]);
+  vec3.v[1] = fmaxf(a.v[1], b.v[1]);
+  vec3.v[2] = fmaxf(a.v[2], b.v[2]);
+  return vec3;
+}
 
+// fmin
+WMATH_TYPE(Vec3)
+WMATH_FMIN(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = fminf(a.v[0], b.v[0]);
+  vec3.v[1] = fminf(a.v[1], b.v[1]);
+  vec3.v[2] = fminf(a.v[2], b.v[2]);
+  return vec3;
+}
 
+// *
+WMATH_TYPE(Vec3) WMATH_MULTIPLY(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] * b.v[0];
+  vec3.v[1] = a.v[1] * b.v[1];
+  vec3.v[2] = a.v[2] * b.v[2];
+  return vec3;
+}
+
+// .*
+WMATH_TYPE(Vec3) WMATH_MULTIPLY_SCALAR(Vec3)(WMATH_TYPE(Vec3) a, float scalar) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] * scalar;
+  vec3.v[1] = a.v[1] * scalar;
+  vec3.v[2] = a.v[2] * scalar;
+}
+
+// div
+WMATH_TYPE(Vec3)
+WMATH_DIV(Vec3)
+(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] / b.v[0];
+  vec3.v[1] = a.v[1] / b.v[1];
+  vec3.v[2] = a.v[2] / b.v[2];
+  return vec3;
+}
+
+// .div
+WMATH_TYPE(Vec3)
+WMATH_DIV_SCALAR(Vec3)(WMATH_TYPE(Vec3) a, float scalar) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] / scalar;
+  vec3.v[1] = a.v[1] / scalar;
+  vec3.v[2] = a.v[2] / scalar;
+  return vec3;
+}
+
+// inverse
+WMATH_TYPE(Vec3)
+WMATH_INVERSE(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = 1.0f / a.v[0];
+  vec3.v[1] = 1.0f / a.v[1];
+  vec3.v[2] = 1.0f / a.v[2];
+  return vec3;
+}
+
+// distance
+float WMATH_DISTANCE(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  float dx = a.v[0] - b.v[0];
+  float dy = a.v[1] - b.v[1];
+  float dz = a.v[2] - b.v[2];
+  return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+// distanceSquared
+float WMATH_DISTANCE_SQ(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  float dx = a.v[0] - b.v[0];
+  float dy = a.v[1] - b.v[1];
+  float dz = a.v[2] - b.v[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+// negate
+WMATH_TYPE(Vec3)
+WMATH_NEGATE(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = -a.v[0];
+  vec3.v[1] = -a.v[1];
+  vec3.v[2] = -a.v[2];
+  return vec3;
+}
+
+// random
+WMATH_TYPE(Vec3)
+WMATH_RANDOM(Vec3)(float scale) {
+  WMATH_TYPE(Vec3) vec3;
+  float angle = WMATH_RANDOM(float)() * WMATH_2PI;
+  float z = WMATH_RANDOM(float)() * 2.0f - 1.0f;
+  float z_scale = sqrtf(1.0f - z * z) * scale;
+  vec3.v[0] = cosf(angle) * z_scale;
+  vec3.v[1] = sinf(angle) * z_scale;
+  vec3.v[2] = z * scale;
+  return vec3;
+}
+
+// setLength
+WMATH_TYPE(Vec3)
+WMATH_SET_LENGTH(Vec3)(WMATH_TYPE(Vec3) v, float length) {
+  return WMATH_MULTIPLY_SCALAR(Vec3)(WMATH_NORMALIZE(Vec3)(v), length);
+}
+
+// truncate
+WMATH_TYPE(Vec3)
+WMATH_TRUNCATE(Vec3)(WMATH_TYPE(Vec3) v, float max_length) {
+  if (WMATH_LENGTH(Vec3)(v) > max_length) {
+    return WMATH_SET_LENGTH(Vec3)(v, max_length);
+  }
+  return WMATH_COPY(Vec3)(v);
+}
+
+// midpoint
+WMATH_TYPE(Vec3)
+WMATH_MIDPOINT(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  return WMATH_LERP(Vec3)(a, b, 0.5f);
+}
 
 // END Vec3
 
@@ -2540,6 +2672,171 @@ WMATH_CALL(Vec2, transform_mat3)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat3) m) {
   vec2.v[0] = x * m.m[0] + y * m.m[4] + m.m[8];
   vec2.v[1] = x * m.m[1] + y * m.m[5] + m.m[9];
   return vec2;
+}
+
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, transform_mat4)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat4) m) {
+  WMATH_TYPE(Vec3) vec3;
+  float x = v.v[0];
+  float y = v.v[1];
+  float z = v.v[2];
+  float w = (m.m[3] * x + m.m[7] * y + m.m[11] * z + m.m[15]) || 1;
+  vec3.v[0] = (x * m.m[0] + y * m.m[4] + z * m.m[8] + m.m[12]) / w;
+  vec3.v[1] = (x * m.m[1] + y * m.m[5] + z * m.m[9] + m.m[13]) / w;
+  vec3.v[2] = (x * m.m[2] + y * m.m[6] + z * m.m[10] + m.m[14]) / w;
+  return vec3;
+}
+
+// vec3 transformMat4Upper3x3
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, transform_mat4_upper3x3)(WMATH_TYPE(Vec3) v,
+                                          WMATH_TYPE(Mat4) m) {
+  WMATH_TYPE(Vec3) vec3;
+  // v0 v1 v2
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+  float v2 = v.v[2];
+
+  vec3.v[0] = v0 * m.m[0] + v1 * m.m[4] + v2 * m.m[8];
+  vec3.v[1] = v0 * m.m[1] + v1 * m.m[5] + v2 * m.m[9];
+  vec3.v[2] = v0 * m.m[2] + v1 * m.m[6] + v2 * m.m[10];
+  return vec3;
+}
+
+// vec3 transformMat3
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, transform_mat3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat3) m) {
+  WMATH_TYPE(Vec3) r;
+
+  float x = v.v[0];
+  float y = v.v[1];
+  float z = v.v[2];
+  r.v[0] = x * m.m[0] + y * m.m[4] + z * m.m[8];
+  r.v[1] = x * m.m[1] + y * m.m[5] + z * m.m[9];
+  r.v[2] = x * m.m[2] + y * m.m[6] + z * m.m[10];
+
+  return r;
+}
+
+// vec3 transformQuat
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, transform_quat)
+(WMATH_TYPE(Vec3) v, WMATH_TYPE(Quat) q) {
+  WMATH_TYPE(Vec3) r;
+
+  float qx = q.v[0];
+  float qy = q.v[1];
+  float qz = q.v[2];
+  float w2 = q.v[3] * 2;
+
+  float x = v.v[0];
+  float y = v.v[1];
+  float z = v.v[2];
+
+  float uvX = qy * z - qz * y;
+  float uvY = qz * x - qx * z;
+  float uvZ = qx * y - qy * x;
+
+  r.v[0] = x + uvX * w2 + (qy * uvZ - qz * uvY) * 2;
+  r.v[1] = y + uvY * w2 + (qz * uvX - qx * uvZ) * 2;
+  r.v[2] = z + uvZ * w2 + (qx * uvY - qy * uvX) * 2;
+
+  return r;
+}
+
+// 3D
+// vec3 getTranslation
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, get_translation)(WMATH_TYPE(Mat4) m) {
+  return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
+      .v_x = m.m[12],
+      .v_y = m.m[13],
+      .v_z = m.m[14],
+  });
+}
+
+// vec3 getAxis
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, get_axis)(WMATH_TYPE(Mat4) m, int axis) {
+  int off = axis * 4;
+  return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
+    .v_x = m.m[off + 0],
+    .v_y = m.m[off + 1],
+    .v_z = m.m[off + 2],
+  });
+}
+
+// vec3 getScale
+WMATH_TYPE(Vec3)
+WMATH_CALL(Vec3, get_scale)(WMATH_TYPE(Mat4) m) {
+  float x_x = m.m[0];
+  float x_y = m.m[1];
+  float x_z = m.m[2];
+  float y_x = m.m[4];
+  float y_y = m.m[5];
+  float y_z = m.m[6];
+  float z_x = m.m[8];
+  float z_y = m.m[9];
+  float z_z = m.m[10];
+  return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
+    .v_x = sqrtf(x_x * x_x + x_y * x_y + x_z * x_z),
+    .v_y = sqrtf(y_x * y_x + y_y * y_y + y_z * y_z),
+    .v_z = sqrtf(z_x * z_x + z_y * z_y + z_z * z_z),
+  });
+}
+
+// vec3 rotateX
+WMATH_TYPE(Vec3)
+WMATH_ROTATE_X(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
+  WMATH_TYPE(Vec3) vec3;
+  WMATH_TYPE(Vec3) p;
+  WMATH_TYPE(Vec3) r;
+  p.v[0] = a.v[0] - b.v[0];
+  p.v[1] = a.v[1] - b.v[1];
+  p.v[2] = a.v[2] - b.v[2];
+  r.v[0] = p.v[0];
+  r.v[1] = cosf(rad) * p.v[1] - sinf(rad) * p.v[2];
+  r.v[2] = sinf(rad) * p.v[1] + cosf(rad) * p.v[2];
+  vec3.v[0] = r.v[0] + b.v[0];
+  vec3.v[1] = r.v[1] + b.v[1];
+  vec3.v[2] = r.v[2] + b.v[2];
+  return vec3;
+}
+
+// vec3 rotateY
+WMATH_TYPE(Vec3)
+WMATH_ROTATE_Y(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
+  WMATH_TYPE(Vec3) vec3;
+  WMATH_TYPE(Vec3) p;
+  WMATH_TYPE(Vec3) r;
+  p.v[0] = a.v[0] - b.v[0];
+  p.v[1] = a.v[1] - b.v[1];
+  p.v[2] = a.v[2] - b.v[2];
+  r.v[0] = sinf(rad) * p.v[2] + cosf(rad) * p.v[0];
+  r.v[1] = p.v[1];
+  r.v[2] = cosf(rad) * p.v[2] - sinf(rad) * p.v[0];
+  vec3.v[0] = r.v[0] + b.v[0];
+  vec3.v[1] = r.v[1] + b.v[1];
+  vec3.v[2] = r.v[2] + b.v[2];
+  return vec3;
+}
+
+// vec3 rotateZ
+WMATH_TYPE(Vec3)
+WMATH_ROTATE_Z(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
+  WMATH_TYPE(Vec3) vec3;
+  WMATH_TYPE(Vec3) p;
+  WMATH_TYPE(Vec3) r;
+  p.v[0] = a.v[0] - b.v[0];
+  p.v[1] = a.v[1] - b.v[1];
+  p.v[2] = a.v[2] - b.v[2];
+  r.v[0] = cosf(rad) * p.v[0] - sinf(rad) * p.v[1];
+  r.v[1] = sinf(rad) * p.v[0] + cosf(rad) * p.v[1];
+  r.v[2] = p.v[2];
+  vec3.v[0] = r.v[0] + b.v[0];
+  vec3.v[1] = r.v[1] + b.v[1];
+  vec3.v[2] = r.v[2] + b.v[2];
+  return vec3;
 }
 
 #ifdef __cplusplus
