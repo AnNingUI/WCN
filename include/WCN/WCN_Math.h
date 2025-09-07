@@ -188,6 +188,8 @@ float wcn_math_get_epsilon() { return EPSILON; }
 // rotate_z
 #define WMATH_ROTATE_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateZ
 
+#define T$(WCN_Math_TYPE) WMATH_TYPE(WCN_Math_TYPE)
+
 // BEGIN Utils
 
 #define WMATH_DEG2RED(degrees) (degrees * 0.017453292519943295f)
@@ -668,9 +670,7 @@ WMATH_TRUNCATE(Vec2)(WMATH_TYPE(Vec2) a, float length) {
 WMATH_TYPE(Vec2)
 WMATH_MIDPOINT(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   WMATH_TYPE(Vec2) vec2;
-  return WMATH_LERP(Vec2)(
-    a, b, 0.5f
-  );
+  return WMATH_LERP(Vec2)(a, b, 0.5f);
 }
 
 // END Vec2
@@ -682,6 +682,56 @@ WMATH_TYPE(Vec3) WMATH_CREATE(Vec3)(WMATH_CREATE_TYPE(Vec3) vec3_c) {
   vec3.v[0] = WMATH_OR_ELSE_ZERO(vec3_c.v_x);
   vec3.v[1] = WMATH_OR_ELSE_ZERO(vec3_c.v_y);
   vec3.v[2] = WMATH_OR_ELSE_ZERO(vec3_c.v_z);
+  return vec3;
+}
+
+// copy
+WMATH_TYPE(Vec3)
+WMATH_COPY(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0];
+  vec3.v[1] = a.v[1];
+  vec3.v[2] = a.v[2];
+  return vec3;
+}
+
+// set
+WMATH_TYPE(Vec3)
+WMATH_SET(Vec3)(WMATH_TYPE(Vec3) a, float x, float y, float z) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = x;
+  vec3.v[1] = y;
+  vec3.v[2] = z;
+  return vec3;
+}
+
+// ceil
+WMATH_TYPE(Vec3)
+WMATH_CEIL(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = ceilf(a.v[0]);
+  vec3.v[1] = ceilf(a.v[1]);
+  vec3.v[2] = ceilf(a.v[2]);
+  return vec3;
+}
+
+// floor
+WMATH_TYPE(Vec3)
+WMATH_FLOOR(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = floorf(a.v[0]);
+  vec3.v[1] = floorf(a.v[1]);
+  vec3.v[2] = floorf(a.v[2]);
+  return vec3;
+}
+
+// round
+WMATH_TYPE(Vec3)
+WMATH_ROUND(Vec3)(WMATH_TYPE(Vec3) a) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = roundf(a.v[0]);
+  vec3.v[1] = roundf(a.v[1]);
+  vec3.v[2] = roundf(a.v[2]);
   return vec3;
 }
 
@@ -726,6 +776,86 @@ WMATH_NORMALIZE(Vec3)(WMATH_TYPE(Vec3) v) {
   }
   return result;
 }
+
+// clamp
+WMATH_TYPE(Vec3)
+WMATH_CLAMP(Vec3)(WMATH_TYPE(Vec3) a, float min_val, float max_val) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = fminf(fmaxf(a.v[0], min_val), max_val);
+  vec3.v[1] = fminf(fmaxf(a.v[1], min_val), max_val);
+  vec3.v[2] = fminf(fmaxf(a.v[2], min_val), max_val);
+  return vec3;
+}
+
+// +
+WMATH_TYPE(Vec3) WMATH_ADD(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] + b.v[0];
+  vec3.v[1] = a.v[1] + b.v[1];
+  vec3.v[2] = a.v[2] + b.v[2];
+  return vec3;
+}
+
+WMATH_TYPE(Vec3)
+WMATH_ADD_SCALED(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float scalar) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] + b.v[0] * scalar;
+  vec3.v[1] = a.v[1] + b.v[1] * scalar;
+  vec3.v[2] = a.v[2] + b.v[2] * scalar;
+  return vec3;
+}
+
+// -
+WMATH_TYPE(Vec3) WMATH_SUB(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] - b.v[0];
+  vec3.v[1] = a.v[1] - b.v[1];
+  vec3.v[2] = a.v[2] - b.v[2];
+  return vec3;
+}
+
+// angle
+float WMATH_ANGLE(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  float mag_1 = WMATH_LENGTH(Vec3)(a);
+  float mag_2 = WMATH_LENGTH(Vec3)(b);
+  float mag = mag_1 * mag_2;
+  float cosine = mag && WMATH_DOT(Vec3)(a, b) / mag;
+  return acosf(cosine);
+}
+
+// ~=
+bool WMATH_EQUALS_APPROXIMATELY(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  float ep = WCN_GET_EPSILON();
+  return (fabsf(a.v[0] - b.v[0]) < ep && fabsf(a.v[1] - b.v[1]) < ep &&
+          fabsf(a.v[2] - b.v[2]));
+}
+
+// =
+bool WMATH_EQUALS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+  return (a.v[0] == b.v[0] && a.v[1] == b.v[1] && a.v[2] == b.v[2]);
+}
+
+// lerp
+WMATH_TYPE(Vec3) WMATH_LERP(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float t) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] + (b.v[0] - a.v[0]) * t;
+  vec3.v[1] = a.v[1] + (b.v[1] - a.v[1]) * t;
+  vec3.v[2] = a.v[2] + (b.v[2] - a.v[2]) * t;
+  return vec3;
+}
+
+// lerpV
+WMATH_TYPE(Vec3)
+WMATH_LERP_V(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, WMATH_TYPE(Vec3) t) {
+  WMATH_TYPE(Vec3) vec3;
+  vec3.v[0] = a.v[0] + (b.v[0] - a.v[0]) * t.v[0];
+  vec3.v[1] = a.v[1] + (b.v[1] - a.v[1]) * t.v[1];
+  vec3.v[2] = a.v[2] + (b.v[2] - a.v[2]) * t.v[2];
+  return vec3;
+}
+
+
+
 
 // END Vec3
 
