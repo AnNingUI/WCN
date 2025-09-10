@@ -89,7 +89,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
   wcn_math_##WCN_Math_TYPE##_multiplyScalar
 
 // scale
-#define WMATH_SCALE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_multiplyScalar
+#define WMATH_SCALE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_scale
 
 // multiply
 #define WMATH_MULTIPLY(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_multiply
@@ -176,6 +176,9 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 // vec midpoint
 #define WMATH_MIDPOINT(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_midpoint
 
+// mat determinant
+#define WMATH_DETERMINANT(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_determinant
+
 // rotate
 #define WMATH_ROTATE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotate
 
@@ -187,6 +190,18 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 
 // rotate_z
 #define WMATH_ROTATE_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateZ
+
+// mat rotation
+#define WMATH_ROTATION(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotation
+
+// mat rotation_x
+#define WMATH_ROTATION_X(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationX
+
+// mat rotation_y
+#define WMATH_ROTATION_Y(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationY
+
+// mat rotation_z
+#define WMATH_ROTATION_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationZ
 
 // getTranslation
 #define WMATH_GET_TRANSLATION(WCN_Math_TYPE)                                   \
@@ -1260,13 +1275,19 @@ WMATH_TYPE(Vec4) WMATH_MIDPOINT(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
 // BEGIN Mat3
 
 WMATH_TYPE(Mat3) WMATH_IDENTITY(Mat3)() {
-  return (WMATH_TYPE(Mat3)){1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                            0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+  return (WMATH_TYPE(Mat3)){
+      1.0f, 0.0f, 0.0f, 0.0f, //
+      0.0f, 1.0f, 0.0f, 0.0f, //
+      0.0f, 0.0f, 1.0f, 0.0f  //
+  };
 };
 
 WMATH_TYPE(Mat3) WMATH_ZERO(Mat3)() {
-  return (WMATH_TYPE(Mat3)){0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  return (WMATH_TYPE(Mat3)){
+      0.0f, 0.0f, 0.0f, 0.0f, //
+      0.0f, 0.0f, 0.0f, 0.0f, //
+      0.0f, 0.0f, 0.0f, 0.0f  //
+  };
 }
 
 WMATH_TYPE(Mat3)
@@ -1850,52 +1871,20 @@ WMATH_MULTIPLY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
 
   return result;
 }
-// 创建绕Z轴旋转矩阵
-WMATH_TYPE(Mat3) wcn_math_Mat3_rotationZ(float angle) {
-  WMATH_TYPE(Mat3) result;
-  float cos_a = cosf(angle);
-  float sin_a = sinf(angle);
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
-    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
-  // SSE implementation - faster initialization
-  __m128 zero = _mm_setzero_ps();
-  _mm_storeu_ps(&result.m[0], zero);
-  _mm_storeu_ps(&result.m[4], zero);
-  _mm_storeu_ps(&result.m[8], zero);
+float WMATH_DETERMINANT(Mat3)(WMATH_TYPE(Mat3) m) {
+  float m00 = m.m[0 * 4 + 0];
+  float m01 = m.m[0 * 4 + 1];
+  float m02 = m.m[0 * 4 + 2];
+  float m10 = m.m[1 * 4 + 0];
+  float m11 = m.m[1 * 4 + 1];
+  float m12 = m.m[1 * 4 + 2];
+  float m20 = m.m[2 * 4 + 0];
+  float m21 = m.m[2 * 4 + 1];
+  float m22 = m.m[2 * 4 + 2];
 
-  // Set rotation values
-  result.m[0] = cos_a;  // [0,0]
-  result.m[1] = -sin_a; // [0,1]
-  result.m[4] = sin_a;  // [1,0]
-  result.m[5] = cos_a;  // [1,1]
-  result.m[10] = 1.0f;  // [2,2]
-
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
-  // NEON implementation - faster initialization
-  float32x4_t zero = vdupq_n_f32(0.0f);
-  vst1q_f32(&result.m[0], zero);
-  vst1q_f32(&result.m[4], zero);
-  vst1q_f32(&result.m[8], zero);
-
-  // Set rotation values
-  result.m[0] = cos_a;  // [0,0]
-  result.m[1] = -sin_a; // [0,1]
-  result.m[4] = sin_a;  // [1,0]
-  result.m[5] = cos_a;  // [1,1]
-  result.m[10] = 1.0f;  // [2,2]
-
-#else
-  // Scalar fallback
-  memset(&result, 0, sizeof(WMATH_TYPE(Mat3)));
-  result.m[0] = cos_a;
-  result.m[1] = -sin_a;
-  result.m[4] = sin_a;
-  result.m[5] = cos_a;
-  result.m[10] = 1.0f;
-#endif
-
-  return result;
+  return m00 * (m11 * m22 - m21 * m12) - m10 * (m01 * m22 - m21 * m02) +
+         m20 * (m01 * m12 - m11 * m02);
 }
 
 // END Mat3
@@ -2684,6 +2673,129 @@ WMATH_TRANSPOSE(Mat4)(WMATH_TYPE(Mat4) a) {
   return result;
 }
 
+float WMATH_DETERMINANT(Mat4)(WMATH_TYPE(Mat4) m) {
+  float m00 = m.m[0 * 4 + 0];
+  float m01 = m.m[0 * 4 + 1];
+  float m02 = m.m[0 * 4 + 2];
+  float m03 = m.m[0 * 4 + 3];
+  float m10 = m.m[1 * 4 + 0];
+  float m11 = m.m[1 * 4 + 1];
+  float m12 = m.m[1 * 4 + 2];
+  float m13 = m.m[1 * 4 + 3];
+  float m20 = m.m[2 * 4 + 0];
+  float m21 = m.m[2 * 4 + 1];
+  float m22 = m.m[2 * 4 + 2];
+  float m23 = m.m[2 * 4 + 3];
+  float m30 = m.m[3 * 4 + 0];
+  float m31 = m.m[3 * 4 + 1];
+  float m32 = m.m[3 * 4 + 2];
+  float m33 = m.m[3 * 4 + 3];
+
+  float tmp0 = m22 * m33;
+  float tmp1 = m32 * m23;
+  float tmp2 = m12 * m33;
+  float tmp3 = m32 * m13;
+  float tmp4 = m12 * m23;
+  float tmp5 = m22 * m13;
+  float tmp6 = m02 * m33;
+  float tmp7 = m32 * m03;
+  float tmp8 = m02 * m23;
+  float tmp9 = m22 * m03;
+  float tmp10 = m02 * m13;
+  float tmp11 = m12 * m03;
+
+  float t0 = (tmp0 * m11 + tmp3 * m21 + tmp4 * m31) -
+             (tmp1 * m11 + tmp2 * m21 + tmp5 * m31);
+  float t1 = (tmp1 * m01 + tmp6 * m21 + tmp9 * m31) -
+             (tmp0 * m01 + tmp7 * m21 + tmp8 * m31);
+  float t2 = (tmp2 * m01 + tmp7 * m11 + tmp10 * m31) -
+             (tmp3 * m01 + tmp6 * m11 + tmp11 * m31);
+  float t3 = (tmp5 * m01 + tmp8 * m11 + tmp11 * m21) -
+             (tmp4 * m01 + tmp9 * m11 + tmp10 * m21);
+
+  return m00 * t0 + m10 * t1 + m20 * t2 + m30 * t3;
+}
+
+// aim
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, aim)
+(WMATH_TYPE(Vec3) position, WMATH_TYPE(Vec3) target, WMATH_TYPE(Vec3) up) {
+  WMATH_TYPE(Mat4) result = WMATH_ZERO(Mat4)();
+  WMATH_TYPE(Vec3)
+  z_axis = WMATH_NORMALIZE(Vec3)(WMATH_SUB(Vec3)(target, position));
+
+  WMATH_TYPE(Vec3)
+  x_axis = WMATH_NORMALIZE(Vec3)(WMATH_CROSS(Vec3)(up, z_axis));
+
+  WMATH_TYPE(Vec3)
+  y_axis = WMATH_NORMALIZE(Vec3)(WMATH_CROSS(Vec3)(z_axis, x_axis));
+
+  result.m[0] = x_axis.v[0];
+  result.m[4] = y_axis.v[0];
+  result.m[8] = z_axis.v[0];
+  result.m[12] = position.v[0];
+}
+
+// lookAt
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, look_at)
+(WMATH_TYPE(Vec3) eye, WMATH_TYPE(Vec3) target, WMATH_TYPE(Vec3) up) {
+  WMATH_TYPE(Mat4) result = WMATH_ZERO(Mat4)();
+  WMATH_TYPE(Vec3)
+  z_axis = WMATH_NORMALIZE(Vec3)(WMATH_SUB(Vec3)(eye, target));
+  WMATH_TYPE(Vec3)
+  x_axis = WMATH_NORMALIZE(Vec3)(WMATH_CROSS(Vec3)(up, z_axis));
+  WMATH_TYPE(Vec3)
+  y_axis = WMATH_NORMALIZE(Vec3)(WMATH_CROSS(Vec3)(z_axis, x_axis));
+
+  result.m[0] = x_axis.v[0];
+  result.m[1] = y_axis.v[0];
+  result.m[2] = z_axis.v[0];
+  result.m[3] = 0;
+  result.m[4] = x_axis.v[1];
+  result.m[5] = y_axis.v[1];
+  result.m[6] = z_axis.v[1];
+  result.m[7] = 0;
+  result.m[8] = x_axis.v[2];
+  result.m[9] = y_axis.v[2];
+  result.m[10] = z_axis.v[2];
+  result.m[11] = 0;
+  result.m[12] = -WMATH_DOT(Vec3)(x_axis, eye);
+  result.m[13] = -WMATH_DOT(Vec3)(y_axis, eye);
+  result.m[14] = -WMATH_DOT(Vec3)(z_axis, eye);
+  result.m[15] = 1;
+
+  return result;
+}
+
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, ortho)
+(float left, float right, float bottom, float top, float near, float far) {
+  WMATH_TYPE(Mat4) newDst;
+
+  newDst.m[0] = 2 / (right - left);
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[3] = 0;
+
+  newDst.m[4] = 0;
+  newDst.m[5] = 2 / (top - bottom);
+  newDst.m[6] = 0;
+  newDst.m[7] = 0;
+
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = 1 / (near - far);
+  newDst.m[11] = 0;
+
+  newDst.m[12] = (right + left) / (left - right);
+  newDst.m[13] = (top + bottom) / (bottom - top);
+  newDst.m[14] = near / (near - far);
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
 // END Mat4
 
 // BEGIN Quat
@@ -2796,11 +2908,7 @@ WMATH_CALL(Quat, sqlerp)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b,
   WMATH_TYPE(Quat) temp_quat_1 = WMATH_CALL(Quat, slerp)(a, b, t);
   WMATH_TYPE(Quat) temp_quat_2 = WMATH_CALL(Quat, slerp)(b, c, t);
   float vt = 2 * t * (1 - t);
-  return WMATH_CALL(Quat, slerp)(
-    temp_quat_1,
-    temp_quat_2,
-    vt
-  );
+  return WMATH_CALL(Quat, slerp)(temp_quat_1, temp_quat_2, vt);
 }
 
 float WMATH_LENGTH(Quat)(WMATH_TYPE(Quat) a) {
@@ -2966,6 +3074,44 @@ WMATH_CALL(Mat3, from_mat4)(WMATH_TYPE(Mat4) a) {
   });
 }
 
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
+  WMATH_TYPE(Mat3) newDst;
+
+  float x = q.v[0];
+  float y = q.v[1];
+  float z = q.v[2];
+  float w = q.v[3];
+  float x2 = x + x;
+  float y2 = y + y;
+  float z2 = z + z;
+
+  float xx = x * x2;
+  float yx = y * x2;
+  float yy = y * y2;
+  float zx = z * x2;
+  float zy = z * y2;
+  float zz = z * z2;
+  float wx = w * x2;
+  float wy = w * y2;
+  float wz = w * z2;
+
+  newDst.m[0] = 1 - yy - zz;
+  newDst.m[1] = yx + wz;
+  newDst.m[2] = zx - wy;
+  newDst.m[3] = 0;
+  newDst.m[4] = yx - wz;
+  newDst.m[5] = 1 - xx - zz;
+  newDst.m[6] = zy + wx;
+  newDst.m[7] = 0;
+  newDst.m[8] = zx + wy;
+  newDst.m[9] = zy - wx;
+  newDst.m[10] = 1 - xx - yy;
+  newDst.m[11] = 0;
+
+  return newDst;
+}
+
 WMATH_TYPE(Mat4)
 WMATH_CALL(Mat4, from_mat3)(WMATH_TYPE(Mat3) a) {
   return WMATH_CREATE(Mat4)((WMATH_CREATE_TYPE(Mat4)){
@@ -2989,6 +3135,47 @@ WMATH_CALL(Mat4, from_mat3)(WMATH_TYPE(Mat3) a) {
       .m_32 = 0.0f,
       .m_33 = 1.0f,
   });
+}
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, from_quat)(WMATH_TYPE(Quat) q) {
+  WMATH_TYPE(Mat4) newDst;
+
+  float x = q.v[0];
+  float y = q.v[1];
+  float z = q.v[2];
+  float w = q.v[3];
+  float x2 = x + x;
+  float y2 = y + y;
+  float z2 = z + z;
+
+  float xx = x * x2;
+  float yx = y * x2;
+  float yy = y * y2;
+  float zx = z * x2;
+  float zy = z * y2;
+  float zz = z * z2;
+  float wx = w * x2;
+  float wy = w * y2;
+  float wz = w * z2;
+
+  newDst.m[0] = 1 - yy - zz;
+  newDst.m[1] = yx + wz;
+  newDst.m[2] = zx - wy;
+  newDst.m[3] = 0; // 0
+  newDst.m[4] = yx - wz;
+  newDst.m[5] = 1 - xx - zz;
+  newDst.m[6] = zy + wx;
+  newDst.m[7] = 0; // 1
+  newDst.m[8] = zx + wy;
+  newDst.m[9] = zy - wx;
+  newDst.m[10] = 1 - xx - yy;
+  newDst.m[11] = 0; // 2
+  newDst.m[12] = 0;
+  newDst.m[13] = 0;
+  newDst.m[14] = 0;
+  newDst.m[15] = 1; // 3
+
+  return newDst;
 }
 
 WMATH_TYPE(Quat)
@@ -3414,6 +3601,578 @@ WMATH_ROTATE_Z(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
   result.v[2] = q_z * b_w + q_w * b_z;
   result.v[3] = q_w * b_w - q_z * b_z;
   return result;
+}
+
+// Mat3 rotate
+WMATH_TYPE(Mat3)
+WMATH_ROTATE(Mat3)
+(WMATH_TYPE(Mat3) m, float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  float m00 = m.m[0 * 4 + 0];
+  float m01 = m.m[0 * 4 + 1];
+  float m02 = m.m[0 * 4 + 2];
+  float m10 = m.m[1 * 4 + 0];
+  float m11 = m.m[1 * 4 + 1];
+  float m12 = m.m[1 * 4 + 2];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c * m00 + s * m10;
+  newDst.m[1] = c * m01 + s * m11;
+  newDst.m[2] = c * m02 + s * m12;
+
+  newDst.m[4] = c * m10 - s * m00;
+  newDst.m[5] = c * m11 - s * m01;
+  newDst.m[6] = c * m12 - s * m02;
+
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[8] = m.m[8];
+    newDst.m[9] = m.m[9];
+    newDst.m[10] = m.m[10];
+  }
+
+  return newDst;
+}
+
+// Mat3 rotate x
+WMATH_TYPE(Mat3)
+WMATH_ROTATE_X(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  float m_10 = m.m[4];
+  float m_11 = m.m[5];
+  float m_12 = m.m[6];
+  float m_20 = m.m[8];
+  float m_21 = m.m[9];
+  float m_22 = m.m[10];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  newDst.m[4] = c * m_10 + s * m_20;
+  newDst.m[5] = c * m_11 + s * m_21;
+  newDst.m[6] = c * m_12 + s * m_22;
+  newDst.m[8] = c * m_20 - s * m_10;
+  newDst.m[9] = c * m_21 - s * m_11;
+  newDst.m[10] = c * m_22 - s * m_12;
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[0] = m.m[0];
+    newDst.m[1] = m.m[1];
+    newDst.m[2] = m.m[2];
+  }
+  return newDst;
+}
+
+// Mat3 rotate y
+WMATH_TYPE(Mat3)
+WMATH_ROTATE_Y(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  float m00 = m.m[0 * 4 + 0];
+  float m01 = m.m[0 * 4 + 1];
+  float m02 = m.m[0 * 4 + 2];
+  float m20 = m.m[2 * 4 + 0];
+  float m21 = m.m[2 * 4 + 1];
+  float m22 = m.m[2 * 4 + 2];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c * m00 - s * m20;
+  newDst.m[1] = c * m01 - s * m21;
+  newDst.m[2] = c * m02 - s * m22;
+  newDst.m[8] = c * m20 + s * m00;
+  newDst.m[9] = c * m21 + s * m01;
+  newDst.m[10] = c * m22 + s * m02;
+
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[4] = m.m[4];
+    newDst.m[5] = m.m[5];
+    newDst.m[6] = m.m[6];
+  }
+
+  return newDst;
+}
+
+// Mat3 rotate z
+WMATH_TYPE(Mat3)
+WMATH_ROTATE_Z(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
+  return WMATH_ROTATE(Mat3)(m, angleInRadians);
+}
+
+// Mat3 rotation
+WMATH_TYPE(Mat3)
+WMATH_ROTATION(Mat3)(float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  newDst.m[0] = c;
+  newDst.m[1] = s;
+  newDst.m[2] = 0;
+  newDst.m[4] = -s;
+  newDst.m[5] = c;
+  newDst.m[6] = 0;
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = 1;
+  return newDst;
+}
+
+// Mat3 rotation x
+WMATH_TYPE(Mat3)
+WMATH_ROTATION_X(Mat3)(float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  newDst.m[0] = 1;
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = c;
+  newDst.m[6] = s;
+  newDst.m[8] = 0;
+  newDst.m[9] = -s;
+  newDst.m[10] = c;
+  return newDst;
+}
+
+// Mat3 rotation y
+WMATH_TYPE(Mat3)
+WMATH_ROTATION_Y(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  newDst.m[0] = c;
+  newDst.m[1] = 0;
+  newDst.m[2] = -s;
+  newDst.m[4] = 0;
+  newDst.m[5] = 1;
+  newDst.m[6] = 0;
+  newDst.m[8] = s;
+  newDst.m[9] = 0;
+  newDst.m[10] = c;
+
+  return newDst;
+}
+
+// Mat3 rotation z
+WMATH_TYPE(Mat3)
+WMATH_ROTATION_Z(Mat3)(float angleInRadians) {
+  return WMATH_ROTATION(Mat3)(angleInRadians);
+}
+
+// Mat3 get_axis
+/**
+ * Returns an axis of a 3x3 matrix as a vector with 2 entries
+ * @param m - The matrix.
+ * @param axis - The axis 0 = x, 1 = y,
+ * @returns The axis component of m.
+ */
+WMATH_TYPE(Vec2)
+WMATH_CALL(Mat3, get_axis)
+(WMATH_TYPE(Mat3) m, int axis) {
+  WMATH_TYPE(Vec2) result;
+  int off = axis * 4;
+  result.v[0] = m.m[off + 0];
+  result.v[1] = m.m[off + 1];
+  return result;
+}
+// Mat3 set_axis
+/**
+ * Sets an axis of a 3x3 matrix as a vector with 2 entries
+ * @param m - The matrix.
+ * @param v - the axis vector
+ * @param axis - The axis  0 = x, 1 = y;
+ * @param dst - The matrix to set. If not passed a new one is created.
+ * @returns The matrix with axis set.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, set_axis)
+(WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec2) v, int axis) {
+  WMATH_TYPE(Mat3) newDst = WMATH_COPY(Mat3)(m);
+  int off = axis * 4;
+  newDst.m[off + 0] = v.v[0];
+  newDst.m[off + 1] = v.v[1];
+  return newDst;
+}
+
+// Mat3 get_scaling
+WMATH_TYPE(Vec2)
+WMATH_CALL(Mat3, get_scaling)
+(WMATH_TYPE(Mat3) m) {
+  WMATH_TYPE(Vec2) result;
+  float xx = m.m[0];
+  float xy = m.m[1];
+  float yx = m.m[4];
+  float yy = m.m[5];
+  result.v[0] = sqrtf(xx * xx + xy * xy);
+  result.v[1] = sqrtf(yx * yx + yy * yy);
+  return result;
+}
+
+// Mat3 get_3D_scaling
+WMATH_TYPE(Vec3)
+WMATH_CALL(Mat3, get_3D_scaling)
+(WMATH_TYPE(Mat3) m) {
+  WMATH_TYPE(Vec3) result;
+  float xx = m.m[0];
+  float xy = m.m[1];
+  float xz = m.m[2];
+  float yx = m.m[4];
+  float yy = m.m[5];
+  float yz = m.m[6];
+  float zx = m.m[8];
+  float zy = m.m[9];
+  float zz = m.m[10];
+
+  result.v[0] = sqrtf(xx * xx + xy * xy + xz * xz);
+  result.v[1] = sqrtf(yx * yx + yy * yy + yz * yz);
+  result.v[2] = sqrtf(zx * zx + zy * zy + zz * zz);
+
+  return result;
+}
+
+// Mat3 get_translation
+WMATH_TYPE(Vec2)
+WMATH_CALL(Mat3, get_translation)
+(WMATH_TYPE(Mat3) m) {
+  WMATH_TYPE(Vec2) result;
+  result.v[0] = m.m[8];
+  result.v[1] = m.m[9];
+  return result;
+}
+
+// Mat3 set_translation
+/**
+ * Sets the translation component of a 3-by-3 matrix to the given
+ * vector.
+ * @param a - The matrix.
+ * @param v - The vector.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The matrix with translation set.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, set_translation)
+(WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec2) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_IDENTITY(Mat3)();
+  if (!WMATH_EQUALS(Mat3)(m, newDst)) {
+    newDst.m[0] = v.v[0];
+    newDst.m[1] = v.v[1];
+    newDst.m[2] = v.v[2];
+    newDst.m[4] = v.v[4];
+    newDst.m[5] = v.v[5];
+    newDst.m[6] = v.v[6];
+  }
+  newDst.m[8] = v.v[0];
+  newDst.m[9] = v.v[1];
+  newDst.m[10] = 1;
+}
+
+// Mat3 translation
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, translation)
+(WMATH_TYPE(Vec2) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  newDst.m[0] = 1;
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = 1;
+  newDst.m[6] = 0;
+  newDst.m[8] = v.v[0];
+  newDst.m[9] = v.v[1];
+  newDst.m[10] = 1;
+
+  return newDst;
+}
+
+// translate
+/**
+ * Translates the given 3-by-3 matrix by the given vector v.
+ * @param m - The matrix.
+ * @param v - The vector by which to translate.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The translated matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, translate)
+(WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec2) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_COPY(Mat3)(m);
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+
+  float m00 = m.m[0];
+  float m01 = m.m[1];
+  float m02 = m.m[2];
+  float m10 = m.m[1 * 4 + 0];
+  float m11 = m.m[1 * 4 + 1];
+  float m12 = m.m[1 * 4 + 2];
+  float m20 = m.m[2 * 4 + 0];
+  float m21 = m.m[2 * 4 + 1];
+  float m22 = m.m[2 * 4 + 2];
+
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[0] = m00;
+    newDst.m[1] = m01;
+    newDst.m[2] = m02;
+    newDst.m[4] = m10;
+    newDst.m[5] = m11;
+    newDst.m[6] = m12;
+  }
+
+  newDst.m[8] = m00 * v0 + m10 * v1 + m20;
+  newDst.m[9] = m01 * v0 + m11 * v1 + m21;
+  newDst.m[10] = m02 * v0 + m12 * v1 + m22;
+
+  return newDst;
+}
+
+// All Type Scale Impl
+WMATH_TYPE(Vec2)
+WMATH_SCALE(Vec2)
+(WMATH_TYPE(Vec2) v, float scale) {
+  WMATH_TYPE(Vec2) result;
+  result.v[0] = v.v[0] * scale;
+  result.v[1] = v.v[1] * scale;
+  return result;
+}
+
+WMATH_TYPE(Vec3)
+WMATH_SCALE(Vec3)
+(WMATH_TYPE(Vec3) v, float scale) {
+  return WMATH_MULTIPLY_SCALAR(Vec3)(v, scale);
+}
+
+WMATH_TYPE(Quat)
+WMATH_SCALE(Quat)
+(WMATH_TYPE(Quat) q, float scale) {
+  return WMATH_MULTIPLY_SCALAR(Quat)(q, scale);
+}
+
+WMATH_TYPE(Mat3)
+WMATH_SCALE(Mat3)
+(WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec2) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+
+  newDst.m[0] = v0 * m.m[0 * 4 + 0];
+  newDst.m[1] = v0 * m.m[0 * 4 + 1];
+  newDst.m[2] = v0 * m.m[0 * 4 + 2];
+
+  newDst.m[4] = v1 * m.m[1 * 4 + 0];
+  newDst.m[5] = v1 * m.m[1 * 4 + 1];
+  newDst.m[6] = v1 * m.m[1 * 4 + 2];
+
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[8] = m.m[8];
+    newDst.m[9] = m.m[9];
+    newDst.m[10] = m.m[10];
+  }
+
+  return newDst;
+}
+
+WMATH_TYPE(Mat4)
+WMATH_SCALE(Mat4)
+(WMATH_TYPE(Mat4) m, WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+  float v2 = v.v[2];
+
+  newDst.m[0] = v0 * m.m[0 * 4 + 0];
+  newDst.m[1] = v0 * m.m[0 * 4 + 1];
+  newDst.m[2] = v0 * m.m[0 * 4 + 2];
+  newDst.m[3] = v0 * m.m[0 * 4 + 3];
+  newDst.m[4] = v1 * m.m[1 * 4 + 0];
+  newDst.m[5] = v1 * m.m[1 * 4 + 1];
+  newDst.m[6] = v1 * m.m[1 * 4 + 2];
+  newDst.m[7] = v1 * m.m[1 * 4 + 3];
+  newDst.m[8] = v2 * m.m[2 * 4 + 0];
+  newDst.m[9] = v2 * m.m[2 * 4 + 1];
+  newDst.m[10] = v2 * m.m[2 * 4 + 2];
+  newDst.m[11] = v2 * m.m[2 * 4 + 3];
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+    newDst.m[15] = m.m[15];
+  }
+
+  return newDst;
+}
+
+// Mat3 scale3D
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, scale3D)
+(WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+  float v2 = v.v[2];
+  newDst.m[0] = v0 * m.m[0 * 4 + 0];
+  newDst.m[1] = v0 * m.m[0 * 4 + 1];
+  newDst.m[2] = v0 * m.m[0 * 4 + 2];
+  newDst.m[4] = v1 * m.m[1 * 4 + 0];
+  newDst.m[5] = v1 * m.m[1 * 4 + 1];
+  newDst.m[6] = v1 * m.m[1 * 4 + 2];
+  newDst.m[8] = v2 * m.m[2 * 4 + 0];
+  newDst.m[9] = v2 * m.m[2 * 4 + 1];
+  newDst.m[10] = v2 * m.m[2 * 4 + 2];
+  return newDst;
+}
+
+// Mat3 scaling
+/**
+ * Creates a 3-by-3 matrix which scales in each dimension by an amount given by
+ * the corresponding entry in the given vector; assumes the vector has two
+ * entries.
+ * @param v - A vector of
+ *     2 entries specifying the factor by which to scale in each dimension.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, scaling)
+(WMATH_TYPE(Vec2) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  newDst.m[0] = v.v[0];
+  newDst.m[1] = 1;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = v.v[1];
+  newDst.m[6] = 0;
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = 1;
+  return newDst;
+}
+
+/**
+ * Creates a 3-by-3 matrix which scales in each dimension by an amount given by
+ * the corresponding entry in the given vector; assumes the vector has three
+ * entries.
+ * @param v - A vector of
+ *     3 entries specifying the factor by which to scale in each dimension.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, scaling3D)(WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+
+  newDst.m[0] = v.v[0];
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = v.v[1];
+  newDst.m[6] = 0;
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = v.v[2];
+
+  return newDst;
+}
+
+// Mat3 uniform_scale
+/**
+ * Scales the given 3-by-3 matrix in the X and Y dimension by an amount
+ * given.
+ * @param m - The matrix to be modified.
+ * @param s - Amount to scale.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaled matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, uniform_scale)
+(WMATH_TYPE(Mat3) m, float s) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  newDst.m[0] = s * m.m[0];
+  newDst.m[1] = s * m.m[1];
+  newDst.m[2] = s * m.m[2];
+  newDst.m[4] = s * m.m[4];
+  newDst.m[5] = s * m.m[5];
+  newDst.m[6] = s * m.m[6];
+  if (!WMATH_EQUALS(Mat3)(newDst, m)) {
+    newDst.m[8] = m.m[8];
+    newDst.m[9] = m.m[9];
+    newDst.m[10] = m.m[10];
+  }
+  return newDst;
+}
+
+// Mat3 uniform_scale_3D
+/**
+ * Scales the given 3-by-3 matrix in each dimension by an amount
+ * given.
+ * @param m - The matrix to be modified.
+ * @param s - Amount to scale.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaled matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, uniform_scale_3D)
+(WMATH_TYPE(Mat3) m, float s) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  newDst.m[0] = s * m.m[0];
+  newDst.m[1] = s * m.m[1];
+  newDst.m[2] = s * m.m[2];
+  newDst.m[4] = s * m.m[4];
+  newDst.m[5] = s * m.m[5];
+  newDst.m[6] = s * m.m[6];
+  newDst.m[8] = s * m.m[8];
+  newDst.m[9] = s * m.m[9];
+  newDst.m[10] = s * m.m[10];
+  return newDst;
+}
+
+// Mat3 uniform_scaling
+/**
+ * Creates a 3-by-3 matrix which scales uniformly in the X and Y dimensions
+ * @param s - Amount to scale
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, uniform_scaling)
+(float s) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  newDst.m[0] = s;
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = s;
+  newDst.m[6] = 0;
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = 1;
+  return newDst;
+}
+
+// Mat3 uniform_scaling_3D
+/**
+ * Creates a 3-by-3 matrix which scales uniformly in each dimension
+ * @param s - Amount to scale
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat3)
+WMATH_CALL(Mat3, uniform_scaling_3D)
+(float s) {
+  WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
+  newDst.m[0] = s;
+  newDst.m[1] = 0;
+  newDst.m[2] = 0;
+  newDst.m[4] = 0;
+  newDst.m[5] = s;
+  newDst.m[6] = 0;
+  newDst.m[8] = 0;
+  newDst.m[9] = 0;
+  newDst.m[10] = s;
+  return newDst;
 }
 
 #ifdef __cplusplus
