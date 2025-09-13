@@ -2,6 +2,16 @@
 #include <stdbool.h>
 #include <string.h>
 
+#if !defined(WMATH_DISABLE_SIMD) &&                                            \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+#include <emmintrin.h>
+#include <immintrin.h> // For additional SSE/AVX intrinsics
+#include <smmintrin.h> // For SSE4.1 which has better float operations
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
 static bool EPSILON_IS_SET = false;
 
 float wcn_math_set_epsilon(float epsilon) {
