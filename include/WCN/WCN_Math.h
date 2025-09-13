@@ -70,7 +70,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 
 // equalsApproximately
 #define WMATH_EQUALS_APPROXIMATELY(WCN_Math_TYPE)                              \
-  wcn_math_##WCN_Math_TYPE##_equalsApproximately
+  wcn_math_##WCN_Math_TYPE##_equals_approximately
 
 // negate
 #define WMATH_NEGATE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_negate
@@ -86,7 +86,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 
 // multiplyScalar
 #define WMATH_MULTIPLY_SCALAR(WCN_Math_TYPE)                                   \
-  wcn_math_##WCN_Math_TYPE##_multiplyScalar
+  wcn_math_##WCN_Math_TYPE##_multiply_scalar
 
 // scale
 #define WMATH_SCALE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_scale
@@ -110,16 +110,16 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 #define WMATH_LERP(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_lerp
 
 // vec lerpV
-#define WMATH_LERP_V(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_lerpV
+#define WMATH_LERP_V(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_lerp_v
 
 // vec length
 #define WMATH_LENGTH(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_length
 
 // vec length squared
-#define WMATH_LENGTH_SQ(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_lengthSquared
+#define WMATH_LENGTH_SQ(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_length_squared
 
 // vec set_length
-#define WMATH_SET_LENGTH(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_setLength
+#define WMATH_SET_LENGTH(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_set_length
 
 // vec normalize
 #define WMATH_NORMALIZE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_normalize
@@ -137,7 +137,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 #define WMATH_CLAMP(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_clamp
 
 // vec add_scaled
-#define WMATH_ADD_SCALED(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_addScaled
+#define WMATH_ADD_SCALED(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_add_scaled
 
 // vec angle
 #define WMATH_ANGLE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_angle
@@ -152,7 +152,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 #define WMATH_DIV(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_div
 
 // vec div_scalar
-#define WMATH_DIV_SCALAR(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_divScalar
+#define WMATH_DIV_SCALAR(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_div_scalar
 
 // distance
 #define WMATH_DISTANCE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_distance
@@ -165,7 +165,7 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
   wcn_math_##WCN_Math_TYPE##_distanceSquared
 
 // dist_sq
-#define WMATH_DIST_SQ(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_distanceSquared
+#define WMATH_DIST_SQ(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_distance_squared
 
 // vec2/3 random
 #define WMATH_RANDOM(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_random
@@ -183,29 +183,36 @@ float wcn_math_get_epsilon() { return EPSILON ? EPSILON : 1e-6f; }
 #define WMATH_ROTATE(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotate
 
 // rotate_x
-#define WMATH_ROTATE_X(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateX
+#define WMATH_ROTATE_X(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotate_x
 
 // rotate_y
-#define WMATH_ROTATE_Y(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateY
+#define WMATH_ROTATE_Y(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotate_y
 
 // rotate_z
-#define WMATH_ROTATE_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotateZ
+#define WMATH_ROTATE_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotate_z
 
 // mat rotation
 #define WMATH_ROTATION(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotation
 
 // mat rotation_x
-#define WMATH_ROTATION_X(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationX
+#define WMATH_ROTATION_X(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotation_x
 
 // mat rotation_y
-#define WMATH_ROTATION_Y(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationY
+#define WMATH_ROTATION_Y(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotation_y
 
 // mat rotation_z
-#define WMATH_ROTATION_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotationZ
+#define WMATH_ROTATION_Z(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_rotation_z
 
 // getTranslation
 #define WMATH_GET_TRANSLATION(WCN_Math_TYPE)                                   \
-  wcn_math_##WCN_Math_TYPE##getTranslation
+  wcn_math_##WCN_Math_TYPE##_get_translation
+
+// setTranslation
+#define WMATH_SET_TRANSLATION(WCN_Math_TYPE)                                   \
+  wcn_math_##WCN_Math_TYPE##_set_translation
+
+// translation
+#define WMATH_TRANSLATION(WCN_Math_TYPE) wcn_math_##WCN_Math_TYPE##_translation
 
 #define T$(WCN_Math_TYPE) WMATH_TYPE(WCN_Math_TYPE)
 
@@ -2751,15 +2758,15 @@ WMATH_CALL(Mat4, look_at)
   result.m[0] = x_axis.v[0];
   result.m[1] = y_axis.v[0];
   result.m[2] = z_axis.v[0];
-  result.m[3] = 0;
+  // result.m[3] = 0;
   result.m[4] = x_axis.v[1];
   result.m[5] = y_axis.v[1];
   result.m[6] = z_axis.v[1];
-  result.m[7] = 0;
+  // result.m[7] = 0;
   result.m[8] = x_axis.v[2];
   result.m[9] = y_axis.v[2];
   result.m[10] = z_axis.v[2];
-  result.m[11] = 0;
+  // result.m[11] = 0;
   result.m[12] = -WMATH_DOT(Vec3)(x_axis, eye);
   result.m[13] = -WMATH_DOT(Vec3)(y_axis, eye);
   result.m[14] = -WMATH_DOT(Vec3)(z_axis, eye);
@@ -3434,10 +3441,10 @@ WMATH_CALL(Quat, from_euler)(float x_angle_in_radians, float y_angle_in_radians,
   }
 }
 
-// 3D
+// BEGIN 3D
 // vec3 getTranslation
 WMATH_TYPE(Vec3)
-WMATH_CALL(Vec3, get_translation)(WMATH_TYPE(Mat4) m) {
+WMATH_GET_TRANSLATION(Vec3)(WMATH_TYPE(Mat4) m) {
   return WMATH_CREATE(Vec3)((WMATH_CREATE_TYPE(Vec3)){
       .v_x = m.m[12],
       .v_y = m.m[13],
@@ -3705,12 +3712,12 @@ WMATH_ROTATION(Mat3)(float angleInRadians) {
   float s = sinf(angleInRadians);
   newDst.m[0] = c;
   newDst.m[1] = s;
-  newDst.m[2] = 0;
+  // newDst.m[2] = 0;
   newDst.m[4] = -s;
   newDst.m[5] = c;
-  newDst.m[6] = 0;
-  newDst.m[8] = 0;
-  newDst.m[9] = 0;
+  // newDst.m[6] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = 1;
   return newDst;
 }
@@ -3722,12 +3729,12 @@ WMATH_ROTATION_X(Mat3)(float angleInRadians) {
   float c = cosf(angleInRadians);
   float s = sinf(angleInRadians);
   newDst.m[0] = 1;
-  newDst.m[1] = 0;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = c;
   newDst.m[6] = s;
-  newDst.m[8] = 0;
+  // newDst.m[8] = 0;
   newDst.m[9] = -s;
   newDst.m[10] = c;
   return newDst;
@@ -3741,13 +3748,13 @@ WMATH_ROTATION_Y(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
   float c = cosf(angleInRadians);
   float s = sinf(angleInRadians);
   newDst.m[0] = c;
-  newDst.m[1] = 0;
+  // newDst.m[1] = 0;
   newDst.m[2] = -s;
-  newDst.m[4] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = 1;
-  newDst.m[6] = 0;
+  // newDst.m[6] = 0;
   newDst.m[8] = s;
-  newDst.m[9] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = c;
 
   return newDst;
@@ -3832,7 +3839,7 @@ WMATH_CALL(Mat3, get_3D_scaling)
 
 // Mat3 get_translation
 WMATH_TYPE(Vec2)
-WMATH_CALL(Mat3, get_translation)
+WMATH_GET_TRANSLATION(Mat3)
 (WMATH_TYPE(Mat3) m) {
   WMATH_TYPE(Vec2) result;
   result.v[0] = m.m[8];
@@ -3850,7 +3857,7 @@ WMATH_CALL(Mat3, get_translation)
  * @returns The matrix with translation set.
  */
 WMATH_TYPE(Mat3)
-WMATH_CALL(Mat3, set_translation)
+WMATH_SET_TRANSLATION(Mat3)
 (WMATH_TYPE(Mat3) m, WMATH_TYPE(Vec2) v) {
   WMATH_TYPE(Mat3) newDst = WMATH_IDENTITY(Mat3)();
   if (!WMATH_EQUALS(Mat3)(m, newDst)) {
@@ -3868,16 +3875,16 @@ WMATH_CALL(Mat3, set_translation)
 
 // Mat3 translation
 WMATH_TYPE(Mat3)
-WMATH_CALL(Mat3, translation)
+WMATH_TRANSLATION(Mat3)
 (WMATH_TYPE(Vec2) v) {
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
 
   newDst.m[0] = 1;
-  newDst.m[1] = 0;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = 1;
-  newDst.m[6] = 0;
+  // newDst.m[6] = 0;
   newDst.m[8] = v.v[0];
   newDst.m[9] = v.v[1];
   newDst.m[10] = 1;
@@ -3922,6 +3929,782 @@ WMATH_CALL(Mat3, translate)
   newDst.m[8] = m00 * v0 + m10 * v1 + m20;
   newDst.m[9] = m01 * v0 + m11 * v1 + m21;
   newDst.m[10] = m02 * v0 + m12 * v1 + m22;
+
+  return newDst;
+}
+
+// Mat4 axis_rotate
+/**
+ * Rotates the given 4-by-4 matrix around the given axis by the
+ * given angle.
+ * @param m - The matrix.
+ * @param axis - The axis
+ *     about which to rotate.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, axis_rotate)
+(WMATH_TYPE(Mat4) m, WMATH_TYPE(Vec3) axis, float angleInRadians) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float x = axis.v[0];
+  float y = axis.v[1];
+  float z = axis.v[2];
+  float n = sqrtf(x * x + y * y + z * z);
+  x /= n;
+  y /= n;
+  z /= n;
+  float xx = x * x;
+  float yy = y * y;
+  float zz = z * z;
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  float oneMinusCosine = 1 - c;
+
+  float r00 = xx + (1 - xx) * c;
+  float r01 = x * y * oneMinusCosine + z * s;
+  float r02 = x * z * oneMinusCosine - y * s;
+  float r10 = x * y * oneMinusCosine - z * s;
+  float r11 = yy + (1 - yy) * c;
+  float r12 = y * z * oneMinusCosine + x * s;
+  float r20 = x * z * oneMinusCosine + y * s;
+  float r21 = y * z * oneMinusCosine - x * s;
+  float r22 = zz + (1 - zz) * c;
+
+  float m00 = m.m[0];
+  float m01 = m.m[1];
+  float m02 = m.m[2];
+  float m03 = m.m[3];
+  float m10 = m.m[4];
+  float m11 = m.m[5];
+  float m12 = m.m[6];
+  float m13 = m.m[7];
+  float m20 = m.m[8];
+  float m21 = m.m[9];
+  float m22 = m.m[10];
+  float m23 = m.m[11];
+
+  newDst.m[0] = r00 * m00 + r01 * m10 + r02 * m20;
+  newDst.m[1] = r00 * m01 + r01 * m11 + r02 * m21;
+  newDst.m[2] = r00 * m02 + r01 * m12 + r02 * m22;
+  newDst.m[3] = r00 * m03 + r01 * m13 + r02 * m23;
+  newDst.m[4] = r10 * m00 + r11 * m10 + r12 * m20;
+  newDst.m[5] = r10 * m01 + r11 * m11 + r12 * m21;
+  newDst.m[6] = r10 * m02 + r11 * m12 + r12 * m22;
+  newDst.m[7] = r10 * m03 + r11 * m13 + r12 * m23;
+  newDst.m[8] = r20 * m00 + r21 * m10 + r22 * m20;
+  newDst.m[9] = r20 * m01 + r21 * m11 + r22 * m21;
+  newDst.m[10] = r20 * m02 + r21 * m12 + r22 * m22;
+  newDst.m[11] = r20 * m03 + r21 * m13 + r22 * m23;
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+  }
+
+  return newDst;
+}
+
+// Mat4 axisRotation
+/**
+ * Creates a 4-by-4 matrix which rotates around the given axis by the given
+ * angle.
+ * @param axis - The axis
+ *     about which to rotate.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns A matrix which rotates angle radians
+ *     around the axis.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, axis_rotation)
+(WMATH_TYPE(Vec3) axis, float angleInRadians) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float x = axis.v[0];
+  float y = axis.v[1];
+  float z = axis.v[2];
+  float n = sqrtf(x * x + y * y + z * z);
+  x /= n;
+  y /= n;
+  z /= n;
+  float xx = x * x;
+  float yy = y * y;
+  float zz = z * z;
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+  float oneMinusCosine = 1 - c;
+
+  newDst.m[0] = xx + (1 - xx) * c;
+  newDst.m[1] = x * y * oneMinusCosine + z * s;
+  newDst.m[2] = x * z * oneMinusCosine - y * s;
+  // newDst.m[3] = 0;
+  newDst.m[4] = x * y * oneMinusCosine - z * s;
+  newDst.m[5] = yy + (1 - yy) * c;
+  newDst.m[6] = y * z * oneMinusCosine + x * s;
+  // newDst.m[7] = 0;
+  newDst.m[8] = x * z * oneMinusCosine + y * s;
+  newDst.m[9] = y * z * oneMinusCosine - x * s;
+  newDst.m[10] = zz + (1 - zz) * c;
+  // newDst.m[11] = 0;
+  // newDst.m[12] = 0;
+  // newDst.m[13] = 0;
+  // newDst.m[14] = 0;
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
+// Mat4 camera_aim
+/**
+ * Computes a 4-by-4 camera aim transformation.
+ *
+ * This is a matrix which positions an object aiming down negative Z.
+ * toward the target.
+ *
+ * Note: this is the inverse of `lookAt`
+ *
+ * @param eye - The position of the object.
+ * @param target - The position meant to be aimed at.
+ * @param up - A vector pointing up.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The aim matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, camera_aim)
+(
+    //
+    WMATH_TYPE(Vec3) eye,    // eye: Vec3
+    WMATH_TYPE(Vec3) target, // target: Vec3
+    WMATH_TYPE(Vec3) up      // up: Vec3
+) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  WMATH_TYPE(Vec3) z_axis = WMATH_NORMALIZE(Vec3)(WMATH_SUB(Vec3)(eye, target));
+  WMATH_TYPE(Vec3)
+  x_axis = WMATH_NORMALIZE(Vec3)(WMATH_CROSS(Vec3)(up, z_axis));
+  WMATH_TYPE(Vec3) y_axis = WMATH_CROSS(Vec3)(z_axis, x_axis);
+
+  newDst.m[0] = x_axis.v[0];
+  newDst.m[1] = x_axis.v[1];
+  newDst.m[2] = x_axis.v[2]; // x
+  // newDst.m[3] = 0; 
+  newDst.m[4] = y_axis.v[0];
+  newDst.m[5] = y_axis.v[1];
+  newDst.m[6] = y_axis.v[2]; // y
+  // newDst.m[7] = 0;
+  newDst.m[8] = z_axis.v[0];
+  newDst.m[9] = z_axis.v[1];
+  newDst.m[10] = z_axis.v[2]; // z
+  // newDst.m[11] = 0;
+  newDst.m[12] = eye.v[0];
+  newDst.m[13] = eye.v[1];
+  newDst.m[14] = eye.v[2];
+  newDst.m[15] = 1; // eye
+
+  return newDst;
+}
+
+// Mat4 frustum
+/**
+ * Computes a 4-by-4 perspective transformation matrix given the left, right,
+ * top, bottom, near and far clipping planes. The arguments define a frustum
+ * extending in the negative z direction. The arguments near and far are the
+ * distances to the near and far clipping planes. Note that near and far are not
+ * z coordinates, but rather they are distances along the negative z-axis. The
+ * matrix generated sends the viewing frustum to the unit box. We assume a unit
+ * box extending from -1 to 1 in the x and y dimensions and from 0 to 1 in the z
+ * dimension.
+ * @param left - The x coordinate of the left plane of the box.
+ * @param right - The x coordinate of the right plane of the box.
+ * @param bottom - The y coordinate of the bottom plane of the box.
+ * @param top - The y coordinate of the right plane of the box.
+ * @param near - The negative z coordinate of the near plane of the box.
+ * @param far - The negative z coordinate of the far plane of the box.
+ * @param dst - Output matrix. If not passed a new one is created.
+ * @returns The perspective projection matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, frustum)
+(float left, float right, float bottom, float top, float near, float far) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float dx = right - left;
+  float dy = top - bottom;
+  float dz = near - far;
+
+  newDst.m[0] = 2 * near / dx;
+  newDst.m[5] = 2 * near / dy;
+  newDst.m[8] = (left + right) / dx;
+  newDst.m[9] = (top + bottom) / dy;
+  newDst.m[10] = far / dz;
+  newDst.m[11] = -1;
+  newDst.m[14] = near * far / dz;
+
+  return newDst;
+}
+
+// Mat4 frustumReverseZ
+/**
+ * Computes a 4-by-4 reverse-z perspective transformation matrix given the left,
+ * right, top, bottom, near and far clipping planes. The arguments define a
+ * frustum extending in the negative z direction. The arguments near and far are
+ * the distances to the near and far clipping planes. Note that near and far are
+ * not z coordinates, but rather they are distances along the negative z-axis.
+ * The matrix generated sends the viewing frustum to the unit box. We assume a
+ * unit box extending from -1 to 1 in the x and y dimensions and from 1 (-near)
+ * to 0 (-far) in the z dimension.
+ * @param left - The x coordinate of the left plane of the box.
+ * @param right - The x coordinate of the right plane of the box.
+ * @param bottom - The y coordinate of the bottom plane of the box.
+ * @param top - The y coordinate of the right plane of the box.
+ * @param near - The negative z coordinate of the near plane of the box.
+ * @param far - The negative z coordinate of the far plane of the box.
+ * @param dst - Output matrix. If not passed a new one is created.
+ * @returns The perspective projection matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, frustum_reverse_z)
+(float left, float right, float bottom, float top, float near, float far) {
+  float _far = WMATH_OR_ELSE(far, INFINITY);
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float dx = right - left;
+  float dy = top - bottom;
+
+  // 0
+  newDst.m[0] = 2 * near / dx;
+  // 5
+  newDst.m[5] = 2 * near / dy;
+  // 8
+  newDst.m[8] = (left + right) / dx;
+  // 9
+  newDst.m[9] = (top + bottom) / dy;
+  // 11
+  newDst.m[11] = -1;
+
+  if (isfinite(_far)) {
+    newDst.m[10] = 0;
+    newDst.m[14] = near;
+  } else {
+    float rangeInv = 1 / (far - near);
+    newDst.m[10] = near * rangeInv;
+    newDst.m[14] = far * near * rangeInv;
+  }
+
+  return newDst;
+}
+
+// Mat4 get_axis
+/**
+ * Returns an axis of a 4x4 matrix as a vector with 3 entries
+ * @param m - The matrix.
+ * @param axis - The axis 0 = x, 1 = y, 2 = z;
+ * @returns The axis component of m.
+ */
+WMATH_TYPE(Vec3)
+WMATH_CALL(Mat4, get_axis)
+(WMATH_TYPE(Mat4) m, int axis) {
+  WMATH_TYPE(Vec3) newDst = WMATH_ZERO(Vec3)();
+  int off = axis * 4;
+  newDst.v[0] = m.m[off + 0];
+  newDst.v[1] = m.m[off + 1];
+  newDst.v[2] = m.m[off + 2];
+  return newDst;
+}
+
+// Mat4 set_axis
+/**
+ * Sets an axis of a 4x4 matrix as a vector with 3 entries
+ * @param m - The matrix.
+ * @param v - the axis vector
+ * @param axis - The axis  0 = x, 1 = y, 2 = z;
+ * @param dst - The matrix to set. If not passed a new one is created.
+ * @returns The matrix with axis set.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, set_axis)
+(WMATH_TYPE(Mat4) m, WMATH_TYPE(Vec3) v, int axis) {
+  WMATH_TYPE(Mat4) newDst = WMATH_COPY(Mat4)(m);
+
+  int off = axis * 4;
+  newDst.m[off + 0] = v.v[0];
+  newDst.m[off + 1] = v.v[1];
+  newDst.m[off + 2] = v.v[2];
+  return newDst;
+}
+
+// Mat4 getTranslation
+///**
+// * Returns the translation component of a 4-by-4 matrix as a vector with 3
+// * entries.
+// * @param m - The matrix.
+// * @param dst - vector to hold result. If not passed a new one is created.
+// * @returns The translation component of m.
+// */
+WMATH_TYPE(Vec3)
+WMATH_GET_TRANSLATION(Mat4)
+(WMATH_TYPE(Mat4) m) {
+  WMATH_TYPE(Vec3) v;
+  v.v[0] = m.m[12];
+  v.v[1] = m.m[13];
+  v.v[2] = m.m[14];
+  return v;
+}
+
+// Mat4 setTranslation
+WMATH_TYPE(Mat4)
+WMATH_SET_TRANSLATION(Mat4)
+(WMATH_TYPE(Mat4) m, WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat4) newDst = WMATH_IDENTITY(Mat4)();
+  if (!WMATH_EQUALS(Mat4)(m, newDst)) {
+    newDst.m[0] = m.m[0];
+    newDst.m[1] = m.m[1];
+    newDst.m[2] = m.m[2];
+    newDst.m[3] = m.m[3];
+    newDst.m[4] = m.m[4];
+    newDst.m[5] = m.m[5];
+    newDst.m[6] = m.m[6];
+    newDst.m[7] = m.m[7];
+    newDst.m[8] = m.m[8];
+    newDst.m[9] = m.m[9];
+    newDst.m[10] = m.m[10];
+    newDst.m[11] = m.m[11];
+  }
+  newDst.m[12] = v.v[0];
+  newDst.m[13] = v.v[1];
+  newDst.m[14] = v.v[2];
+  newDst.m[15] = 1;
+  return newDst;
+}
+
+// Mat4 translation
+/**
+ * Creates a 4-by-4 matrix which translates by the given vector v.
+ * @param v - The vector by
+ *     which to translate.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The translation matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_TRANSLATION(Mat4)
+(WMATH_TYPE(Vec3) v) {
+  return (WMATH_TYPE(Mat4)){.m = {
+                                1, 0, 0, 0,                //
+                                0, 1, 0, 0,                //
+                                0, 0, 1, 0,                //
+                                v.v[0], v.v[1], v.v[2], 1, //
+                            }};
+}
+
+// Mat4 perspective
+/**
+ * Computes a 4-by-4 perspective transformation matrix given the angular height
+ * of the frustum, the aspect ratio, and the near and far clipping planes.  The
+ * arguments define a frustum extending in the negative z direction.  The given
+ * angle is the vertical angle of the frustum, and the horizontal angle is
+ * determined to produce the given aspect ratio.  The arguments near and far are
+ * the distances to the near and far clipping planes.  Note that near and far
+ * are not z coordinates, but rather they are distances along the negative
+ * z-axis.  The matrix generated sends the viewing frustum to the unit box.
+ * We assume a unit box extending from -1 to 1 in the x and y dimensions and
+ * from 0 to 1 in the z dimension.
+ *
+ * Note: If you pass `Infinity` for zFar then it will produce a projection
+ * matrix returns -Infinity for Z when transforming coordinates with Z <= 0 and
+ * +Infinity for Z otherwise.
+ *
+ * @param fieldOfViewYInRadians - The camera angle from top to bottom (in
+ * radians).
+ * @param aspect - The aspect ratio width / height.
+ * @param zNear - The depth (negative z coordinate)
+ *     of the near clipping plane.
+ * @param zFar - The depth (negative z coordinate)
+ *     of the far clipping plane.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The perspective matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, perspective)
+(float fieldOfViewYInRadians, float aspect, float zNear, float zFar) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float f = tanf(WMATH_PI * 0.5 - 0.5 * fieldOfViewYInRadians);
+
+  // 0
+  newDst.m[0] = f / aspect;
+
+  // 1
+  newDst.m[5] = f;
+
+  // 2
+  newDst.m[11] = -1;
+
+  // float isFinite
+  if (isfinite(zFar)) {
+    float rangeInv = 1.0f / (zNear - zFar);
+    newDst.m[10] = zFar * rangeInv;
+    newDst.m[14] = zFar * zNear * rangeInv;
+  } else {
+    newDst.m[10] = -1;
+    newDst.m[14] = -zNear;
+  }
+
+  return newDst;
+}
+
+// Mat4 perspective_reverse_z
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, perspective_reverse_z)
+(
+    //
+    float fieldOfViewYInRadians, // fieldOfViewYInRadians: number
+    float aspect,                // aspect: number
+    float zNear,                 // zNear: number
+    float zFar                   // zFar: number
+) {
+  float _zFar = WMATH_OR_ELSE(zFar, INFINITY);
+
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float f = 1 / tanf(0.5 * fieldOfViewYInRadians);
+
+  // 0
+  newDst.m[0] = f / aspect;
+  // 5
+  newDst.m[5] = f;
+  // 11
+  newDst.m[11] = -1;
+  if (isfinite(_zFar)) {
+    newDst.m[10] = 0;
+    newDst.m[14] = zNear;
+  } else {
+    float rangeInv = 1 / (_zFar - zNear);
+    newDst.m[10] = zNear * rangeInv;
+    newDst.m[14] = _zFar * zNear * rangeInv;
+  }
+
+  return newDst;
+}
+
+// Mat4 translate
+/**
+ * Translates the given 4-by-4 matrix by the given vector v.
+ * @param m - The matrix.
+ * @param v - The vector by
+ *     which to translate.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The translated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, translate)
+(WMATH_TYPE(Mat4) m, WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float v0 = v.v[0];
+  float v1 = v.v[1];
+  float v2 = v.v[2];
+  float m00 = m.m[0];
+  float m01 = m.m[1];
+  float m02 = m.m[2];
+  float m03 = m.m[3];
+  float m10 = m.m[1 * 4 + 0];
+  float m11 = m.m[1 * 4 + 1];
+  float m12 = m.m[1 * 4 + 2];
+  float m13 = m.m[1 * 4 + 3];
+  float m20 = m.m[2 * 4 + 0];
+  float m21 = m.m[2 * 4 + 1];
+  float m22 = m.m[2 * 4 + 2];
+  float m23 = m.m[2 * 4 + 3];
+  float m30 = m.m[3 * 4 + 0];
+  float m31 = m.m[3 * 4 + 1];
+  float m32 = m.m[3 * 4 + 2];
+  float m33 = m.m[3 * 4 + 3];
+
+  if (!WMATH_EQUALS(Mat4)(m, newDst)) {
+    newDst.m[0] = m00;
+    newDst.m[1] = m01;
+    newDst.m[2] = m02;
+    newDst.m[3] = m03;
+    newDst.m[4] = m10;
+    newDst.m[5] = m11;
+    newDst.m[6] = m12;
+    newDst.m[7] = m13;
+    newDst.m[8] = m20;
+    newDst.m[9] = m21;
+    newDst.m[10] = m22;
+    newDst.m[11] = m23;
+  }
+  newDst.m[12] = m00 * v0 + m10 * v1 + m20 * v2 + m30;
+  newDst.m[13] = m01 * v0 + m11 * v1 + m21 * v2 + m31;
+  newDst.m[14] = m02 * v0 + m12 * v1 + m22 * v2 + m32;
+  newDst.m[15] = m03 * v0 + m13 * v1 + m23 * v2 + m33;
+
+  return newDst;
+}
+
+// Mat4 rotate
+/**
+ * Rotates the given 4-by-4 matrix around the given axis by the
+ * given angle. (same as rotate)
+ * @param m - The matrix.
+ * @param axis - The axis
+ *     about which to rotate.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATE(Mat4)
+(
+    //
+    WMATH_TYPE(Mat4) m,    // m: Mat4
+    WMATH_TYPE(Vec3) axis, // axis: Vec3
+    float angleInRadians   // angleInRadians: number
+) {
+  return WMATH_CALL(Mat4, axis_rotate)(m, axis, angleInRadians);
+}
+
+// Mat4 rotate_x
+/**
+ * Rotates the given 4-by-4 matrix around the x-axis by the given
+ * angle.
+ * @param m - The matrix.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATE_X(Mat4)
+(
+    //
+    WMATH_TYPE(Mat4) m,  // m: Mat4
+    float angleInRadians // angleInRadians: number
+) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float m10 = m.m[4];
+  float m11 = m.m[5];
+  float m12 = m.m[6];
+  float m13 = m.m[7];
+  float m20 = m.m[8];
+  float m21 = m.m[9];
+  float m22 = m.m[10];
+  float m23 = m.m[11];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[4] = c * m10 + s * m20;
+  newDst.m[5] = c * m11 + s * m21;
+  newDst.m[6] = c * m12 + s * m22;
+  newDst.m[7] = c * m13 + s * m23;
+  newDst.m[8] = c * m20 - s * m10;
+  newDst.m[9] = c * m21 - s * m11;
+  newDst.m[10] = c * m22 - s * m12;
+  newDst.m[11] = c * m23 - s * m13;
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[0] = m.m[0];
+    newDst.m[1] = m.m[1];
+    newDst.m[2] = m.m[2];
+    newDst.m[3] = m.m[3];
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+    newDst.m[15] = m.m[15];
+  }
+
+  return newDst;
+}
+
+// Mat4 rotate_y
+/**
+ * Rotates the given 4-by-4 matrix around the y-axis by the given
+ * angle.
+ * @param m - The matrix.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATE_Y(Mat4)
+(
+    //
+    WMATH_TYPE(Mat4) m,  // m: Mat4
+    float angleInRadians // angleInRadians: number
+) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  float m00 = m.m[0];
+  float m01 = m.m[1];
+  float m02 = m.m[2];
+  float m03 = m.m[3];
+  float m20 = m.m[8];
+  float m21 = m.m[9];
+  float m22 = m.m[10];
+  float m23 = m.m[11];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c * m00 - s * m20;
+  newDst.m[1] = c * m01 - s * m21;
+  newDst.m[2] = c * m02 - s * m22;
+  newDst.m[3] = c * m03 - s * m23;
+  newDst.m[8] = c * m20 + s * m00;
+  newDst.m[9] = c * m21 + s * m01;
+  newDst.m[10] = c * m22 + s * m02;
+  newDst.m[11] = c * m23 + s * m03;
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[4] = m.m[4];
+    newDst.m[5] = m.m[5];
+    newDst.m[6] = m.m[6];
+    newDst.m[7] = m.m[7];
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+    newDst.m[15] = m.m[15];
+  }
+
+  return newDst;
+}
+
+// Mat4 rotate_z
+/**
+ * Rotates the given 4-by-4 matrix around the z-axis by the given
+ * angle.
+ * @param m - The matrix.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotated matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATE_Z(Mat4)
+(
+    //
+    WMATH_TYPE(Mat4) m,  // m: Mat4
+    float angleInRadians // angleInRadians: number
+) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float m00 = m.m[0];
+  float m01 = m.m[1];
+  float m02 = m.m[2];
+  float m03 = m.m[3];
+  float m10 = m.m[4];
+  float m11 = m.m[5];
+  float m12 = m.m[6];
+  float m13 = m.m[7];
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c * m00 + s * m10;
+  newDst.m[1] = c * m01 + s * m11;
+  newDst.m[2] = c * m02 + s * m12;
+  newDst.m[3] = c * m03 + s * m13;
+  newDst.m[4] = c * m10 - s * m00;
+  newDst.m[5] = c * m11 - s * m01;
+  newDst.m[6] = c * m12 - s * m02;
+  newDst.m[7] = c * m13 - s * m03;
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[8] = m.m[8];
+    newDst.m[9] = m.m[9];
+    newDst.m[10] = m.m[10];
+    newDst.m[11] = m.m[11];
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+    newDst.m[15] = m.m[15];
+  }
+
+  return newDst;
+}
+
+// Mat4 rotation
+/**
+ * Creates a 4-by-4 matrix which rotates around the given axis by the given
+ * angle. (same as axisRotation)
+ * @param axis - The axis
+ *     about which to rotate.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns A matrix which rotates angle radians
+ *     around the axis.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATION(Mat4)
+(WMATH_TYPE(Vec3) axis, float angleInRadians) {
+  return WMATH_CALL(Mat4, axis_rotation)(axis, angleInRadians);
+}
+
+// Mat4 rotation_x
+/**
+ * Creates a 4-by-4 matrix which rotates around the x-axis by the given angle.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotation matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATION_X(Mat4)
+(float angleInRadians) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = 1;
+  newDst.m[5] = c;
+  newDst.m[6] = s;
+  newDst.m[9] = -s;
+  newDst.m[10] = c;
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
+// Mat4 rotation_y
+/**
+ * Creates a 4-by-4 matrix which rotates around the y-axis by the given angle.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotation matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATION_Y(Mat4)
+(float angleInRadians) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c;
+  newDst.m[2] = -s;
+  newDst.m[5] = 1;
+  newDst.m[8] = s;
+  newDst.m[10] = c;
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
+// Mat4 rotation_z
+/**
+ * Creates a 4-by-4 matrix which rotates around the z-axis by the given angle.
+ * @param angleInRadians - The angle by which to rotate (in radians).
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The rotation matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_ROTATION_Z(Mat4)
+(float angleInRadians) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+  float c = cosf(angleInRadians);
+  float s = sinf(angleInRadians);
+
+  newDst.m[0] = c;
+  newDst.m[1] = s;
+  newDst.m[4] = -s;
+  newDst.m[5] = c;
+  newDst.m[10] = 1;
+  newDst.m[15] = 1;
 
   return newDst;
 }
@@ -4041,12 +4824,12 @@ WMATH_CALL(Mat3, scaling)
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
   newDst.m[0] = v.v[0];
   newDst.m[1] = 1;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = v.v[1];
-  newDst.m[6] = 0;
-  newDst.m[8] = 0;
-  newDst.m[9] = 0;
+  // newDst.m[6] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = 1;
   return newDst;
 }
@@ -4065,13 +4848,13 @@ WMATH_CALL(Mat3, scaling3D)(WMATH_TYPE(Vec3) v) {
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
 
   newDst.m[0] = v.v[0];
-  newDst.m[1] = 0;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = v.v[1];
-  newDst.m[6] = 0;
-  newDst.m[8] = 0;
-  newDst.m[9] = 0;
+  // newDst.m[6] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = v.v[2];
 
   return newDst;
@@ -4141,13 +4924,13 @@ WMATH_CALL(Mat3, uniform_scaling)
 (float s) {
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
   newDst.m[0] = s;
-  newDst.m[1] = 0;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = s;
-  newDst.m[6] = 0;
-  newDst.m[8] = 0;
-  newDst.m[9] = 0;
+  // newDst.m[6] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = 1;
   return newDst;
 }
@@ -4164,16 +4947,142 @@ WMATH_CALL(Mat3, uniform_scaling_3D)
 (float s) {
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
   newDst.m[0] = s;
-  newDst.m[1] = 0;
-  newDst.m[2] = 0;
-  newDst.m[4] = 0;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[4] = 0;
   newDst.m[5] = s;
-  newDst.m[6] = 0;
-  newDst.m[8] = 0;
-  newDst.m[9] = 0;
+  // newDst.m[6] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
   newDst.m[10] = s;
   return newDst;
 }
+
+// Mat4 getScaling
+/**
+ * Returns the "3d" scaling component of the matrix
+ * @param m - The Matrix
+ * @param dst - The vector to set. If not passed a new one is created.
+ */
+WMATH_TYPE(Vec3)
+WMATH_CALL(Mat4, get_scaling)
+(WMATH_TYPE(Mat4) m) {
+  float xx = m.m[0];
+  float xy = m.m[1];
+  float xz = m.m[2];
+  float yx = m.m[4];
+  float yy = m.m[5];
+  float yz = m.m[6];
+  float zx = m.m[8];
+  float zy = m.m[9];
+  float zz = m.m[10];
+  return (WMATH_TYPE(Vec3)){
+      .v =
+          {
+              sqrtf(xx * xx + xy * xy + xz * xz), // 0
+              sqrtf(yx * yx + yy * yy + yz * yz), // 1
+              sqrtf(zx * zx + zy * zy + zz * zz)  // 2
+          } //
+  };
+}
+
+// Mat4 scaling
+/**
+ * Creates a 4-by-4 matrix which scales in each dimension by an amount given by
+ * the corresponding entry in the given vector; assumes the vector has three
+ * entries.
+ * @param v - A vector of
+ *     three entries specifying the factor by which to scale in each dimension.
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, scaling)
+(WMATH_TYPE(Vec3) v) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  newDst.m[0] = v.v[0];
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[3] = 0;
+  // newDst.m[4] = 0;
+  newDst.m[5] = v.v[1];
+  // newDst.m[6] = 0;
+  // newDst.m[7] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
+  newDst.m[10] = v.v[2];
+  // newDst.m[11] = 0;
+  // newDst.m[12] = 0;
+  // newDst.m[13] = 0;
+  // newDst.m[14] = 0;
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
+// Mat4 uniformScale
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, uniform_scale)
+(WMATH_TYPE(Mat4) m, float s) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  newDst.m[ 0] = s * m.m[0 * 4 + 0];
+  newDst.m[ 1] = s * m.m[0 * 4 + 1];
+  newDst.m[ 2] = s * m.m[0 * 4 + 2];
+  newDst.m[ 3] = s * m.m[0 * 4 + 3];
+  newDst.m[ 4] = s * m.m[1 * 4 + 0];
+  newDst.m[ 5] = s * m.m[1 * 4 + 1];
+  newDst.m[ 6] = s * m.m[1 * 4 + 2];
+  newDst.m[ 7] = s * m.m[1 * 4 + 3];
+  newDst.m[ 8] = s * m.m[2 * 4 + 0];
+  newDst.m[ 9] = s * m.m[2 * 4 + 1];
+  newDst.m[10] = s * m.m[2 * 4 + 2];
+  newDst.m[11] = s * m.m[2 * 4 + 3];
+
+  if (!WMATH_EQUALS(Mat4)(newDst, m)) {
+    newDst.m[12] = m.m[12];
+    newDst.m[13] = m.m[13];
+    newDst.m[14] = m.m[14];
+    newDst.m[15] = m.m[15];
+  }
+
+  return newDst;
+}
+
+// Mat4 uniformScaling
+/**
+ * Creates a 4-by-4 matrix which scales a uniform amount in each dimension.
+ * @param s - the amount to scale
+ * @param dst - matrix to hold result. If not passed a new one is created.
+ * @returns The scaling matrix.
+ */
+WMATH_TYPE(Mat4)
+WMATH_CALL(Mat4, uniform_scaling)
+(float s) {
+  WMATH_TYPE(Mat4) newDst = WMATH_ZERO(Mat4)();
+
+  newDst.m[0] = s;
+  // newDst.m[1] = 0;
+  // newDst.m[2] = 0;
+  // newDst.m[3] = 0;
+  // newDst.m[4] = 0;
+  newDst.m[5] = s;
+  // newDst.m[6] = 0;
+  // newDst.m[7] = 0;
+  // newDst.m[8] = 0;
+  // newDst.m[9] = 0;
+  newDst.m[10] = s;
+  // newDst.m[11] = 0;
+  // newDst.m[12] = 0;
+  // newDst.m[13] = 0;
+  // newDst.m[14] = 0;
+  newDst.m[15] = 1;
+
+  return newDst;
+}
+
+// END 3D
 
 #ifdef __cplusplus
 }
