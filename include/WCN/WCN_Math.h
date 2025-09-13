@@ -5,11 +5,11 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
 #include <emmintrin.h>
 #include <smmintrin.h> // For SSE4.1 which has better float operations
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 
@@ -1366,7 +1366,7 @@ WMATH_TYPE(Mat3)
 WMATH_NEGATE(Mat3)(WMATH_TYPE(Mat3) mat) {
   WMATH_TYPE(Mat3) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation - negate using XOR with sign bit mask
   __m128 sign_mask = _mm_set1_ps(-0.0f); // 0x80000000 for all elements
@@ -1387,7 +1387,7 @@ WMATH_NEGATE(Mat3)(WMATH_TYPE(Mat3) mat) {
   vec_res = _mm_xor_ps(vec_a, sign_mask);
   _mm_storeu_ps(&result.m[8], vec_res);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation - negate using vnegq_f32
   float32x4_t vec_a, vec_res;
 
@@ -1446,7 +1446,7 @@ WMATH_TYPE(Mat3)
 WMATH_ADD(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   WMATH_TYPE(Mat3) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation - process 4 floats at a time
   __m128 vec_a, vec_b, vec_res;
@@ -1469,7 +1469,7 @@ WMATH_ADD(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   vec_res = _mm_add_ps(vec_a, vec_b);
   _mm_storeu_ps(&result.m[8], vec_res);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation - process 4 floats at a time
   float32x4_t vec_a, vec_b, vec_res;
 
@@ -1515,7 +1515,7 @@ WMATH_TYPE(Mat3)
 WMATH_SUB(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   WMATH_TYPE(Mat3) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation
   __m128 vec_a, vec_b, vec_res;
@@ -1538,7 +1538,7 @@ WMATH_SUB(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   vec_res = _mm_sub_ps(vec_a, vec_b);
   _mm_storeu_ps(&result.m[8], vec_res);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation
   float32x4_t vec_a, vec_b, vec_res;
 
@@ -1584,7 +1584,7 @@ WMATH_TYPE(Mat3)
 WMATH_MULTIPLY_SCALAR(Mat3)(WMATH_TYPE(Mat3) a, float b) {
   WMATH_TYPE(Mat3) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation - broadcast scalar to all vector elements and multiply
   __m128 vec_a, vec_b, vec_res;
@@ -1608,7 +1608,7 @@ WMATH_MULTIPLY_SCALAR(Mat3)(WMATH_TYPE(Mat3) a, float b) {
   // Ensure unused elements remain 0
   result.m[3] = result.m[7] = result.m[11] = 0.0f;
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation
   float32x4_t vec_a, vec_b, vec_res;
   vec_b = vdupq_n_f32(b); // Broadcast scalar to 4 elements
@@ -1687,7 +1687,7 @@ WMATH_MULTIPLY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   WMATH_TYPE(Mat3) result;
   memset(&result, 0, sizeof(WMATH_TYPE(Mat3))); // Initialize all to 0
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE optimized matrix multiplication
   __m128 row, col, prod, sum;
@@ -1761,7 +1761,7 @@ WMATH_MULTIPLY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   sum = _mm_hadd_ps(sum, sum);
   result.m[10] = _mm_cvtss_f32(sum);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON optimized matrix multiplication
   float32x4_t row, col, prod, sum;
 
@@ -1974,7 +1974,7 @@ WMATH_TYPE(Mat4)
 WMATH_NEGATE(Mat4)(WMATH_TYPE(Mat4) mat) {
   WMATH_TYPE(Mat4) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation - negate using XOR with sign bit mask
   __m128 sign_mask = _mm_set1_ps(-0.0f); // 0x80000000 for all elements
@@ -1997,7 +1997,7 @@ WMATH_NEGATE(Mat4)(WMATH_TYPE(Mat4) mat) {
   vec_res = _mm_xor_ps(vec_a, sign_mask);
   _mm_storeu_ps(&result.m[12], vec_res);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation - negate using vnegq_f32
   float32x4_t vec_a, vec_res;
 
@@ -2066,7 +2066,7 @@ bool WMATH_EQUALS_APPROXIMATELY(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
 // + add - Mat4
 WMATH_TYPE(Mat4) WMATH_ADD(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   WMATH_TYPE(Mat4) result;
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   __m128 vec_a, vec_b, vec_res;
   vec_a = _mm_loadu_ps(&a.m[0]);
@@ -2085,7 +2085,7 @@ WMATH_TYPE(Mat4) WMATH_ADD(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   vec_b = _mm_loadu_ps(&b.m[12]);
   vec_res = _mm_add_ps(vec_a, vec_b);
   _mm_storeu_ps(&result.m[12], vec_res);
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   float32x4_t vec_a, vec_b, vec_res;
   vec_a = vld1q_f32(&a.m[0]);
   vec_b = vld1q_f32(&b.m[0]);
@@ -2113,7 +2113,7 @@ WMATH_TYPE(Mat4) WMATH_ADD(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
 
 WMATH_TYPE(Mat4) WMATH_SUB(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   WMATH_TYPE(Mat4) result;
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   __m128 vec_a, vec_b, vec_res;
   vec_a = _mm_loadu_ps(&a.m[0]);
@@ -2132,7 +2132,7 @@ WMATH_TYPE(Mat4) WMATH_SUB(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   vec_b = _mm_loadu_ps(&b.m[12]);
   vec_res = _mm_sub_ps(vec_a, vec_b);
   _mm_storeu_ps(&result.m[12], vec_res);
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   float32x4_t vec_a, vec_b, vec_res;
   vec_a = vld1q_f32(&a.m[0]);
   vec_b = vld1q_f32(&b.m[0]);
@@ -2162,7 +2162,7 @@ WMATH_TYPE(Mat4) WMATH_SUB(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
 
 WMATH_TYPE(Mat4) WMATH_MULTIPLY_SCALAR(Mat4)(WMATH_TYPE(Mat4) a, float b) {
   WMATH_TYPE(Mat4) result;
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   __m128 vec_a, vec_b_scalar, vec_res;
   vec_b_scalar = _mm_set1_ps(b);
@@ -2178,7 +2178,7 @@ WMATH_TYPE(Mat4) WMATH_MULTIPLY_SCALAR(Mat4)(WMATH_TYPE(Mat4) a, float b) {
   vec_a = _mm_loadu_ps(&a.m[12]);
   vec_res = _mm_mul_ps(vec_a, vec_b_scalar);
   _mm_storeu_ps(&result.m[12], vec_res);
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   float32x4_t vec_a, vec_b_scalar, vec_res;
   vec_b_scalar = vdupq_n_f32(b);
   vec_a = vld1q_f32(&a.m[0]);
@@ -2208,7 +2208,7 @@ WMATH_MULTIPLY(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   WMATH_TYPE(Mat4) result;
   memset(&result, 0, sizeof(WMATH_TYPE(Mat4))); // Initialize all to 0
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE optimized matrix multiplication
   __m128 row, col, prod, sum;
@@ -2353,7 +2353,7 @@ WMATH_MULTIPLY(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
   sum = _mm_hadd_ps(sum, sum);
   result.m[15] = _mm_cvtss_f32(sum);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON optimized matrix multiplication
   float32x4_t row, col, prod, sum;
 
@@ -2617,7 +2617,7 @@ WMATH_TYPE(Mat4)
 WMATH_TRANSPOSE(Mat4)(WMATH_TYPE(Mat4) a) {
   WMATH_TYPE(Mat4) result;
 
-#if !defined(CLAY_DISABLE_SIMD) &&                                             \
+#if !defined(WMATH_DISABLE_SIMD) &&                                             \
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
   // SSE implementation using efficient transpose algorithm
   __m128 row0 = _mm_loadu_ps(&a.m[0]);  // a00 a01 a02 a03
@@ -2641,7 +2641,7 @@ WMATH_TRANSPOSE(Mat4)(WMATH_TYPE(Mat4) a) {
   _mm_storeu_ps(&result.m[8], col2);
   _mm_storeu_ps(&result.m[12], col3);
 
-#elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
   // NEON implementation using transpose operations
   float32x4_t row0 = vld1q_f32(&a.m[0]);
   float32x4_t row1 = vld1q_f32(&a.m[4]);
