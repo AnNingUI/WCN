@@ -9,6 +9,7 @@
     (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
 #include <emmintrin.h>
 #include <smmintrin.h> // For SSE4.1 which has better float operations
+#include <immintrin.h> // For additional SSE/AVX intrinsics
 #elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
 #include <arm_neon.h>
 #endif
@@ -463,10 +464,36 @@ float WMATH_DOT(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
 // add
 WMATH_TYPE(Vec2)
 WMATH_ADD(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
-  WMATH_TYPE(Vec2) vec2;
-  vec2.v[0] = a.v[0] + b.v[0];
-  vec2.v[1] = a.v[1] + b.v[1];
-  return vec2;
+  WMATH_TYPE(Vec2) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - load as 2 floats with padding
+  __m128 vec_a = _mm_set_ps(0.0f, 0.0f, a.v[1], a.v[0]);
+  __m128 vec_b = _mm_set_ps(0.0f, 0.0f, b.v[1], b.v[0]);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_b);
+  
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - load 2 floats with padding
+  float32x4_t vec_a = {a.v[0], a.v[1], 0.0f, 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], 0.0f, 0.0f};
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] + b.v[0];
+  result.v[1] = a.v[1] + b.v[1];
+#endif
+
+  return result;
 }
 
 // addScaled
@@ -481,10 +508,36 @@ WMATH_ADD_SCALED(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b, float scale) {
 // sub
 WMATH_TYPE(Vec2)
 WMATH_SUB(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
-  WMATH_TYPE(Vec2) vec2;
-  vec2.v[0] = a.v[0] - b.v[0];
-  vec2.v[1] = a.v[1] - b.v[1];
-  return vec2;
+  WMATH_TYPE(Vec2) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_set_ps(0.0f, 0.0f, a.v[1], a.v[0]);
+  __m128 vec_b = _mm_set_ps(0.0f, 0.0f, b.v[1], b.v[0]);
+  __m128 vec_res = _mm_sub_ps(vec_a, vec_b);
+  
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], 0.0f, 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], 0.0f, 0.0f};
+  float32x4_t vec_res = vsubq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] - b.v[0];
+  result.v[1] = a.v[1] - b.v[1];
+#endif
+
+  return result;
 }
 
 // angle
@@ -546,19 +599,71 @@ WMATH_FMIN(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
 // multiplyScalar
 WMATH_TYPE(Vec2)
 WMATH_MULTIPLY_SCALAR(Vec2)(WMATH_TYPE(Vec2) a, float scalar) {
-  WMATH_TYPE(Vec2) vec2;
-  vec2.v[0] = a.v[0] * scalar;
-  vec2.v[1] = a.v[1] * scalar;
-  return vec2;
+  WMATH_TYPE(Vec2) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_set_ps(0.0f, 0.0f, a.v[1], a.v[0]);
+  __m128 vec_scalar = _mm_set1_ps(scalar);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_scalar);
+  
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], 0.0f, 0.0f};
+  float32x4_t vec_scalar = vdupq_n_f32(scalar);
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_scalar);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] * scalar;
+  result.v[1] = a.v[1] * scalar;
+#endif
+
+  return result;
 }
 
 // multiply
 WMATH_TYPE(Vec2)
 WMATH_MULTIPLY(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
-  WMATH_TYPE(Vec2) vec2;
-  vec2.v[0] = a.v[0] * b.v[0];
-  vec2.v[1] = a.v[1] * b.v[1];
-  return vec2;
+  WMATH_TYPE(Vec2) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_set_ps(0.0f, 0.0f, a.v[1], a.v[0]);
+  __m128 vec_b = _mm_set_ps(0.0f, 0.0f, b.v[1], b.v[0]);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_b);
+  
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], 0.0f, 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], 0.0f, 0.0f};
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] * b.v[0];
+  result.v[1] = a.v[1] * b.v[1];
+#endif
+
+  return result;
 }
 
 // divScalar
@@ -633,10 +738,35 @@ float WMATH_DISTANCE_SQ(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
 // negate
 WMATH_TYPE(Vec2)
 WMATH_NEGATE(Vec2)(WMATH_TYPE(Vec2) a) {
-  WMATH_TYPE(Vec2) vec2;
-  vec2.v[0] = -a.v[0];
-  vec2.v[1] = -a.v[1];
-  return vec2;
+  WMATH_TYPE(Vec2) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - negate using XOR with sign bit mask
+  __m128 vec_a = _mm_set_ps(0.0f, 0.0f, a.v[1], a.v[0]);
+  __m128 sign_mask = _mm_set1_ps(-0.0f); // 0x80000000 for all elements
+  __m128 vec_res = _mm_xor_ps(vec_a, sign_mask);
+  
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - negate using vnegq_f32
+  float32x4_t vec_a = {a.v[0], a.v[1], 0.0f, 0.0f};
+  float32x4_t vec_res = vnegq_f32(vec_a);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+
+#else
+  // Scalar fallback
+  result.v[0] = -a.v[0];
+  result.v[1] = -a.v[1];
+#endif
+
+  return result;
 }
 
 // random
@@ -737,45 +867,130 @@ WMATH_ZERO(Vec3)() { return (WMATH_TYPE(Vec3)){.v = {0.0f, 0.0f, 0.0f}}; }
 // ceil
 WMATH_TYPE(Vec3)
 WMATH_CEIL(Vec3)(WMATH_TYPE(Vec3) a) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = ceilf(a.v[0]);
-  vec3.v[1] = ceilf(a.v[1]);
-  vec3.v[2] = ceilf(a.v[2]);
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+  // Scalar implementation for better compatibility
+  result.v[0] = ceilf(a.v[0]);
+  result.v[1] = ceilf(a.v[1]);
+  result.v[2] = ceilf(a.v[2]);
+  return result;
 }
 
 // floor
 WMATH_TYPE(Vec3)
 WMATH_FLOOR(Vec3)(WMATH_TYPE(Vec3) a) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = floorf(a.v[0]);
-  vec3.v[1] = floorf(a.v[1]);
-  vec3.v[2] = floorf(a.v[2]);
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+  // Scalar implementation for better compatibility
+  result.v[0] = floorf(a.v[0]);
+  result.v[1] = floorf(a.v[1]);
+  result.v[2] = floorf(a.v[2]);
+  return result;
 }
 
 // round
 WMATH_TYPE(Vec3)
 WMATH_ROUND(Vec3)(WMATH_TYPE(Vec3) a) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = roundf(a.v[0]);
-  vec3.v[1] = roundf(a.v[1]);
-  vec3.v[2] = roundf(a.v[2]);
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+  // Scalar implementation for better compatibility
+  result.v[0] = roundf(a.v[0]);
+  result.v[1] = roundf(a.v[1]);
+  result.v[2] = roundf(a.v[2]);
+  return result;
 }
 
 // dot
 float WMATH_DOT(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]);
+  __m128 vec_mul = _mm_mul_ps(vec_a, vec_b);
+  
+  // Horizontal add to get dot product
+  __m128 temp = _mm_hadd_ps(vec_mul, vec_mul);
+  temp = _mm_hadd_ps(temp, temp);
+  return _mm_cvtss_f32(temp);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  float32x4_t vec_mul = vmulq_f32(vec_a, vec_b);
+  
+  // Horizontal add to get dot product
+  float32x2_t low = vget_low_f32(vec_mul);
+  float32x2_t high = vget_high_f32(vec_mul);
+  float32x2_t sum = vadd_f32(low, high);
+  sum = vpadd_f32(sum, sum);
+  return vget_lane_f32(sum, 0);
+
+#else
+  // Scalar fallback
   return a.v[0] * b.v[0] + a.v[1] * b.v[1] + a.v[2] * b.v[2];
+#endif
 }
 
 // cross
 WMATH_TYPE(Vec3)
 WMATH_CROSS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  // Cross product: c = a x b = (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]); // [a.x, a.y, a.z, 0]
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]); // [b.x, b.y, b.z, 0]
+  
+  // Create shuffled vectors for cross product computation
+  // a_yzx = [a.y, a.z, a.x, 0]
+  __m128 a_yzx = _mm_set_ps(0.0f, a.v[0], a.v[2], a.v[1]);
+  // b_zxy = [b.z, b.x, b.y, 0]  
+  __m128 b_zxy = _mm_set_ps(0.0f, b.v[1], b.v[0], b.v[2]);
+  // a_zxy = [a.z, a.x, a.y, 0]
+  __m128 a_zxy = _mm_set_ps(0.0f, a.v[1], a.v[0], a.v[2]);
+  // b_yzx = [b.y, b.z, b.x, 0]
+  __m128 b_yzx = _mm_set_ps(0.0f, b.v[0], b.v[2], b.v[1]);
+  
+  // Cross product computation
+  __m128 mul1 = _mm_mul_ps(a_yzx, b_zxy);
+  __m128 mul2 = _mm_mul_ps(a_zxy, b_yzx);
+  __m128 vec_res = _mm_sub_ps(mul1, mul2);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  
+  // Create shuffled vectors for cross product computation
+  float32x4_t a_yzx = {a.v[1], a.v[2], a.v[0], 0.0f};
+  float32x4_t b_zxy = {b.v[2], b.v[0], b.v[1], 0.0f};
+  float32x4_t a_zxy = {a.v[2], a.v[0], a.v[1], 0.0f};
+  float32x4_t b_yzx = {b.v[1], b.v[2], b.v[0], 0.0f};
+  
+  // Cross product computation
+  float32x4_t mul1 = vmulq_f32(a_yzx, b_zxy);
+  float32x4_t mul2 = vmulq_f32(a_zxy, b_yzx);
+  float32x4_t vec_res = vsubq_f32(mul1, mul2);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[1] * b.v[2] - a.v[2] * b.v[1];
   result.v[1] = a.v[2] * b.v[0] - a.v[0] * b.v[2];
   result.v[2] = a.v[0] * b.v[1] - a.v[1] * b.v[0];
+#endif
+
   return result;
 }
 
@@ -793,6 +1008,63 @@ float WMATH_LENGTH_SQ(Vec3)(WMATH_TYPE(Vec3) v) {
 WMATH_TYPE(Vec3)
 WMATH_NORMALIZE(Vec3)(WMATH_TYPE(Vec3) v) {
   WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_v = _mm_loadu_ps(&v.v[0]);
+  __m128 vec_squared = _mm_mul_ps(vec_v, vec_v);
+  
+  // Horizontal add to get length squared
+  __m128 temp = _mm_hadd_ps(vec_squared, vec_squared);
+  temp = _mm_hadd_ps(temp, temp);
+  float len_sq = _mm_cvtss_f32(temp);
+  
+  if (len_sq > 0.00001f) {
+    float len = sqrtf(len_sq);
+    __m128 vec_len = _mm_set1_ps(len);
+    __m128 vec_res = _mm_div_ps(vec_v, vec_len);
+    
+    // Extract results using array access
+    float temp[4];
+    _mm_storeu_ps(temp, vec_res);
+    result.v[0] = temp[0];
+    result.v[1] = temp[1];
+    result.v[2] = temp[2];
+  } else {
+    result.v[0] = 0.0f;
+    result.v[1] = 0.0f;
+    result.v[2] = 0.0f;
+  }
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_v = {v.v[0], v.v[1], v.v[2], 0.0f};
+  float32x4_t vec_squared = vmulq_f32(vec_v, vec_v);
+  
+  // Horizontal add to get length squared
+  float32x2_t low = vget_low_f32(vec_squared);
+  float32x2_t high = vget_high_f32(vec_squared);
+  float32x2_t sum = vadd_f32(low, high);
+  sum = vpadd_f32(sum, sum);
+  float len_sq = vget_lane_f32(sum, 0);
+  
+  if (len_sq > 0.00001f) {
+    float len = sqrtf(len_sq);
+    float32x4_t vec_len = vdupq_n_f32(len);
+    float32x4_t vec_res = vdivq_f32(vec_v, vec_len);
+    
+    result.v[0] = vgetq_lane_f32(vec_res, 0);
+    result.v[1] = vgetq_lane_f32(vec_res, 1);
+    result.v[2] = vgetq_lane_f32(vec_res, 2);
+  } else {
+    result.v[0] = 0.0f;
+    result.v[1] = 0.0f;
+    result.v[2] = 0.0f;
+  }
+
+#else
+  // Scalar fallback
   float len = sqrtf(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
   if (len > 0.00001f) {
     result.v[0] = v.v[0] / len;
@@ -803,44 +1075,168 @@ WMATH_NORMALIZE(Vec3)(WMATH_TYPE(Vec3) v) {
     result.v[1] = 0.0f;
     result.v[2] = 0.0f;
   }
+#endif
+
   return result;
 }
 
 // clamp
 WMATH_TYPE(Vec3)
 WMATH_CLAMP(Vec3)(WMATH_TYPE(Vec3) a, float min_val, float max_val) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = fminf(fmaxf(a.v[0], min_val), max_val);
-  vec3.v[1] = fminf(fmaxf(a.v[1], min_val), max_val);
-  vec3.v[2] = fminf(fmaxf(a.v[2], min_val), max_val);
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_min = _mm_set1_ps(min_val);
+  __m128 vec_max = _mm_set1_ps(max_val);
+  __m128 vec_res = _mm_min_ps(_mm_max_ps(vec_a, vec_min), vec_max);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_min = vdupq_n_f32(min_val);
+  float32x4_t vec_max = vdupq_n_f32(max_val);
+  float32x4_t vec_res = vminq_f32(vmaxq_f32(vec_a, vec_min), vec_max);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = fminf(fmaxf(a.v[0], min_val), max_val);
+  result.v[1] = fminf(fmaxf(a.v[1], min_val), max_val);
+  result.v[2] = fminf(fmaxf(a.v[2], min_val), max_val);
+#endif
+
+  return result;
 }
 
 // +
 WMATH_TYPE(Vec3) WMATH_ADD(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = a.v[0] + b.v[0];
-  vec3.v[1] = a.v[1] + b.v[1];
-  vec3.v[2] = a.v[2] + b.v[2];
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - load as 4 floats, process, store back 3
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_b);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - load 3 floats with padding
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] + b.v[0];
+  result.v[1] = a.v[1] + b.v[1];
+  result.v[2] = a.v[2] + b.v[2];
+#endif
+
+  return result;
 }
 
 WMATH_TYPE(Vec3)
 WMATH_ADD_SCALED(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float scalar) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = a.v[0] + b.v[0] * scalar;
-  vec3.v[1] = a.v[1] + b.v[1] * scalar;
-  vec3.v[2] = a.v[2] + b.v[2] * scalar;
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]);
+  __m128 vec_scalar = _mm_set1_ps(scalar);
+  __m128 vec_scaled = _mm_mul_ps(vec_b, vec_scalar);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_scaled);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  float32x4_t vec_scalar = vdupq_n_f32(scalar);
+  float32x4_t vec_scaled = vmulq_f32(vec_b, vec_scalar);
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_scaled);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] + b.v[0] * scalar;
+  result.v[1] = a.v[1] + b.v[1] * scalar;
+  result.v[2] = a.v[2] + b.v[2] * scalar;
+#endif
+
+  return result;
 }
 
 // -
 WMATH_TYPE(Vec3) WMATH_SUB(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = a.v[0] - b.v[0];
-  vec3.v[1] = a.v[1] - b.v[1];
-  vec3.v[2] = a.v[2] - b.v[2];
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]);
+  __m128 vec_res = _mm_sub_ps(vec_a, vec_b);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  float32x4_t vec_res = vsubq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] - b.v[0];
+  result.v[1] = a.v[1] - b.v[1];
+  result.v[2] = a.v[2] - b.v[2];
+#endif
+
+  return result;
 }
 
 // angle
@@ -906,19 +1302,78 @@ WMATH_FMIN(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 
 // *
 WMATH_TYPE(Vec3) WMATH_MULTIPLY(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = a.v[0] * b.v[0];
-  vec3.v[1] = a.v[1] * b.v[1];
-  vec3.v[2] = a.v[2] * b.v[2];
-  return vec3;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_b = _mm_loadu_ps(&b.v[0]);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_b);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_b = {b.v[0], b.v[1], b.v[2], 0.0f};
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_b);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] * b.v[0];
+  result.v[1] = a.v[1] * b.v[1];
+  result.v[2] = a.v[2] * b.v[2];
+#endif
+
+  return result;
 }
 
 // .*
 WMATH_TYPE(Vec3) WMATH_MULTIPLY_SCALAR(Vec3)(WMATH_TYPE(Vec3) a, float scalar) {
-  WMATH_TYPE(Vec3) vec3;
-  vec3.v[0] = a.v[0] * scalar;
-  vec3.v[1] = a.v[1] * scalar;
-  vec3.v[2] = a.v[2] * scalar;
+  WMATH_TYPE(Vec3) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(&a.v[0]);
+  __m128 vec_scalar = _mm_set1_ps(scalar);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_scalar);
+  
+  // Extract results using array access
+  float temp[4];
+  _mm_storeu_ps(temp, vec_res);
+  result.v[0] = temp[0];
+  result.v[1] = temp[1];
+  result.v[2] = temp[2];
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = {a.v[0], a.v[1], a.v[2], 0.0f};
+  float32x4_t vec_scalar = vdupq_n_f32(scalar);
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_scalar);
+  
+  result.v[0] = vgetq_lane_f32(vec_res, 0);
+  result.v[1] = vgetq_lane_f32(vec_res, 1);
+  result.v[2] = vgetq_lane_f32(vec_res, 2);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] * scalar;
+  result.v[1] = a.v[1] * scalar;
+  result.v[2] = a.v[2] * scalar;
+#endif
+
+  return result;
 }
 
 // div
@@ -1053,6 +1508,7 @@ WMATH_TYPE(Vec4) WMATH_IDENTITY(Vec4)() {
 
 WMATH_TYPE(Vec4) WMATH_CEIL(Vec4)(WMATH_TYPE(Vec4) a) {
   WMATH_TYPE(Vec4) result;
+  // Scalar implementation for better compatibility
   result.v[0] = ceilf(a.v[0]);
   result.v[1] = ceilf(a.v[1]);
   result.v[2] = ceilf(a.v[2]);
@@ -1062,6 +1518,7 @@ WMATH_TYPE(Vec4) WMATH_CEIL(Vec4)(WMATH_TYPE(Vec4) a) {
 
 WMATH_TYPE(Vec4) WMATH_FLOOR(Vec4)(WMATH_TYPE(Vec4) a) {
   WMATH_TYPE(Vec4) result;
+  // Scalar implementation for better compatibility
   result.v[0] = floorf(a.v[0]);
   result.v[1] = floorf(a.v[1]);
   result.v[2] = floorf(a.v[2]);
@@ -1071,6 +1528,7 @@ WMATH_TYPE(Vec4) WMATH_FLOOR(Vec4)(WMATH_TYPE(Vec4) a) {
 
 WMATH_TYPE(Vec4) WMATH_ROUND(Vec4)(WMATH_TYPE(Vec4) a) {
   WMATH_TYPE(Vec4) result;
+  // Scalar implementation for better compatibility
   result.v[0] = roundf(a.v[0]);
   result.v[1] = roundf(a.v[1]);
   result.v[2] = roundf(a.v[2]);
@@ -1081,38 +1539,124 @@ WMATH_TYPE(Vec4) WMATH_ROUND(Vec4)(WMATH_TYPE(Vec4) a) {
 WMATH_TYPE(Vec4)
 WMATH_CLAMP(Vec4)(WMATH_TYPE(Vec4) a, float min_val, float max_val) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_min = _mm_set1_ps(min_val);
+  __m128 vec_max = _mm_set1_ps(max_val);
+  __m128 vec_res = _mm_min_ps(_mm_max_ps(vec_a, vec_min), vec_max);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_min = vdupq_n_f32(min_val);
+  float32x4_t vec_max = vdupq_n_f32(max_val);
+  float32x4_t vec_res = vminq_f32(vmaxq_f32(vec_a, vec_min), vec_max);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = fminf(fmaxf(a.v[0], min_val), max_val);
   result.v[1] = fminf(fmaxf(a.v[1], min_val), max_val);
   result.v[2] = fminf(fmaxf(a.v[2], min_val), max_val);
   result.v[3] = fminf(fmaxf(a.v[3], min_val), max_val);
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_ADD(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] + b.v[0];
   result.v[1] = a.v[1] + b.v[1];
   result.v[2] = a.v[2] + b.v[2];
   result.v[3] = a.v[3] + b.v[3];
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4)
 WMATH_ADD_SCALED(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b, float scale) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_scale = _mm_set1_ps(scale);
+  __m128 vec_scaled = _mm_mul_ps(vec_b, vec_scale);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_scaled);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_scale = vdupq_n_f32(scale);
+  float32x4_t vec_scaled = vmulq_f32(vec_b, vec_scale);
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_scaled);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] + b.v[0] * scale;
   result.v[1] = a.v[1] + b.v[1] * scale;
   result.v[2] = a.v[2] + b.v[2] * scale;
   result.v[3] = a.v[3] + b.v[3] * scale;
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_SUB(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_sub_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vsubq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] - b.v[0];
   result.v[1] = a.v[1] - b.v[1];
   result.v[2] = a.v[2] - b.v[2];
   result.v[3] = a.v[3] - b.v[3];
+#endif
+
   return result;
 }
 
@@ -1149,46 +1693,146 @@ WMATH_LERP_V(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b, WMATH_TYPE(Vec4) t) {
 
 WMATH_TYPE(Vec4) WMATH_FMAX(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_max_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vmaxq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = fmaxf(a.v[0], b.v[0]);
   result.v[1] = fmaxf(a.v[1], b.v[1]);
   result.v[2] = fmaxf(a.v[2], b.v[2]);
   result.v[3] = fmaxf(a.v[3], b.v[3]);
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_FMIN(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_min_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vminq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = fminf(a.v[0], b.v[0]);
   result.v[1] = fminf(a.v[1], b.v[1]);
   result.v[2] = fminf(a.v[2], b.v[2]);
   result.v[3] = fminf(a.v[3], b.v[3]);
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_MULTIPLY(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] * b.v[0];
   result.v[1] = a.v[1] * b.v[1];
   result.v[2] = a.v[2] * b.v[2];
   result.v[3] = a.v[3] * b.v[3];
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_MULTIPLY_SCALAR(Vec4)(WMATH_TYPE(Vec4) a, float scalar) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_scalar = _mm_set1_ps(scalar);
+  __m128 vec_res = _mm_mul_ps(vec_a, vec_scalar);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_scalar = vdupq_n_f32(scalar);
+  float32x4_t vec_res = vmulq_f32(vec_a, vec_scalar);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] * scalar;
   result.v[1] = a.v[1] * scalar;
   result.v[2] = a.v[2] * scalar;
   result.v[3] = a.v[3] * scalar;
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_DIV(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_div_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vdivq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] / b.v[0];
   result.v[1] = a.v[1] / b.v[1];
   result.v[2] = a.v[2] / b.v[2];
   result.v[3] = a.v[3] / b.v[3];
+#endif
+
   return result;
 }
 
@@ -1196,25 +1840,94 @@ WMATH_TYPE(Vec4) WMATH_DIV_SCALAR(Vec4)(WMATH_TYPE(Vec4) a, float scalar) {
   if (scalar == 0) {
     return WMATH_ZERO(Vec4)();
   }
+
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_scalar = _mm_set1_ps(scalar);
+  __m128 vec_res = _mm_div_ps(vec_a, vec_scalar);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_scalar = vdupq_n_f32(scalar);
+  float32x4_t vec_res = vdivq_f32(vec_a, vec_scalar);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = a.v[0] / scalar;
   result.v[1] = a.v[1] / scalar;
   result.v[2] = a.v[2] / scalar;
   result.v[3] = a.v[3] / scalar;
+#endif
+
   return result;
 }
 
 WMATH_TYPE(Vec4) WMATH_INVERSE(Vec4)(WMATH_TYPE(Vec4) a) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_one = _mm_set1_ps(1.0f);
+  __m128 vec_res = _mm_div_ps(vec_one, vec_a);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_one = vdupq_n_f32(1.0f);
+  float32x4_t vec_res = vdivq_f32(vec_one, vec_a);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = 1.0f / a.v[0];
   result.v[1] = 1.0f / a.v[1];
   result.v[2] = 1.0f / a.v[2];
   result.v[3] = 1.0f / a.v[3];
+#endif
+
   return result;
 }
 
 float WMATH_DOT(Vec4)(WMATH_TYPE(Vec4) a, WMATH_TYPE(Vec4) b) {
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - multiply and horizontal add all 4 elements
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_mul = _mm_mul_ps(vec_a, vec_b);
+  
+  // Horizontal add to get dot product
+  __m128 temp = _mm_hadd_ps(vec_mul, vec_mul);
+  temp = _mm_hadd_ps(temp, temp);
+  return _mm_cvtss_f32(temp);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - multiply and horizontal add all 4 elements
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_mul = vmulq_f32(vec_a, vec_b);
+  
+  // Horizontal add to get dot product
+  float32x2_t low = vget_low_f32(vec_mul);
+  float32x2_t high = vget_high_f32(vec_mul);
+  float32x2_t sum = vadd_f32(low, high);
+  sum = vpadd_f32(sum, sum);
+  return vget_lane_f32(sum, 0);
+
+#else
+  // Scalar fallback
   return a.v[0] * b.v[0] + a.v[1] * b.v[1] + a.v[2] * b.v[2] + a.v[3] * b.v[3];
+#endif
 }
 
 float WMATH_LENGTH_SQ(Vec4)(WMATH_TYPE(Vec4) v) {
@@ -1255,10 +1968,29 @@ WMATH_TYPE(Vec4) WMATH_NORMALIZE(Vec4)(WMATH_TYPE(Vec4) v) {
 
 WMATH_TYPE(Vec4) WMATH_NEGATE(Vec4)(WMATH_TYPE(Vec4) a) {
   WMATH_TYPE(Vec4) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - negate using XOR with sign bit mask
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 sign_mask = _mm_set1_ps(-0.0f); // 0x80000000 for all elements
+  __m128 vec_res = _mm_xor_ps(vec_a, sign_mask);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - negate using vnegq_f32
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_res = vnegq_f32(vec_a);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
   result.v[0] = -a.v[0];
   result.v[1] = -a.v[1];
   result.v[2] = -a.v[2];
   result.v[3] = -a.v[3];
+#endif
+
   return result;
 }
 
@@ -2928,23 +3660,75 @@ float WMATH_LENGTH_SQ(Quat)(WMATH_TYPE(Quat) a) {
 
 WMATH_TYPE(Quat)
 WMATH_NORMALIZE(Quat)(WMATH_TYPE(Quat) a) {
+  WMATH_TYPE(Quat) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_squared = _mm_mul_ps(vec_a, vec_a);
+  
+  // Horizontal add to get length squared
+  __m128 temp = _mm_hadd_ps(vec_squared, vec_squared);
+  temp = _mm_hadd_ps(temp, temp);
+  float len_sq = _mm_cvtss_f32(temp);
+  
+  if (len_sq > 0.00001f) {
+    float len = sqrtf(len_sq);
+    __m128 vec_len = _mm_set1_ps(len);
+    __m128 vec_res = _mm_div_ps(vec_a, vec_len);
+    _mm_storeu_ps(result.v, vec_res);
+  } else {
+    // Return identity quaternion
+    result.v[0] = 0.0f;
+    result.v[1] = 0.0f;
+    result.v[2] = 0.0f;
+    result.v[3] = 1.0f;
+  }
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_squared = vmulq_f32(vec_a, vec_a);
+  
+  // Horizontal add to get length squared
+  float32x2_t low = vget_low_f32(vec_squared);
+  float32x2_t high = vget_high_f32(vec_squared);
+  float32x2_t sum = vadd_f32(low, high);
+  sum = vpadd_f32(sum, sum);
+  float len_sq = vget_lane_f32(sum, 0);
+  
+  if (len_sq > 0.00001f) {
+    float len = sqrtf(len_sq);
+    float32x4_t vec_len = vdupq_n_f32(len);
+    float32x4_t vec_res = vdivq_f32(vec_a, vec_len);
+    vst1q_f32(result.v, vec_res);
+  } else {
+    // Return identity quaternion
+    result.v[0] = 0.0f;
+    result.v[1] = 0.0f;
+    result.v[2] = 0.0f;
+    result.v[3] = 1.0f;
+  }
+
+#else
+  // Scalar fallback
   float len = sqrtf(a.v[0] * a.v[0] + a.v[1] * a.v[1] + a.v[2] * a.v[2] +
                     a.v[3] * a.v[3]);
   if (len > 0.00001f) {
-    return WMATH_CREATE(Quat)((WMATH_CREATE_TYPE(Quat)){
-        .v_x = a.v[0] / len,
-        .v_y = a.v[1] / len,
-        .v_z = a.v[2] / len,
-        .v_w = a.v[3] / len,
-    });
+    result.v[0] = a.v[0] / len;
+    result.v[1] = a.v[1] / len;
+    result.v[2] = a.v[2] / len;
+    result.v[3] = a.v[3] / len;
   } else {
-    return WMATH_CREATE(Quat)((WMATH_CREATE_TYPE(Quat)){
-        .v_x = 0.0f,
-        .v_y = 0.0f,
-        .v_z = 0.0f,
-        .v_w = 1.0f,
-    });
+    result.v[0] = 0.0f;
+    result.v[1] = 0.0f;
+    result.v[2] = 0.0f;
+    result.v[3] = 1.0f;
   }
+#endif
+
+  return result;
 }
 
 // ~=
@@ -3007,23 +3791,63 @@ WMATH_MULTIPLY_SCALAR(Quat)(WMATH_TYPE(Quat) a, float b) {
 // -
 WMATH_TYPE(Quat)
 WMATH_SUB(Quat)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b) {
-  WMATH_TYPE(Quat) r;
-  r.v[0] = a.v[0] - b.v[0];
-  r.v[1] = a.v[1] - b.v[1];
-  r.v[2] = a.v[2] - b.v[2];
-  r.v[3] = a.v[3] - b.v[3];
-  return r;
+  WMATH_TYPE(Quat) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_sub_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vsubq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] - b.v[0];
+  result.v[1] = a.v[1] - b.v[1];
+  result.v[2] = a.v[2] - b.v[2];
+  result.v[3] = a.v[3] - b.v[3];
+#endif
+
+  return result;
 }
 
 // +
 WMATH_TYPE(Quat)
 WMATH_ADD(Quat)(WMATH_TYPE(Quat) a, WMATH_TYPE(Quat) b) {
-  WMATH_TYPE(Quat) r;
-  r.v[0] = a.v[0] + b.v[0];
-  r.v[1] = a.v[1] + b.v[1];
-  r.v[2] = a.v[2] + b.v[2];
-  r.v[3] = a.v[3] + b.v[3];
-  return r;
+  WMATH_TYPE(Quat) result;
+
+#if !defined(WMATH_DISABLE_SIMD) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+  // SSE implementation - process all 4 elements at once
+  __m128 vec_a = _mm_loadu_ps(a.v);
+  __m128 vec_b = _mm_loadu_ps(b.v);
+  __m128 vec_res = _mm_add_ps(vec_a, vec_b);
+  _mm_storeu_ps(result.v, vec_res);
+
+#elif !defined(WMATH_DISABLE_SIMD) && defined(__aarch64__)
+  // NEON implementation - process all 4 elements at once
+  float32x4_t vec_a = vld1q_f32(a.v);
+  float32x4_t vec_b = vld1q_f32(b.v);
+  float32x4_t vec_res = vaddq_f32(vec_a, vec_b);
+  vst1q_f32(result.v, vec_res);
+
+#else
+  // Scalar fallback
+  result.v[0] = a.v[0] + b.v[0];
+  result.v[1] = a.v[1] + b.v[1];
+  result.v[2] = a.v[2] + b.v[2];
+  result.v[3] = a.v[3] + b.v[3];
+#endif
+
+  return result;
 }
 
 // inverse
