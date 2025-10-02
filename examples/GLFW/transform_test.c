@@ -1,10 +1,9 @@
 #include <GLFW/glfw3.h>
 #include <math.h>
 #include <webgpu/webgpu.h>
-#include <webgpu/wgpu.h>
 
 // 平台相关的头文件包含
-#ifdef _WIN32
+#if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <windows.h>
@@ -52,7 +51,7 @@ static void request_adapter_callback(WGPURequestAdapterStatus status,
 }
 
 // 请求设备回调
-static void request_device_callback(WGPURequestDeviceStatus status,
+static void request_device_callback(const WGPURequestDeviceStatus status,
                                     WGPUDevice device, WGPUStringView message,
                                     void *userdata1, void *userdata2) {
   if (status == WGPURequestDeviceStatus_Success) {
@@ -229,7 +228,7 @@ void demonstrate_all_rendering_functions(WCN_Canvas *canvas, int width,
   // 12. 填充弧线（圆形扇区）
   wcn_begin_path(canvas);
   wcn_move_to(canvas, 580, 175);                     // 移动到圆心
-  wcn_arc(canvas, 580, 175, 25, 0, 3.14159f, false); // 半圆弧
+  wcn_arc(canvas, 580, 175, 25, 0, 3.14159f, false); // 半 圆弧
   wcn_close_path(canvas);
 
   WCN_Color pink = {1.0f, 0.7f, 0.8f, 1.0f};
@@ -331,23 +330,23 @@ void demonstrate_all_rendering_functions(WCN_Canvas *canvas, int width,
 
   for (int i = 1; i <= 5; i++) {
     wcn_set_line_width(canvas, (float)i);
-    wcn_stroke_rect(canvas, 400 + i * 25, 320, 20, 20);
+    wcn_stroke_rect(canvas, (float)400 + (float)i * 25, 320, 20, 20);
   }
   WCN_DEBUG_PRINT("28. wcn_set_line_width() - 不同线宽演示（1-5px）");
 
   // 20. 不同颜色演示
-  WCN_Color colors[] = {
+
+  for (int i = 0; i < 6; i++) {
+      WCN_Color colors[] = {
       {1.0f, 0.0f, 0.0f, 1.0f}, // 红
       {0.0f, 1.0f, 0.0f, 1.0f}, // 绿
       {0.0f, 0.0f, 1.0f, 1.0f}, // 蓝
       {1.0f, 1.0f, 0.0f, 1.0f}, // 黄
       {1.0f, 0.0f, 1.0f, 1.0f}, // 洋红
       {0.0f, 1.0f, 1.0f, 1.0f}  // 青
-  };
-
-  for (int i = 0; i < 6; i++) {
+    };
     wcn_set_fill_color(canvas, colors[i]);
-    wcn_fill_rect(canvas, 50 + i * 35, 380, 30, 30);
+    wcn_fill_rect(canvas, (float)50 + (float)i * 35, 380, 30, 30);
   }
   WCN_DEBUG_PRINT("29. wcn_set_fill_color() - 彩虹色矩形演示");
   WCN_DEBUG_PRINT("30. wcn_set_stroke_color() - 描边颜色设置");
@@ -380,11 +379,11 @@ void demonstrate_all_rendering_functions(WCN_Canvas *canvas, int width,
 
   // 22. 星形路径
   wcn_begin_path(canvas);
-  float star_x = 500, star_y = 430;
   float outer_radius = 25, inner_radius = 12;
 
   for (int i = 0; i < 10; i++) {
-    float angle = i * 3.14159f / 5;
+    float star_y = 430;float star_x = 500;
+    float angle = (float)i * 3.14159f / 5;
     float radius = (i % 2 == 0) ? outer_radius : inner_radius;
     float x = star_x + radius * cosf(angle - 3.14159f / 2);
     float y = star_y + radius * sinf(angle - 3.14159f / 2);
@@ -437,7 +436,8 @@ int main() {
   }
 
   // 初始化 WebGPU
-  WGPUInstance instance = wgpuCreateInstance(NULL);
+  const WGPUInstanceDescriptor instanceDesc = {};
+  WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
   if (!instance) {
     WCN_DEBUG_PRINT("Failed to create WebGPU instance");
     glfwTerminate();

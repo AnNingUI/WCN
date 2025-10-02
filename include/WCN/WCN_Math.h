@@ -6,13 +6,12 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // Config
-static float EPSILON;
+extern float EPSILON;
 float wcn_math_set_epsilon(float epsilon);
 float wcn_math_get_epsilon();
 #define WCN_GET_EPSILON() wcn_math_get_epsilon()
@@ -205,6 +204,13 @@ float wcn_math_get_epsilon();
 
 #define T$(WCN_Math_TYPE) WMATH_TYPE(WCN_Math_TYPE)
 
+#define INIT$(WCN_Math_TYPE, ...)               \
+    WMATH_CREATE(WCN_Math_TYPE)(                \
+       (WMATH_CREATE_TYPE(WCN_Math_TYPE)){      \
+          __VA_ARGS__                           \
+        }                                       \
+    )
+
 // BEGIN Utils
 
 #define WMATH_DEG2RED(degrees) (degrees * 0.017453292519943295f)
@@ -214,41 +220,41 @@ float wcn_math_get_epsilon();
 // #define WMATH_NUM_LERP(a, b, t) ((a) + ((b) - (a)) * (t))
 // Impl of lerp for float, double, int, and float_t
 // ==================================================================
-int WMATH_LERP(int)(int a, int b, float t) {
+static  int WMATH_LERP(int)(const int a, const int b, const float t) {
   return (int)(a + ((b) - (a)) * t);
 }
-float WMATH_LERP(float)(float a, float b, float t) {
+static  float WMATH_LERP(float)(const float a, const float b, const float t) {
   return (a + ((b) - (a)) * t);
 }
-double WMATH_LERP(double)(double a, double b, double t) {
-  return (a + ((b) - (a)) * t);
-}
-
-float_t WMATH_LERP(float_t)(float_t a, float_t b, float_t t) {
+static  double WMATH_LERP(double)(const double a, const double b, const double t) {
   return (a + ((b) - (a)) * t);
 }
 
-double_t WMATH_LERP(double_t)(double_t a, double_t b, double_t t) {
+static  float_t WMATH_LERP(float_t)(const float_t a, const float_t b, const float_t t) {
+  return (a + ((b) - (a)) * t);
+}
+
+static  double_t WMATH_LERP(double_t)(const double_t a, const double_t b, const double_t t) {
   return (a + ((b) - (a)) * t);
 }
 // ==================================================================
 
 // Impl of random for float, double, int, and float_t
 // ==================================================================
-int WMATH_RANDOM(int)() { return rand(); }
+static inline int WMATH_RANDOM(int)() { return rand(); }
 
-float WMATH_RANDOM(float)() { return ((float)rand()) / RAND_MAX; }
+static inline float WMATH_RANDOM(float)() { return ((float)rand()) / RAND_MAX; }
 
-double WMATH_RANDOM(double)() { return ((double)rand()) / RAND_MAX; }
+static inline double WMATH_RANDOM(double)() { return ((double)rand()) / RAND_MAX; }
 
-float_t WMATH_RANDOM(float_t)() { return ((float_t)rand()) / RAND_MAX; }
+static inline float_t WMATH_RANDOM(float_t)() { return ((float_t)rand()) / RAND_MAX; }
 
-double_t WMATH_RANDOM(double_t)() { return ((double_t)rand()) / RAND_MAX; }
+static inline double_t WMATH_RANDOM(double_t)() { return ((double_t)rand()) / RAND_MAX; }
 // ==================================================================
 
 #define WMATH_INVERSE_LERP(a, b, t)                                            \
-  (fabsf(b - a) < wcn_math_get_epsilon() ? a : (((b - a) - a) / d))
-
+  (fabsf((b) - (a)) < wcn_math_get_epsilon() ? 0.0f                            \
+                                             : (((t) - (a)) / ((b) - (a))))
 #define WMATH_EUCLIDEAN_MODULO(n, m) ((n) - floorf((n) / (m)) * (m))
 // END Utils
 
@@ -316,13 +322,20 @@ typedef struct {
 } WMATH_CREATE_TYPE(Quat);
 
 enum WCN_Math_RotationOrder {
-  WCN_Math_RotationOrder_XYZ,
-  WCN_Math_RotationOrder_XZY,
-  WCN_Math_RotationOrder_YXZ,
-  WCN_Math_RotationOrder_YZX,
-  WCN_Math_RotationOrder_ZXY,
-  WCN_Math_RotationOrder_ZYX,
+  WCN_Math_RotationOrder_XYZ = 0,
+  WCN_Math_RotationOrder_XZY = 1,
+  WCN_Math_RotationOrder_YXZ = 2,
+  WCN_Math_RotationOrder_YZX = 3,
+  WCN_Math_RotationOrder_ZXY = 4,
+  WCN_Math_RotationOrder_ZYX = 5,
 };
+#define WCN_MATH_IS_VALID_ROTATION_ORDER(order)                                \
+  ((order) >= WCN_Math_RotationOrder_XYZ &&                                    \
+   (order) <= WCN_Math_RotationOrder_ZYX)
+
+// 或者使用数组大小来确保一致性
+#define WCN_MATH_ROTATION_ORDER_COUNT 6
+extern const int WCN_MATH_ROTATION_SIGN_TABLE[WCN_MATH_ROTATION_ORDER_COUNT][4];
 
 // Vec2 Type
 
@@ -1058,7 +1071,6 @@ WMATH_CALL(Mat3, get_axis)
  * @param m - The matrix.
  * @param v - the axis vector
  * @param axis - The axis  0 = x, 1 = y;
- * @param dst - The matrix to set. If not passed a new one is created.
  * @returns The matrix with axis set.
  */
 WMATH_TYPE(Mat3)
@@ -1084,9 +1096,8 @@ WMATH_GET_TRANSLATION(Mat3)
 /**
  * Sets the translation component of a 3-by-3 matrix to the given
  * vector.
- * @param a - The matrix.
+ * @param m - The matrix.
  * @param v - The vector.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The matrix with translation set.
  */
 WMATH_TYPE(Mat3)
@@ -1103,7 +1114,6 @@ WMATH_TRANSLATION(Mat3)
  * Translates the given 3-by-3 matrix by the given vector v.
  * @param m - The matrix.
  * @param v - The vector by which to translate.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The translated matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1118,7 +1128,6 @@ WMATH_CALL(Mat3, translate)
  * @param axis - The axis
  *     about which to rotate.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1132,7 +1141,6 @@ WMATH_CALL(Mat4, axis_rotate)
  * @param axis - The axis
  *     about which to rotate.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns A matrix which rotates angle radians
  *     around the axis.
  */
@@ -1151,7 +1159,6 @@ WMATH_CALL(Mat4, axis_rotation)
  * @param eye - The position of the object.
  * @param target - The position meant to be aimed at.
  * @param up - A vector pointing up.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The aim matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1179,7 +1186,6 @@ WMATH_CALL(Mat4, camera_aim)
  * @param top - The y coordinate of the right plane of the box.
  * @param near - The negative z coordinate of the near plane of the box.
  * @param far - The negative z coordinate of the far plane of the box.
- * @param dst - Output matrix. If not passed a new one is created.
  * @returns The perspective projection matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1202,7 +1208,6 @@ WMATH_CALL(Mat4, frustum)
  * @param top - The y coordinate of the right plane of the box.
  * @param near - The negative z coordinate of the near plane of the box.
  * @param far - The negative z coordinate of the far plane of the box.
- * @param dst - Output matrix. If not passed a new one is created.
  * @returns The perspective projection matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1226,7 +1231,6 @@ WMATH_CALL(Mat4, get_axis)
  * @param m - The matrix.
  * @param v - the axis vector
  * @param axis - The axis  0 = x, 1 = y, 2 = z;
- * @param dst - The matrix to set. If not passed a new one is created.
  * @returns The matrix with axis set.
  */
 WMATH_TYPE(Mat4)
@@ -1238,7 +1242,6 @@ WMATH_CALL(Mat4, set_axis)
 // * Returns the translation component of a 4-by-4 matrix as a vector with 3
 // * entries.
 // * @param m - The matrix.
-// * @param dst - vector to hold result. If not passed a new one is created.
 // * @returns The translation component of m.
 // */
 WMATH_TYPE(Vec3)
@@ -1255,7 +1258,6 @@ WMATH_SET_TRANSLATION(Mat4)
  * Creates a 4-by-4 matrix which translates by the given vector v.
  * @param v - The vector by
  *     which to translate.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The translation matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1286,7 +1288,6 @@ WMATH_TRANSLATION(Mat4)
  *     of the near clipping plane.
  * @param zFar - The depth (negative z coordinate)
  *     of the far clipping plane.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The perspective matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1310,7 +1311,6 @@ WMATH_CALL(Mat4, perspective_reverse_z)
  * @param m - The matrix.
  * @param v - The vector by
  *     which to translate.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The translated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1325,7 +1325,6 @@ WMATH_CALL(Mat4, translate)
  * @param axis - The axis
  *     about which to rotate.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1343,7 +1342,6 @@ WMATH_ROTATE(Mat4)
  * angle.
  * @param m - The matrix.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1360,7 +1358,6 @@ WMATH_ROTATE_X(Mat4)
  * angle.
  * @param m - The matrix.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1377,7 +1374,6 @@ WMATH_ROTATE_Y(Mat4)
  * angle.
  * @param m - The matrix.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotated matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1395,7 +1391,6 @@ WMATH_ROTATE_Z(Mat4)
  * @param axis - The axis
  *     about which to rotate.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns A matrix which rotates angle radians
  *     around the axis.
  */
@@ -1407,7 +1402,6 @@ WMATH_ROTATION(Mat4)
 /**
  * Creates a 4-by-4 matrix which rotates around the x-axis by the given angle.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotation matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1418,7 +1412,6 @@ WMATH_ROTATION_X(Mat4)
 /**
  * Creates a 4-by-4 matrix which rotates around the y-axis by the given angle.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotation matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1429,7 +1422,6 @@ WMATH_ROTATION_Y(Mat4)
 /**
  * Creates a 4-by-4 matrix which rotates around the z-axis by the given angle.
  * @param angleInRadians - The angle by which to rotate (in radians).
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The rotation matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1469,7 +1461,6 @@ WMATH_CALL(Mat3, scale3D)
  * entries.
  * @param v - A vector of
  *     2 entries specifying the factor by which to scale in each dimension.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1482,7 +1473,6 @@ WMATH_CALL(Mat3, scaling)
  * entries.
  * @param v - A vector of
  *     3 entries specifying the factor by which to scale in each dimension.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1494,7 +1484,6 @@ WMATH_CALL(Mat3, scaling3D)(WMATH_TYPE(Vec3) v);
  * given.
  * @param m - The matrix to be modified.
  * @param s - Amount to scale.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaled matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1507,7 +1496,6 @@ WMATH_CALL(Mat3, uniform_scale)
  * given.
  * @param m - The matrix to be modified.
  * @param s - Amount to scale.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaled matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1518,18 +1506,15 @@ WMATH_CALL(Mat3, uniform_scale_3D)
 /**
  * Creates a 3-by-3 matrix which scales uniformly in the X and Y dimensions
  * @param s - Amount to scale
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat3)
 WMATH_CALL(Mat3, uniform_scaling)
 (float s);
 
-// Mat3 uniform_scaling_3D
 /**
  * Creates a 3-by-3 matrix which scales uniformly in each dimension
  * @param s - Amount to scale
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat3)
@@ -1540,7 +1525,6 @@ WMATH_CALL(Mat3, uniform_scaling_3D)
 /**
  * Returns the "3d" scaling component of the matrix
  * @param m - The Matrix
- * @param dst - The vector to set. If not passed a new one is created.
  */
 WMATH_TYPE(Vec3)
 WMATH_CALL(Mat4, get_scaling)
@@ -1553,7 +1537,6 @@ WMATH_CALL(Mat4, get_scaling)
  * entries.
  * @param v - A vector of
  *     three entries specifying the factor by which to scale in each dimension.
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat4)
@@ -1568,7 +1551,6 @@ WMATH_CALL(Mat4, uniform_scale)
 /**
  * Creates a 4-by-4 matrix which scales a uniform amount in each dimension.
  * @param s - the amount to scale
- * @param dst - matrix to hold result. If not passed a new one is created.
  * @returns The scaling matrix.
  */
 WMATH_TYPE(Mat4)

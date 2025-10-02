@@ -1,11 +1,9 @@
-#define _USE_MATH_DEFINES
+#define USE_MATH_DEFINES
 #include "WCN/WCN.h"
 #include "shader_manager.h"
 #include <float.h>
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -443,7 +441,7 @@ static WGPURenderPipeline create_render_pipeline(WCN_Canvas *canvas) {
               },
       };
 
-  WGPURenderPipeline pipeline =
+  const WGPURenderPipeline pipeline =
       wgpuDeviceCreateRenderPipeline(canvas->device, &pipeline_descriptor);
 
   // 检查渲染管线是否创建成功

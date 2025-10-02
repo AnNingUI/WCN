@@ -1,7 +1,11 @@
 build
 .cache
 .codebuddy
+.claude
+.qoder
 .vscode
 .idea
+cmake-build-debug
 .DS_Store
 DS_Store
+*.exe
