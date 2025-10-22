@@ -46,12 +46,12 @@ extern "C" {
 #error "Compiler does not support typeof. You need C11 or C++11 or GCC/Clang."
 #endif
 
-#define Fp_Send(arr, new_value) arr[$index] = new_value
+#define Fp_Send(arr, new_value) arr[_index] = new_value
 #define Fp_ForIn(arr)                                                          \
-  for (int $index = 0, $now_index = 0; $index < sizeof(arr) / sizeof(arr[0]);  \
-       $index++)                                                               \
-    for (CROSS_TYPEOF(arr[0]) $value = arr[$index]; $index - $now_index == 0;  \
-         $now_index++)
+  for (int _index = 0, _now_index = 0; _index < sizeof(arr) / sizeof(arr[0]);  \
+       _index++)                                                               \
+    for (CROSS_TYPEOF(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
+         _now_index++)
 
 #define Fp_Let(TYPE_VAL, NEXT_FUNC)                                            \
   TYPE_VAL;                                                                    \
@@ -66,30 +66,30 @@ extern "C" {
 
 #define Fp_MapLet(TYPE, VAL_NAME, MAP_ARR, CODE_BODY)                          \
   TYPE VAL_NAME[sizeof(MAP_ARR) / sizeof(MAP_ARR[0])] = {0};                   \
-  typedef TYPE $Self;                                                          \
+  typedef TYPE _Self;                                                          \
   Fp_ForIn(MAP_ARR) {                                                          \
-    TYPE $_NOW_VALUE;                                                          \
+    TYPE __NOW_VALUE;                                                          \
     CODE_BODY                                                                  \
-    Fp_Send(VAL_NAME, $_NOW_VALUE);                                            \
+    Fp_Send(VAL_NAME, __NOW_VALUE);                                            \
   }
 
-#define Fp_MapLet_Send(new_value) $_NOW_VALUE = ($Self)new_value
+#define Fp_MapLet_Send(new_value) __NOW_VALUE = (_Self)new_value
 
 /// ==============================
 /// Reduce
 /// ==============================
 #define Fp_Reduce_Send(bind_value, new_value)                                  \
-  $acc = ($Self)new_value;                                                     \
-  bind_value = $acc
+  _acc = (_Self)new_value;                                                     \
+  bind_value = _acc
 #define Fp_Reduce(TYPE, SRC_ARR, INIT, CODE_BODY)                              \
   {0};                                                                         \
   {                                                                            \
-    TYPE $acc = (TYPE)(INIT);                                                  \
-    for (int $index = 0, $now_index = 0;                                       \
-         $index < sizeof(arr) / sizeof(arr[0]); $index++) {                    \
-      for (__typeof__(arr[0]) $value = arr[$index]; $index - $now_index == 0;  \
-           $now_index++) {                                                     \
-        typedef TYPE $Self;                                                    \
+    TYPE _acc = (TYPE)(INIT);                                                  \
+    for (int _index = 0, _now_index = 0;                                       \
+         _index < sizeof(arr) / sizeof(arr[0]); _index++) {                    \
+      for (__typeof__(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
+           _now_index++) {                                                     \
+        typedef TYPE _Self;                                                    \
         CODE_BODY                                                              \
       }                                                                        \
     }                                                                          \
@@ -98,35 +98,37 @@ extern "C" {
 #define Fp_ReduceLet(TYPE, VAL_NAME, SRC_ARR, INIT, CODE_BODY)                 \
   TYPE VAL_NAME;                                                               \
   {                                                                            \
-    typedef TYPE $Self;                                                        \
-    TYPE $acc = ($Self)INIT;                                                   \
-    for (int $index = 0, $now_index = 0;                                       \
-         $index < sizeof(arr) / sizeof(arr[0]); $index++) {                    \
-      for (__typeof__(arr[0]) $value = arr[$index]; $index - $now_index == 0;  \
-           $now_index++) {                                                     \
+    typedef TYPE _Self;                                                        \
+    TYPE _acc = (_Self)INIT;                                                   \
+    for (int _index = 0, _now_index = 0;                                       \
+         _index < sizeof(arr) / sizeof(arr[0]); _index++) {                    \
+      for (__typeof__(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
+           _now_index++) {                                                     \
         CODE_BODY                                                              \
       }                                                                        \
     }                                                                          \
-    VAL_NAME = $acc;                                                           \
+    VAL_NAME = _acc;                                                           \
   }
 
-#define Fp_ReduceLet_Send(new_value) $acc = ($Self)new_value
+#define Fp_ReduceLet_Send(new_value) _acc = (_Self)new_value
 
 /// ==============================
 /// Filter
 /// ==============================    
 #define Fp_FilterLet(TYPE, VAL_NAME, SRC_ARR, CODE_BODY)                        \
-TYPE VAL_NAME[sizeof(SRC_ARR) / sizeof(SRC_ARR[0])] = {0};                   \
-{ \
-    int $count = 0;                                                              \
-    Fp_ForIn(SRC_ARR) {                                                          \
-        typedef TYPE $Self;                                                        \
-        if (CODE_BODY) {                                                           \
-            VAL_NAME[$count++] = ($Self)$value;                                      \
-        }                                                                          \
-    } \
+TYPE VAL_NAME[sizeof(SRC_ARR) / sizeof(SRC_ARR[0])] = {0};                      \
+size_t VAL_NAME##_size = 0;                                                     \
+{                                                                               \
+    int _count = 0;                                                             \
+    Fp_ForIn(SRC_ARR) {                                                         \
+        typedef TYPE _Self;                                                     \
+        if (CODE_BODY) {                                                        \
+            VAL_NAME[_count++] = (_Self)_value;                                 \
+        }                                                                       \
+    }                                                                           \
+    VAL_NAME##_size = _count;                                                   \
 }
-    
+
 #ifdef __cplusplus
 }
 #endif
