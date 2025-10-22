@@ -3,6 +3,7 @@ build
 .codebuddy
 .claude
 .qoder
+.kiro
 .vscode
 .idea
 cmake-build-debug

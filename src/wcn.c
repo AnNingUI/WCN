@@ -1,5 +1,6 @@
 #define USE_MATH_DEFINES
 #include "WCN/WCN.h"
+#include "WCN/WCN_Math.h"
 #include "shader_manager.h"
 #include <float.h>
 #include <math.h>
@@ -51,10 +52,8 @@ typedef struct {
   } data;
 } WCN_PathOp;
 
-// 变换矩阵结构体
-typedef struct {
-  float m[3][3]; // 3x3 变换矩阵
-} WCN_TransformMatrix;
+// 变换矩阵类型别名 - 使用 wcn_math.c 的 Mat3
+typedef WMATH_TYPE(Mat3) WCN_TransformMatrix;
 
 // 上下文结构体
 struct WCN_Context {
@@ -187,11 +186,7 @@ WCN_Canvas *wcn_create_canvas(WCN_Context *context, WGPUDevice device,
       canvas->transform_stack_capacity * sizeof(WCN_TransformMatrix));
 
   // 初始化当前变换矩阵为单位矩阵
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      canvas->current_transform.m[i][j] = (i == j) ? 1.0f : 0.0f;
-    }
-  }
+  canvas->current_transform = WMATH_IDENTITY(Mat3)();
 
   // 初始化批渲染数据
   canvas->batch_vertex_capacity = 1024; // 初始容量
@@ -825,39 +820,39 @@ void wcn_fill_rect(WCN_Canvas *canvas, float x, float y, float width,
                   canvas->fill_color.a);
 
   // 应用当前变换矩阵到矩形坐标
-  float x1 = x, y1 = y;
-  float x2 = x + width, y2 = y;
-  float x3 = x, y3 = y + height;
-  float x4 = x + width, y4 = y + height;
+  const float x1 = x, y1 = y;
+  const float x2 = x + width, y2 = y;
+  const float x3 = x, y3 = y + height;
+  const float x4 = x + width, y4 = y + height;
 
   // 应用变换矩阵
-  float tx1 = canvas->current_transform.m[0][0] * x1 +
-              canvas->current_transform.m[0][1] * y1 +
-              canvas->current_transform.m[0][2];
-  float ty1 = canvas->current_transform.m[1][0] * x1 +
-              canvas->current_transform.m[1][1] * y1 +
-              canvas->current_transform.m[1][2];
+  const float tx1 = canvas->current_transform.m[0 * 4 + 0] * x1 +
+                    canvas->current_transform.m[0 * 4 + 1] * y1 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty1 = canvas->current_transform.m[1 * 4 + 0] * x1 +
+                    canvas->current_transform.m[1 * 4 + 1] * y1 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx2 = canvas->current_transform.m[0][0] * x2 +
-              canvas->current_transform.m[0][1] * y2 +
-              canvas->current_transform.m[0][2];
-  float ty2 = canvas->current_transform.m[1][0] * x2 +
-              canvas->current_transform.m[1][1] * y2 +
-              canvas->current_transform.m[1][2];
+  const float tx2 = canvas->current_transform.m[0 * 4 + 0] * x2 +
+                    canvas->current_transform.m[0 * 4 + 1] * y2 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty2 = canvas->current_transform.m[1 * 4 + 0] * x2 +
+                    canvas->current_transform.m[1 * 4 + 1] * y2 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx3 = canvas->current_transform.m[0][0] * x3 +
-              canvas->current_transform.m[0][1] * y3 +
-              canvas->current_transform.m[0][2];
-  float ty3 = canvas->current_transform.m[1][0] * x3 +
-              canvas->current_transform.m[1][1] * y3 +
-              canvas->current_transform.m[1][2];
+  const float tx3 = canvas->current_transform.m[0 * 4 + 0] * x3 +
+                    canvas->current_transform.m[0 * 4 + 1] * y3 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty3 = canvas->current_transform.m[1 * 4 + 0] * x3 +
+                    canvas->current_transform.m[1 * 4 + 1] * y3 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx4 = canvas->current_transform.m[0][0] * x4 +
-              canvas->current_transform.m[0][1] * y4 +
-              canvas->current_transform.m[0][2];
-  float ty4 = canvas->current_transform.m[1][0] * x4 +
-              canvas->current_transform.m[1][1] * y4 +
-              canvas->current_transform.m[1][2];
+  const float tx4 = canvas->current_transform.m[0 * 4 + 0] * x4 +
+                    canvas->current_transform.m[0 * 4 + 1] * y4 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty4 = canvas->current_transform.m[1 * 4 + 0] * x4 +
+                    canvas->current_transform.m[1 * 4 + 1] * y4 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
   // 创建两个三角形的顶点来组成矩形
   WCN_Vertex vertices[6];
@@ -934,39 +929,39 @@ void wcn_stroke_rect(WCN_Canvas *canvas, float x, float y, float width,
   }
 
   // 应用当前变换矩阵到矩形坐标
-  float x1 = x, y1 = y;
-  float x2 = x + width, y2 = y;
-  float x3 = x + width, y3 = y + height;
-  float x4 = x, y4 = y + height;
+  const float x1 = x, y1 = y;
+  const float x2 = x + width, y2 = y;
+  const float x3 = x + width, y3 = y + height;
+  const float x4 = x, y4 = y + height;
 
   // 应用变换矩阵
-  float tx1 = canvas->current_transform.m[0][0] * x1 +
-              canvas->current_transform.m[0][1] * y1 +
-              canvas->current_transform.m[0][2];
-  float ty1 = canvas->current_transform.m[1][0] * x1 +
-              canvas->current_transform.m[1][1] * y1 +
-              canvas->current_transform.m[1][2];
+  const float tx1 = canvas->current_transform.m[0 * 4 + 0] * x1 +
+                    canvas->current_transform.m[0 * 4 + 1] * y1 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty1 = canvas->current_transform.m[1 * 4 + 0] * x1 +
+                    canvas->current_transform.m[1 * 4 + 1] * y1 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx2 = canvas->current_transform.m[0][0] * x2 +
-              canvas->current_transform.m[0][1] * y2 +
-              canvas->current_transform.m[0][2];
-  float ty2 = canvas->current_transform.m[1][0] * x2 +
-              canvas->current_transform.m[1][1] * y2 +
-              canvas->current_transform.m[1][2];
+  const float tx2 = canvas->current_transform.m[0 * 4 + 0] * x2 +
+                    canvas->current_transform.m[0 * 4 + 1] * y2 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty2 = canvas->current_transform.m[1 * 4 + 0] * x2 +
+                    canvas->current_transform.m[1 * 4 + 1] * y2 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx3 = canvas->current_transform.m[0][0] * x3 +
-              canvas->current_transform.m[0][1] * y3 +
-              canvas->current_transform.m[0][2];
-  float ty3 = canvas->current_transform.m[1][0] * x3 +
-              canvas->current_transform.m[1][1] * y3 +
-              canvas->current_transform.m[1][2];
+  const float tx3 = canvas->current_transform.m[0 * 4 + 0] * x3 +
+                    canvas->current_transform.m[0 * 4 + 1] * y3 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty3 = canvas->current_transform.m[1 * 4 + 0] * x3 +
+                    canvas->current_transform.m[1 * 4 + 1] * y3 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
-  float tx4 = canvas->current_transform.m[0][0] * x4 +
-              canvas->current_transform.m[0][1] * y4 +
-              canvas->current_transform.m[0][2];
-  float ty4 = canvas->current_transform.m[1][0] * x4 +
-              canvas->current_transform.m[1][1] * y4 +
-              canvas->current_transform.m[1][2];
+  const float tx4 = canvas->current_transform.m[0 * 4 + 0] * x4 +
+                    canvas->current_transform.m[0 * 4 + 1] * y4 +
+                    canvas->current_transform.m[0 * 4 + 2];
+  const float ty4 = canvas->current_transform.m[1 * 4 + 0] * x4 +
+                    canvas->current_transform.m[1 * 4 + 1] * y4 +
+                    canvas->current_transform.m[1 * 4 + 2];
 
   // 创建矩形边框的顶点（每条边使用2个三角形，共24个顶点）
   WCN_Vertex vertices[24]; // 4条边 * 6个顶点（2个三角形）
@@ -994,11 +989,11 @@ void wcn_stroke_rect(WCN_Canvas *canvas, float x, float y, float width,
 // 辅助函数：计算贝塞尔曲线上的点
 static WCN_Point bezier_point(WCN_Point p0, WCN_Point p1, WCN_Point p2,
                               WCN_Point p3, float t) {
-  float u = 1.0f - t;
-  float tt = t * t;
-  float uu = u * u;
-  float uuu = uu * u;
-  float ttt = tt * t;
+  const float u = 1.0f - t;
+  const float tt = t * t;
+  const float uu = u * u;
+  const float uuu = uu * u;
+  const float ttt = tt * t;
 
   WCN_Point point;
   point.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
@@ -1010,9 +1005,9 @@ static WCN_Point bezier_point(WCN_Point p0, WCN_Point p1, WCN_Point p2,
 // 辅助函数：计算二次贝塞尔曲线上的点
 static WCN_Point quadratic_bezier_point(WCN_Point p0, WCN_Point p1,
                                         WCN_Point p2, float t) {
-  float u = 1.0f - t;
-  float uu = u * u;
-  float tt = t * t;
+  const float u = 1.0f - t;
+  const float uu = u * u;
+  const float tt = t * t;
 
   WCN_Point point;
   point.x = uu * p0.x + 2 * u * t * p1.x + tt * p2.x;
@@ -1036,7 +1031,7 @@ void wcn_fill_path(WCN_Canvas *canvas) {
   }
 
   // 将路径转换为点序列
-  size_t max_points = canvas->path_ops_count * 32; // 为曲线预留更多点
+  const size_t max_points = canvas->path_ops_count * 32; // 为曲线预留更多点
   WCN_Point *points = (WCN_Point *)malloc(max_points * sizeof(WCN_Point));
   size_t point_count = 0;
 
@@ -1064,15 +1059,15 @@ void wcn_fill_path(WCN_Canvas *canvas) {
       break;
 
     case WCN_PATH_BEZIER_CURVE_TO: {
-      WCN_Point p0 = current_pos;
-      WCN_Point p1 = canvas->path_ops[i].data.bezier.cp1;
-      WCN_Point p2 = canvas->path_ops[i].data.bezier.cp2;
-      WCN_Point p3 = canvas->path_ops[i].data.bezier.end;
+      const WCN_Point p0 = current_pos;
+      const WCN_Point p1 = canvas->path_ops[i].data.bezier.cp1;
+      const WCN_Point p2 = canvas->path_ops[i].data.bezier.cp2;
+      const WCN_Point p3 = canvas->path_ops[i].data.bezier.end;
 
       // 将贝塞尔曲线分割为多个线段
-      int segments = 16;
+      const int segments = 16;
       for (int j = 1; j <= segments && point_count < max_points; j++) {
-        float t = (float)j / segments;
+        const float t = (float)j / (float)segments;
         points[point_count++] = bezier_point(p0, p1, p2, p3, t);
       }
       current_pos = p3;
@@ -1080,14 +1075,14 @@ void wcn_fill_path(WCN_Canvas *canvas) {
     }
 
     case WCN_PATH_QUADRATIC_CURVE_TO: {
-      WCN_Point p0 = current_pos;
-      WCN_Point p1 = canvas->path_ops[i].data.quadratic.cp;
-      WCN_Point p2 = canvas->path_ops[i].data.quadratic.end;
+      const WCN_Point p0 = current_pos;
+      const WCN_Point p1 = canvas->path_ops[i].data.quadratic.cp;
+      const WCN_Point p2 = canvas->path_ops[i].data.quadratic.end;
 
       // 将二次贝塞尔曲线分割为多个线段
-      int segments = 16;
+      const int segments = 16;
       for (int j = 1; j <= segments && point_count < max_points; j++) {
-        float t = (float)j / segments;
+        const float t = (float)j / (float)segments;
         points[point_count++] = quadratic_bezier_point(p0, p1, p2, t);
       }
       current_pos = p2;
@@ -1095,11 +1090,11 @@ void wcn_fill_path(WCN_Canvas *canvas) {
     }
 
     case WCN_PATH_ARC: {
-      WCN_Point center = canvas->path_ops[i].data.arc.center;
-      float radius = canvas->path_ops[i].data.arc.radius;
-      float start_angle = canvas->path_ops[i].data.arc.startAngle;
-      float end_angle = canvas->path_ops[i].data.arc.endAngle;
-      bool anticlockwise = canvas->path_ops[i].data.arc.anticlockwise;
+      const WCN_Point center = canvas->path_ops[i].data.arc.center;
+      const float radius = canvas->path_ops[i].data.arc.radius;
+      const float start_angle = canvas->path_ops[i].data.arc.startAngle;
+      const float end_angle = canvas->path_ops[i].data.arc.endAngle;
+      const bool anticlockwise = canvas->path_ops[i].data.arc.anticlockwise;
 
       // 计算角度差
       float angle_diff = end_angle - start_angle;
@@ -1153,26 +1148,26 @@ void wcn_fill_path(WCN_Canvas *canvas) {
     for (size_t i = 0; i < point_count - 1 && vertex_count + 3 <= max_vertices;
          i++) {
       // 应用变换矩阵
-      float cx = canvas->current_transform.m[0][0] * center.x +
-                 canvas->current_transform.m[0][1] * center.y +
-                 canvas->current_transform.m[0][2];
-      float cy = canvas->current_transform.m[1][0] * center.x +
-                 canvas->current_transform.m[1][1] * center.y +
-                 canvas->current_transform.m[1][2];
+      float cx = canvas->current_transform.m[0 * 4 + 0] * center.x +
+                 canvas->current_transform.m[0 * 4 + 1] * center.y +
+                 canvas->current_transform.m[0 * 4 + 2];
+      float cy = canvas->current_transform.m[1 * 4 + 0] * center.x +
+                 canvas->current_transform.m[1 * 4 + 1] * center.y +
+                 canvas->current_transform.m[1 * 4 + 2];
 
-      float p1x = canvas->current_transform.m[0][0] * points[i].x +
-                  canvas->current_transform.m[0][1] * points[i].y +
-                  canvas->current_transform.m[0][2];
-      float p1y = canvas->current_transform.m[1][0] * points[i].x +
-                  canvas->current_transform.m[1][1] * points[i].y +
-                  canvas->current_transform.m[1][2];
+      float p1x = canvas->current_transform.m[0 * 4 + 0] * points[i].x +
+                  canvas->current_transform.m[0 * 4 + 1] * points[i].y +
+                  canvas->current_transform.m[0 * 4 + 2];
+      float p1y = canvas->current_transform.m[1 * 4 + 0] * points[i].x +
+                  canvas->current_transform.m[1 * 4 + 1] * points[i].y +
+                  canvas->current_transform.m[1 * 4 + 2];
 
-      float p2x = canvas->current_transform.m[0][0] * points[i + 1].x +
-                  canvas->current_transform.m[0][1] * points[i + 1].y +
-                  canvas->current_transform.m[0][2];
-      float p2y = canvas->current_transform.m[1][0] * points[i + 1].x +
-                  canvas->current_transform.m[1][1] * points[i + 1].y +
-                  canvas->current_transform.m[1][2];
+      float p2x = canvas->current_transform.m[0 * 4 + 0] * points[i + 1].x +
+                  canvas->current_transform.m[0 * 4 + 1] * points[i + 1].y +
+                  canvas->current_transform.m[0 * 4 + 2];
+      float p2y = canvas->current_transform.m[1 * 4 + 0] * points[i + 1].x +
+                  canvas->current_transform.m[1 * 4 + 1] * points[i + 1].y +
+                  canvas->current_transform.m[1 * 4 + 2];
 
       vertices[vertex_count++] =
           (WCN_Vertex){{cx, cy},
@@ -1310,19 +1305,19 @@ void wcn_stroke_path(WCN_Canvas *canvas) {
     for (size_t i = 0; i < point_count - 1 && vertex_count + 6 <= max_vertices;
          i++) {
       // 应用变换矩阵
-      float p1x = canvas->current_transform.m[0][0] * points[i].x +
-                  canvas->current_transform.m[0][1] * points[i].y +
-                  canvas->current_transform.m[0][2];
-      float p1y = canvas->current_transform.m[1][0] * points[i].x +
-                  canvas->current_transform.m[1][1] * points[i].y +
-                  canvas->current_transform.m[1][2];
+      float p1x = canvas->current_transform.m[0 * 4 + 0] * points[i].x +
+                  canvas->current_transform.m[0 * 4 + 1] * points[i].y +
+                  canvas->current_transform.m[0 * 4 + 2];
+      float p1y = canvas->current_transform.m[1 * 4 + 0] * points[i].x +
+                  canvas->current_transform.m[1 * 4 + 1] * points[i].y +
+                  canvas->current_transform.m[1 * 4 + 2];
 
-      float p2x = canvas->current_transform.m[0][0] * points[i + 1].x +
-                  canvas->current_transform.m[0][1] * points[i + 1].y +
-                  canvas->current_transform.m[0][2];
-      float p2y = canvas->current_transform.m[1][0] * points[i + 1].x +
-                  canvas->current_transform.m[1][1] * points[i + 1].y +
-                  canvas->current_transform.m[1][2];
+      float p2x = canvas->current_transform.m[0 * 4 + 0] * points[i + 1].x +
+                  canvas->current_transform.m[0 * 4 + 1] * points[i + 1].y +
+                  canvas->current_transform.m[0 * 4 + 2];
+      float p2y = canvas->current_transform.m[1 * 4 + 0] * points[i + 1].x +
+                  canvas->current_transform.m[1 * 4 + 1] * points[i + 1].y +
+                  canvas->current_transform.m[1 * 4 + 2];
 
       // 使用辅助函数创建三角形化的线段
       create_line_triangles(&vertices[vertex_count], p1x, p1y, p2x, p2y,
@@ -1391,72 +1386,22 @@ void wcn_clip_path(WCN_Canvas *canvas) {
   }
 }
 
-// 初始化单位矩阵
-static void init_identity_matrix(WCN_TransformMatrix *matrix) {
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      matrix->m[i][j] = (i == j) ? 1.0f : 0.0f;
-    }
-  }
-}
-
-// 矩阵相乘
-static void multiply_matrices(WCN_TransformMatrix *result,
-                              const WCN_TransformMatrix *a,
-                              const WCN_TransformMatrix *b) {
-  WCN_TransformMatrix temp;
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      temp.m[i][j] = 0.0f;
-      for (int k = 0; k < 3; k++) {
-        temp.m[i][j] += a->m[i][k] * b->m[k][j];
-      }
-    }
-  }
-  *result = temp;
-}
-
-// 创建平移矩阵
-static void create_translation_matrix(WCN_TransformMatrix *matrix, float tx,
-                                      float ty) {
-  init_identity_matrix(matrix);
-  matrix->m[0][2] = tx;
-  matrix->m[1][2] = ty;
-}
-
-// 创建旋转矩阵
-static void create_rotation_matrix(WCN_TransformMatrix *matrix, float angle) {
-  init_identity_matrix(matrix);
-  float cos_a = cosf(angle);
-  float sin_a = sinf(angle);
-  matrix->m[0][0] = cos_a;
-  matrix->m[0][1] = -sin_a;
-  matrix->m[1][0] = sin_a;
-  matrix->m[1][1] = cos_a;
-}
-
-// 创建缩放矩阵
-static void create_scale_matrix(WCN_TransformMatrix *matrix, float sx,
-                                float sy) {
-  init_identity_matrix(matrix);
-  matrix->m[0][0] = sx;
-  matrix->m[1][1] = sy;
-}
-
 // 平移坐标系
 void wcn_translate(WCN_Canvas *canvas, float x, float y) {
   if (!canvas || !canvas->pass) {
     return;
   }
 
-  // 创建平移矩阵
-  WCN_TransformMatrix translation;
-  create_translation_matrix(&translation, x, y);
+  // 使用 WMATH_TRANSLATION(Mat3)() 创建平移矩阵
+  WMATH_TYPE(Mat3) translation = WMATH_TRANSLATION(Mat3)(
+      INIT$(Vec2, .v_x = x, .v_y = y)
+  );
 
-  // 将平移矩阵与当前变换矩阵相乘
-  WCN_TransformMatrix result;
-  multiply_matrices(&result, &canvas->current_transform, &translation);
-  canvas->current_transform = result;
+  // 使用 WMATH_MULTIPLY(Mat3)() 进行矩阵乘法
+  canvas->current_transform = WMATH_MULTIPLY(Mat3)(
+      canvas->current_transform, 
+      translation
+  );
 }
 
 // 旋转坐标系
@@ -1465,14 +1410,14 @@ void wcn_rotate(WCN_Canvas *canvas, float angle) {
     return;
   }
 
-  // 创建旋转矩阵
-  WCN_TransformMatrix rotation;
-  create_rotation_matrix(&rotation, angle);
+  // 使用 WMATH_ROTATION(Mat3)() 创建旋转矩阵
+  WMATH_TYPE(Mat3) rotation = WMATH_ROTATION(Mat3)(angle);
 
-  // 将旋转矩阵与当前变换矩阵相乘
-  WCN_TransformMatrix result;
-  multiply_matrices(&result, &canvas->current_transform, &rotation);
-  canvas->current_transform = result;
+  // 使用 WMATH_MULTIPLY(Mat3)() 进行矩阵乘法
+  canvas->current_transform = WMATH_MULTIPLY(Mat3)(
+      canvas->current_transform, 
+      rotation
+  );
 }
 
 // 缩放坐标系
@@ -1481,14 +1426,16 @@ void wcn_scale(WCN_Canvas *canvas, float x, float y) {
     return;
   }
 
-  // 创建缩放矩阵
-  WCN_TransformMatrix scale;
-  create_scale_matrix(&scale, x, y);
+  // 手动创建缩放矩阵
+  WMATH_TYPE(Mat3) scale = WMATH_IDENTITY(Mat3)();
+  scale.m[0] = x;  // m[0][0] - 缩放 x
+  scale.m[5] = y;  // m[1][1] - 缩放 y
 
-  // 将缩放矩阵与当前变换矩阵相乘
-  WCN_TransformMatrix result;
-  multiply_matrices(&result, &canvas->current_transform, &scale);
-  canvas->current_transform = result;
+  // 使用 WMATH_MULTIPLY(Mat3)() 进行矩阵乘法
+  canvas->current_transform = WMATH_MULTIPLY(Mat3)(
+      canvas->current_transform, 
+      scale
+  );
 }
 
 // 获取 WebGPU 渲染通道描述符
