@@ -3,21 +3,16 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <webgpu/webgpu.h>
 
+static inline void ___prev_clangd___printf() { (void)printf; }
+
 // 调试宏定义
-#ifdef DEBUG
-#include <stdio.h>
 #define WCN_DEBUG_PRINT(fmt, ...)                                              \
   do {                                                                         \
     printf("[WCN DEBUG] " fmt "\n", ##__VA_ARGS__);                            \
   } while (0)
-#else
-#define WCN_DEBUG_PRINT(fmt, ...)                                              \
-  do {                                                                         \
-    printf("[WCN DEBUG] " fmt "\n", ##__VA_ARGS__);                            \
-  } while (0)
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -153,6 +148,10 @@ void wcn_stroke_path(WCN_Canvas *canvas);
 
 // 裁剪路径
 void wcn_clip_path(WCN_Canvas *canvas);
+
+// 清除矩形区域
+void wcn_clear_rect(WCN_Canvas *canvas, float x, float y, float width,
+                    float height);
 
 // 保存当前绘图状态
 void wcn_save(WCN_Canvas *canvas);
