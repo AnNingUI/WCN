@@ -15,11 +15,16 @@
 #else
 #define WCN_DEBUG_PRINT(fmt, ...)                                              \
   do {                                                                         \
+    printf("[WCN DEBUG] " fmt "\n", ##__VA_ARGS__);                            \
   } while (0)
 #endif
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#ifndef WGSL_CODE
+#define WGSL_CODE(...) #__VA_ARGS__
 #endif
 
 // 前向声明
