@@ -1,8 +1,7 @@
 #include "shader_manager.h"
-#include "WCN/WCN.h"  // 包含WCN头文件以使用调试宏
+#include "WCN/WCN.h" // 包含WCN头文件以使用调试宏
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 // clang-format off
 static const char *vertex_shader_wgsl = WGSL_CODE(
