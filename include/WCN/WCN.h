@@ -18,10 +18,6 @@ static inline void ___prev_clangd___printf() { (void)printf; }
 extern "C" {
 #endif
 
-#ifndef WGSL_CODE
-#define WGSL_CODE(...) #__VA_ARGS__
-#endif
-
 // 前向声明
 typedef struct WCN_Context WCN_Context;
 typedef struct WCN_Canvas WCN_Canvas;

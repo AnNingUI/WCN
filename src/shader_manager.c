@@ -1,5 +1,6 @@
 #include "shader_manager.h"
 #include "WCN/WCN.h" // 包含WCN头文件以使用调试宏
+#include "WCN/WCN_WGSL.h"
 #include <stdlib.h>
 #include <string.h>
 
