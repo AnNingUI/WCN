@@ -1,5 +1,5 @@
 @echo off
-REM WebGPU-Native Res: https://github.com/gfx-rs/wgpu-native/releases/tag/v25.0.2.2
+REM WebGPU-Native Res: https://github.com/gfx-rs/wgpu-native/releases/tag/v27.0.2.0
 REM Let users choose system, architecture, compiler, and mode to download specified packages
 REM Extract to external\wgpu directory
 
@@ -32,31 +32,31 @@ if %errorlevel% equ 0 (
     if %errorlevel% equ 1 (
         set "PLATFORM=windows-x86_64-msvc"
         set "FILENAME=wgpu-windows-x86_64-msvc-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-x86_64-msvc-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-x86_64-msvc-release.zip"
     ) else if %errorlevel% equ 2 (
         set "PLATFORM=windows-x86_64-gnu"
         set "FILENAME=wgpu-windows-x86_64-gnu-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-x86_64-gnu-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-x86_64-gnu-release.zip"
     ) else if %errorlevel% equ 3 (
         set "PLATFORM=windows-i686-msvc"
         set "FILENAME=wgpu-windows-i686-msvc-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-i686-msvc-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-i686-msvc-release.zip"
     ) else if %errorlevel% equ 4 (
         set "PLATFORM=windows-aarch64-msvc"
         set "FILENAME=wgpu-windows-aarch64-msvc-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-aarch64-msvc-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-aarch64-msvc-release.zip"
     ) else if %errorlevel% equ 5 (
         set "PLATFORM=linux-x86_64"
         set "FILENAME=wgpu-linux-x86_64-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-linux-x86_64-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-linux-x86_64-release.zip"
     ) else if %errorlevel% equ 6 (
         set "PLATFORM=macos-x86_64"
         set "FILENAME=wgpu-macos-x86_64-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-macos-x86_64-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-macos-x86_64-release.zip"
     ) else if %errorlevel% equ 7 (
         set "PLATFORM=android-aarch64"
         set "FILENAME=wgpu-android-aarch64-release.zip"
-        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-aarch64-release.zip"
+        set "DOWNLOAD_URL=https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-android-aarch64-release.zip"
     )
     
     REM Create download directory
@@ -72,6 +72,20 @@ if %errorlevel% equ 0 (
     
     REM Delete archive
     del "%~dp0wgpu\%FILENAME%"
+
+    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/gfx-rs/wgpu-native/raw/trunk/ffi/wgpu.h' -OutFile '%~dp0wgpu\include\webgpu\wgpu.h'"
+    if %errorlevel% equ 0 (
+        echo Downloaded wgpu.h
+    ) else (
+        echo Failed to download wgpu.h
+    )
+    
+    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/webgpu-native/webgpu-headers/raw/main/webgpu.h' -OutFile '%~dp0wgpu\include\webgpu\webgpu.h'"
+    if %errorlevel% equ 0 (
+        echo Downloaded webgpu.h
+    ) else (
+        echo Failed to download webgpu.h
+    )
     
     echo Download and extraction complete!
 )

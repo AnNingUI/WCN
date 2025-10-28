@@ -44,12 +44,12 @@ echo -e "\033[0;33mDetected system: $SYSTEM ($ARCH)\033[0m"
 
 # Define download options
 declare -A platforms
-platforms[1]="Windows x86_64 (MSVC)|wgpu-windows-x86_64-msvc-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-x86_64-msvc-release.zip"
-platforms[2]="Windows x86_64 (GNU)|wgpu-windows-x86_64-gnu-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-x86_64-gnu-release.zip"
-platforms[3]="Linux x86_64|wgpu-linux-x86_64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-linux-x86_64-release.zip"
-platforms[4]="MacOS x86_64|wgpu-macos-x86_64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-macos-x86_64-release.zip"
-platforms[5]="MacOS aarch64|wgpu-macos-aarch64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-macos-aarch64-release.zip"
-platforms[6]="Android aarch64|wgpu-android-aarch64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-aarch64-release.zip"
+platforms[1]="Windows x86_64 (MSVC)|wgpu-windows-x86_64-msvc-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-x86_64-msvc-release.zip"
+platforms[2]="Windows x86_64 (GNU)|wgpu-windows-x86_64-gnu-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-x86_64-gnu-release.zip"
+platforms[3]="Linux x86_64|wgpu-linux-x86_64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-linux-x86_64-release.zip"
+platforms[4]="MacOS x86_64|wgpu-macos-x86_64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-macos-x86_64-release.zip"
+platforms[5]="MacOS aarch64|wgpu-macos-aarch64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-macos-aarch64-release.zip"
+platforms[6]="Android aarch64|wgpu-android-aarch64-release.zip|https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-android-aarch64-release.zip"
 
 # Show platform options
 echo -e "\033[0;33mPlease select platform:\033[0m"
@@ -114,6 +114,54 @@ if command -v unzip &> /dev/null; then
 else
     echo -e "\033[0;31mError: unzip tool not found!\033[0m"
     exit 1
+fi
+
+
+# Download header files
+echo -e "\033[0;33mDownloading header files...\033[0m"
+
+# Create include directory
+headers_dir="$wgpu_dir/include/webgpu"
+mkdir -p "$headers_dir"
+
+# Download wgpu.h
+header_url="https://github.com/gfx-rs/wgpu-native/raw/trunk/ffi/wgpu.h"
+header_path="$headers_dir/wgpu.h"
+echo -e "\033[0;33mDownloading wgpu.h...\033[0m"
+
+if command -v curl &> /dev/null; then
+    curl -L "$header_url" -o "$header_path"
+elif command -v wget &> /dev/null; then
+    wget "$header_url" -O "$header_path"
+else
+    echo -e "\033[0;31mError: curl or wget not found!\033[0m"
+    exit 1
+fi
+
+if [ $? -eq 0 ]; then
+    echo -e "\033[0;32mDownloaded wgpu.h\033[0m"
+else
+    echo -e "\033[0;31mFailed to download wgpu.h\033[0m"
+fi
+
+# Download webgpu.h
+webgpu_header_url="https://github.com/webgpu-native/webgpu-headers/raw/main/webgpu.h"
+webgpu_header_path="$headers_dir/webgpu.h"
+echo -e "\033[0;33mDownloading webgpu.h...\033[0m"
+
+if command -v curl &> /dev/null; then
+    curl -L "$webgpu_header_url" -o "$webgpu_header_path"
+elif command -v wget &> /dev/null; then
+    wget "$webgpu_header_url" -O "$webgpu_header_path"
+else
+    echo -e "\033[0;31mError: curl or wget not found!\033[0m"
+    exit 1
+fi
+
+if [ $? -eq 0 ]; then
+    echo -e "\033[0;32mDownloaded webgpu.h\033[0m"
+else
+    echo -e "\033[0;31mFailed to download webgpu.h\033[0m"
 fi
 
 # Delete archive
