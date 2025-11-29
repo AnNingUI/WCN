@@ -1378,6 +1378,9 @@ void wcn_renderer_render(
             batch_instances = batch_capacity;
         }
 
+        // Debug print to see batching
+        // printf("Batch: offset=%zu, count=%zu, total=%zu\n", instance_offset, batch_instances, total_instances);
+
         WCN_RendererUniforms uniform_data = {
             .viewport_size = {(float)ctx->width, (float)ctx->height},
             .instance_count = (uint32_t)batch_instances,
@@ -1400,7 +1403,16 @@ void wcn_renderer_render(
         wgpuComputePassEncoderSetPipeline(compute_pass, renderer->compute_pipeline);
         wgpuComputePassEncoderSetBindGroup(compute_pass, 0, renderer->compute_bind_group, 0, NULL);
 
+        // Make sure we're dispatching the correct number of workgroups
         uint32_t workgroups = (uint32_t)((batch_instances + 63) / 64);
+        // Ensure at least one workgroup is dispatched
+        if (workgroups == 0 && batch_instances > 0) {
+            workgroups = 1;
+        }
+        
+        // Debug print
+        // printf("Dispatching %u workgroups for %zu instances\n", workgroups, batch_instances);
+        
         wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroups, 1, 1);
         wgpuComputePassEncoderEnd(compute_pass);
 

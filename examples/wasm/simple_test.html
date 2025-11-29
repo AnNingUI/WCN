@@ -232,11 +232,8 @@
             wcnCanvas.restore();
             
             // End frame (this will internally call wcn_renderer_render to actually render the content)
+            // In WASM, wcn_end_frame handles ending the render pass and submitting commands
             wcnCanvas.endFrame();
-            
-            // End render pass and submit commands (these are called internally by wcn_end_frame in native implementation)
-            wcnCanvas.endRenderPass(renderPassInfo.textureViewId);
-            wcnCanvas.submitCommands();
             
             // Continue animation loop
             requestAnimationFrame(animate);

@@ -38,6 +38,8 @@ CMakeFiles/wcn_wasm.dir/src/wcn_wasm_font_decoder.c.o: \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\strings.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\stdio.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\wasi\api.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\compat\math.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\math.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\emscripten\html5.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\pthread.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\sched.h \
