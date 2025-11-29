@@ -1,0 +1,25 @@
+CMakeFiles/wcn_wasm.dir/src/wcn_style.c.o: \
+  D:\Dev-Project\c\WCN\src\wcn_style.c \
+  D:\Dev-Project\c\WCN\src\wcn_internal.h \
+  D:\Dev-Project\c\WCN\include\WCN\WCN.h \
+  D:\Dev-Project\c\WCN\include\WCN\WCN_WGSL.h \
+  D:\Dev-Project\c\WCN\external\wgpu\include\webgpu\webgpu.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\stdint.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\stdint.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\bits\alltypes.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\bits\stdint.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\stddef.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\stddef.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_header_macro.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_ptrdiff_t.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_size_t.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_wchar_t.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_null.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_max_align_t.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\__stddef_offsetof.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\stdbool.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\stdbool.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\compat\string.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\string.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\features.h \
+  D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\strings.h

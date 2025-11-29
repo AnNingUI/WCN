@@ -9,4 +9,8 @@ DS_Store
 res.list.md
 
 # external lib
-wgpu
+wgpu/*
+stb/include/stb_image.h
+stb/include/stb_image_write.h
+stb/include/stb_image_resize2.h
+stb/include/stb_truetype.h

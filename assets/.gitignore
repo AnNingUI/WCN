@@ -1,0 +1,11 @@
+build
+.cache
+.codebuddy
+.vscode
+.idea
+.DS_Store
+DS_Store
+
+font/DejaVuSans.ttf
+NotoSerif-Medium.ttf
+PingFangSCMedium.ttf

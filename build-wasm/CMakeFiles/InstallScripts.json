@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/Dev-Project/c/WCN/build-wasm/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

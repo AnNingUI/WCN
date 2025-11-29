@@ -12,6 +12,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # 设置包含目录
 include_directories(include)
 include_directories(external/wgpu/include)
+include_directories(external/stb/include)
 include_directories(src)
 
 # 查找所有源文件
@@ -26,14 +27,21 @@ endif()
 add_library(wcn ${SOURCES})
 
 # 链接 WebGPU 库
-find_library(WGPU_LIBRARY 
-    NAMES wgpu_native wgpu webgpu
-    HINTS external/wgpu/lib
-    PATH_SUFFIXES release debug
-)
+# 先查找系统库
+find_library(WGPU_LIBRARY NAMES wgpu_native wgpu webgpu)
+
+# 如果没找到，再查找项目内的
+if(NOT WGPU_LIBRARY)
+    find_library(WGPU_LIBRARY NAMES wgpu_native wgpu webgpu
+        PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/wgpu/lib
+        PATH_SUFFIXES release debug
+        NO_DEFAULT_PATH
+    )
+endif()
 
 if(WGPU_LIBRARY)
-    target_link_libraries(wcn ${WGPU_LIBRARY})
+    message(STATUS "Found WebGPU library: ${WGPU_LIBRARY}")
+    target_link_libraries(wcn ${WGPU_LIBRARY} m)
 else()
     message(WARNING "WebGPU library not found")
 endif()
@@ -147,34 +155,173 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
 endif()
 
 # WASM 构建配置
-if(EMSCRIPTEN)
-    # 创建 WASM 版本的库
-    add_library(wcn_wasm ${SOURCES})
-    
-    # 设置 WASM 编译选项
-    target_compile_options(wcn_wasm PRIVATE
-        -sUSE_WEBGPU=1
-        -sEXPORTED_FUNCTIONS=_malloc,_free
-        -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
-        -sMODULARIZE=1
-        -sEXPORT_NAME=WCN
-    )
-    
-    target_link_options(wcn_wasm PRIVATE
-        -sUSE_WEBGPU=1
-        -sEXPORTED_FUNCTIONS=_malloc,_free
-        -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
-        -sMODULARIZE=1
-        -sEXPORT_NAME=WCN
-        -sALLOW_MEMORY_GROWTH=1
-    )
-    
-    # 导出需要的函数
-    target_compile_definitions(wcn_wasm PRIVATE WCN_WASM_EXPORT)
-endif()
+option(WCN_BUILD_WASM "Build WebAssembly version" OFF)
 
-# 添加 examples 子目录
-add_subdirectory(examples)
+if(EMSCRIPTEN OR WCN_BUILD_WASM)
+    message(STATUS "Building WCN for WebAssembly")
+    message(STATUS "WASM build will use Emscripten's Dawn WebGPU implementation")
+    
+    # 为 WASM 构建收集源文件（排除数学库和批处理系统）
+    file(GLOB WASM_SOURCES 
+        "src/wcn_context.c"
+        "src/wcn_instance.c"
+        "src/wcn_path.c"
+        "src/wcn_rect.c"
+        "src/wcn_renderer.c"
+        "src/wcn_sdf_atlas.c"
+        "src/wcn_style.c"
+        "src/wcn_text.c"
+        "src/wcn_transform.c"
+        "src/wcn_wasm_exports.c"
+        "src/wcn_wasm_font_decoder.c"
+        "src/wcn_emcc_js.c"
+    )
+    
+    message(STATUS "WASM sources: ${WASM_SOURCES}")
+    
+    # 创建 WASM 版本的库
+    add_executable(wcn_wasm ${WASM_SOURCES})
+    
+    # 设置包含目录
+    target_include_directories(wcn_wasm PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/wgpu/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/stb/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    
+    # 手动定义导出的函数列表（与WCN_WASM.h中WCN_WASM_EXPORT标记的函数对应）
+    set(EXPORTED_FUNCTIONS
+        "_wcn_init_js"
+        "_wcn_create_context"
+        "_wcn_destroy_context"
+        "_wcn_begin_frame"
+        "_wcn_end_frame"
+        "_wcn_begin_render_pass"
+        "_wcn_end_render_pass"
+        "_wcn_submit_commands"
+        "_wcn_save"
+        "_wcn_restore"
+        "_wcn_register_font_decoder"
+        "_wcn_register_image_decoder"
+        "_wcn_clear_rect"
+        "_wcn_fill_rect"
+        "_wcn_stroke_rect"
+        "_wcn_begin_path"
+        "_wcn_close_path"
+        "_wcn_move_to"
+        "_wcn_line_to"
+        "_wcn_arc"
+        "_wcn_rect"
+        "_wcn_fill"
+        "_wcn_stroke"
+        "_wcn_set_fill_style"
+        "_wcn_set_stroke_style"
+        "_wcn_set_line_width"
+        "_wcn_set_line_cap"
+        "_wcn_set_line_join"
+        "_wcn_set_miter_limit"
+        "_wcn_set_global_alpha"
+        "_wcn_set_global_composite_operation"
+        "_wcn_translate"
+        "_wcn_rotate"
+        "_wcn_scale"
+        "_wcn_transform"
+        "_wcn_set_transform"
+        "_wcn_reset_transform"
+        "_wcn_fill_text"
+        "_wcn_stroke_text"
+        "_wcn_measure_text"
+        "_wcn_set_font"
+        "_wcn_set_font_face"
+        "_wcn_set_text_align"
+        "_wcn_set_text_baseline"
+        # "_wcn_draw_image"
+        # "_wcn_draw_image_scaled"
+        # "_wcn_draw_image_source"
+        # "_wcn_get_image_data"
+        # "_wcn_put_image_data"
+        "_wcn_get_surface_format"
+        "_wcn_set_surface_format"
+        "_wcn_wasm_get_font_decoder"
+        "_wcn_wasm_create_default_font_face"
+        "_malloc"
+        "_free"
+    )
+    # 将列表转换为逗号分隔的字符串
+    string(REPLACE ";" "," EXPORTED_FUNCTIONS "${EXPORTED_FUNCTIONS}")
+    message(STATUS "WASM exports: ${EXPORTED_FUNCTIONS}")
+
+    # WASM 编译选项
+    set(WASM_COMPILE_FLAGS
+        -O3                              # 最高优化级别
+        -sUSE_WEBGPU=1                   # 使用 Emscripten 的 WebGPU (Dawn)
+        -sWASM=1                         # 生成 WASM
+        -sALLOW_MEMORY_GROWTH=1          # 允许内存增长
+        -sMODULARIZE=1                   # 模块化输出
+        -sEXPORT_NAME=createWCNModule    # 模块名称
+        -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString,stringToUTF8  # 导出运行时方法
+        -sEXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS}  # 只导出指定的函数
+        -sENVIRONMENT=web                # 目标环境：浏览器
+        -sMAXIMUM_MEMORY=2147483648      # 最大内存 (2GB)
+        -sINITIAL_MEMORY=67108864        # 初始内存 (64MB)
+        -sASSERTIONS=2                   # 启用详细断言
+        -sSAFE_HEAP=1                    # 启用安全堆检查
+    )
+    
+    # WASM 链接选项 - 链接 Emscripten 的 Dawn WebGPU 实现
+    set(WASM_LINK_FLAGS
+        ${WASM_COMPILE_FLAGS}
+        -sUSE_WEBGPU=1                   # 链接 Emscripten Dawn WebGPU 库
+    )
+    
+    # Debug 构建选项
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        list(APPEND WASM_COMPILE_FLAGS
+            -g                           # 调试信息
+            -sASSERTIONS=1              # 启用断言
+            -sSAFE_HEAP=1               # 堆安全检查
+            -sSTACK_OVERFLOW_CHECK=2    # 栈溢出检查
+            -sDEMANGLE_SUPPORT=1        # 符号解析
+        )
+    else()
+        # 即使是Release版本也添加一些调试帮助
+        list(APPEND WASM_COMPILE_FLAGS
+            -sASSERTIONS=1              # 启用断言以获得更好的错误信息
+            -sSAFE_HEAP=1               # 堆安全检查
+        )
+    endif()
+    
+    # 应用编译和链接选项
+    target_compile_options(wcn_wasm PRIVATE ${WASM_COMPILE_FLAGS})
+    target_link_options(wcn_wasm PRIVATE ${WASM_LINK_FLAGS})
+    
+    # 设置输出文件名
+    set_target_properties(wcn_wasm PROPERTIES
+        OUTPUT_NAME "wcn"
+        SUFFIX ".js"
+    )
+    
+    # 安装 WASM 文件
+    install(FILES 
+        ${CMAKE_CURRENT_BINARY_DIR}/wcn.js
+        ${CMAKE_CURRENT_BINARY_DIR}/wcn.wasm
+        DESTINATION lib/wasm
+        OPTIONAL
+    )
+    
+    # 创建一个自定义目标来显示构建信息
+    add_custom_command(TARGET wcn_wasm POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "WebAssembly build complete:"
+        COMMAND ${CMAKE_COMMAND} -E echo "  Output: ${CMAKE_CURRENT_BINARY_DIR}/wcn.js"
+        COMMAND ${CMAKE_COMMAND} -E echo "  WASM:   ${CMAKE_CURRENT_BINARY_DIR}/wcn.wasm"
+    )
+    
+    message(STATUS "WASM build configured. Use 'make wcn_wasm' to build.")
+else()
+    # 只在非 WASM 构建时添加 examples（examples 依赖 GLFW 等本地库）
+    add_subdirectory(examples)
+endif()
 
 # 安装规则
 install(TARGETS wcn

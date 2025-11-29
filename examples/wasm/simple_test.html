@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCN WebAssembly Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .canvas-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            background-color: #fff;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 0 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .status.loading {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WCN WebAssembly Canvas2D Test</h1>
+        
+        <div class="canvas-container">
+            <canvas id="canvas" width="1000" height="600"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn" onclick="startDemo()">Start Demo</button>
+            <button onclick="stopDemo()">Stop Demo</button>
+        </div>
+        
+        <div id="status" class="status loading">Loading WCN module...</div>
+        
+        <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;">
+            <h3>About this demo:</h3>
+            <p>This demo shows the capabilities of WCN (WebGPU Canvas Native), a cross-platform Canvas2D implementation using WebGPU.</p>
+            <p>Features demonstrated:</p>
+            <ul>
+                <li>Rectangle drawing with fill and stroke</li>
+                <li>Path operations (moveTo, lineTo, arc, closePath)</li>
+                <li>Text rendering with font support</li>
+                <li>Transformations (translate, rotate, save/restore)</li>
+                <li>Color and style management</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Load WCN WASM module -->
+    <script src="../../build-wasm/wcn.js"></script>
+    
+    <!-- Load WCN Canvas Wrapper -->
+    <script src="./wcn_canvas.js"></script>
+    
+    <script>
+        let WCNModule = null;
+        let wcnCanvas = null;
+        let isRunning = false;
+        
+        // Load the WCN module
+        async function loadWCN() {
+            try {
+                updateStatus('Loading WCN module...', 'loading');
+                
+                // Create WCN module
+                WCNModule = await createWCNModule();
+                
+                updateStatus('WCN module loaded successfully!', 'success');
+                document.getElementById('startBtn').disabled = false;
+                
+                // console.log('WCN Version:', WCNModule._wcn_wasm_get_version());
+            } catch (error) {
+                updateStatus('Failed to load WCN module: ' + error.message, 'error');
+                // console.error('Failed to load WCN module:', error);
+            }
+        }
+        
+        // Start the demo
+        async function startDemo() {
+            if (isRunning) return;
+            
+            try {
+                updateStatus('Initializing canvas...', 'loading');
+                
+                // Create WCN Canvas wrapper
+                wcnCanvas = await createWCNCanvas('canvas', WCNModule);
+                
+                // Load a default font
+                wcnCanvas.loadFont('Arial', 24);
+                
+                updateStatus('Canvas initialized. Starting demo...', 'success');
+                
+                // Start the animation loop
+                isRunning = true;
+                animate();
+            } catch (error) {
+                updateStatus('Failed to initialize canvas: ' + error.message, 'error');
+                // console.error('Failed to initialize canvas:', error);
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            if (!isRunning) return;
+            
+            // Begin frame
+            wcnCanvas.beginFrame();
+            
+            // Begin render pass
+            const renderPassInfo = wcnCanvas.beginRenderPass();
+            if (!renderPassInfo) {
+                // console.error('Failed to begin render pass');
+                return;
+            }
+            
+            // Clear background
+            wcnCanvas.setFillStyle('#ffffff');
+            wcnCanvas.fillRect(0, 0, 1000, 600);
+            
+            // Draw a grid
+            wcnCanvas.setStrokeStyle('#e0e0e0');
+            wcnCanvas.setLineWidth(1);
+            
+            // Vertical lines
+            for (let x = 0; x <= 1000; x += 50) {
+                wcnCanvas.beginPath();
+                wcnCanvas.moveTo(x, 0);
+                wcnCanvas.lineTo(x, 600);
+                wcnCanvas.stroke();
+            }
+            
+            // Horizontal lines
+            for (let y = 0; y <= 600; y += 50) {
+                wcnCanvas.beginPath();
+                wcnCanvas.moveTo(0, y);
+                wcnCanvas.lineTo(1000, y);
+                wcnCanvas.stroke();
+            }
+            
+            // Draw some rectangles
+            wcnCanvas.setFillStyle('rgba(255, 0, 0, 0.7)');
+            wcnCanvas.fillRect(50, 50, 100, 100);
+            
+            wcnCanvas.setFillStyle('rgba(0, 255, 0, 0.7)');
+            wcnCanvas.fillRect(100, 100, 100, 100);
+            
+            wcnCanvas.setFillStyle('rgba(0, 0, 255, 0.7)');
+            wcnCanvas.fillRect(150, 150, 100, 100);
+            
+            // Draw a path
+            wcnCanvas.beginPath();
+            wcnCanvas.moveTo(300, 100);
+            wcnCanvas.lineTo(400, 100);
+            wcnCanvas.lineTo(350, 200);
+            wcnCanvas.closePath();
+            wcnCanvas.setFillStyle('rgba(255, 255, 0, 0.7)');
+            wcnCanvas.fill();
+            wcnCanvas.setStrokeStyle('#000000');
+            wcnCanvas.setLineWidth(2);
+            wcnCanvas.stroke();
+            
+            // Draw an arc
+            wcnCanvas.beginPath();
+            wcnCanvas.arc(500, 150, 50, 0, Math.PI * 2);
+            wcnCanvas.setFillStyle('rgba(255, 0, 255, 0.7)');
+            wcnCanvas.fill();
+            
+            // Draw text
+            wcnCanvas.setFont('24px Arial');
+            wcnCanvas.setFillStyle('#ff0000'); // Red text to make it more visible
+            wcnCanvas.fillText('WCN WebAssembly Demo', 200, 300);
+            
+            // Draw rotated text
+            wcnCanvas.save();
+            wcnCanvas.translate(300, 350);
+            wcnCanvas.rotate(Math.PI / 4);
+            wcnCanvas.fillText('Rotated Text', 0, 0);
+            wcnCanvas.restore();
+            
+            // End frame (this will internally call wcn_renderer_render to actually render the content)
+            wcnCanvas.endFrame();
+            
+            // End render pass and submit commands (these are called internally by wcn_end_frame in native implementation)
+            wcnCanvas.endRenderPass(renderPassInfo.textureViewId);
+            wcnCanvas.submitCommands();
+            
+            // Continue animation loop
+            requestAnimationFrame(animate);
+        }
+        
+        // Update status message
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+        
+        // Stop the demo
+        function stopDemo() {
+            isRunning = false;
+            updateStatus('Demo stopped', 'loading');
+            document.getElementById('startBtn').disabled = false;
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            loadWCN();
+        });
+    </script>
+</body>
+</html>

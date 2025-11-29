@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WCN WASM Font Decoder Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 1px solid #ddd;
+            display: block;
+            margin: 20px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.loading {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+        .controls {
+            margin: 15px 0;
+        }
+        label {
+            display: inline-block;
+            width: 120px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 5px;
+            margin: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WCN WebAssembly Font Decoder Test</h1>
+        <p>This example demonstrates text rendering with the WCN WASM font decoder.</p>
+        
+        <div id="status" class="status loading">Loading WCN module...</div>
+        
+        <div class="controls">
+            <label for="fontFamily">Font Family:</label>
+            <select id="fontFamily">
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Verdana">Verdana</option>
+            </select>
+            
+            <label for="fontSize">Font Size:</label>
+            <input type="number" id="fontSize" value="24" min="8" max="72">
+            
+            <button id="startBtn" disabled onclick="startDemo()">Start Demo</button>
+            <button onclick="stopDemo()">Stop Demo</button>
+        </div>
+        
+        <canvas id="canvas" width="800" height="600"></canvas>
+        
+        <div>
+            <h3>Features Demonstrated:</h3>
+            <ul>
+                <li>WCN WASM font decoder integration</li>
+                <li>Text rendering with different fonts and sizes</li>
+                <li>Text measurement capabilities</li>
+                <li>Advanced text layout</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Load WCN WASM module -->
+    <script src="../../build-wasm/wcn.js"></script>
+    
+    <!-- Load WCN Canvas Wrapper -->
+    <script src="./wcn_canvas.js"></script>
+    
+    <script>
+        let WCNModule = null;
+        let wcnCanvas = null;
+        let isRunning = false;
+        let animationId = null;
+        let rotationAngle = 0;
+        
+        // Load the WCN module
+        async function loadWCN() {
+            try {
+                updateStatus('Loading WCN module...', 'loading');
+                
+                // Create WCN module
+                WCNModule = await createWCNModule();
+                
+                updateStatus('WCN module loaded successfully! Version: ' + WCNModule._wcn_wasm_get_version(), 'success');
+                document.getElementById('startBtn').disabled = false;
+            } catch (error) {
+                updateStatus('Failed to load WCN module: ' + error.message, 'error');
+                // console.error('Failed to load WCN module:', error);
+            }
+        }
+        
+        // Start the demo
+        async function startDemo() {
+            if (isRunning) return;
+            
+            try {
+                updateStatus('Initializing canvas...', 'loading');
+                
+                // Create WCN Canvas wrapper
+                wcnCanvas = await createWCNCanvas('canvas', WCNModule);
+                
+                updateStatus('Canvas initialized. Starting font demo...', 'success');
+                
+                // Start the animation loop
+                isRunning = true;
+                animate();
+            } catch (error) {
+                updateStatus('Failed to initialize canvas: ' + error.message, 'error');
+                // console.error('Failed to initialize canvas:', error);
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            if (!isRunning) return;
+            
+            // Begin frame
+            wcnCanvas.beginFrame();
+            
+            // Begin render pass
+            const renderPassInfo = wcnCanvas.beginRenderPass();
+            if (!renderPassInfo) {
+                // console.error('Failed to begin render pass');
+                return;
+            }
+            
+            // Clear background
+            wcnCanvas.setFillStyle('#ffffff');
+            wcnCanvas.fillRect(0, 0, 800, 600);
+            
+            // Get font settings
+            const fontFamily = document.getElementById('fontFamily').value;
+            const fontSize = parseInt(document.getElementById('fontSize').value);
+            const fontSpec = `${fontSize}px "${fontFamily}"`;
+            
+            // Set font
+            wcnCanvas.setFont(fontSpec);
+            
+            // Draw title
+            wcnCanvas.setFillStyle('#333333');
+            wcnCanvas.fillText('WCN WASM Font Decoder Test', 50, 50);
+            
+            // Draw various text samples
+            wcnCanvas.setFillStyle('#0066cc');
+            wcnCanvas.fillText('Font Family: ' + fontFamily, 50, 100);
+            wcnCanvas.fillText('Font Size: ' + fontSize + 'px', 50, 130);
+            
+            // Draw sample text with different styles
+            const sampleText = "The quick brown fox jumps over the lazy dog.";
+            
+            // Normal text
+            wcnCanvas.setFillStyle('#000000');
+            wcnCanvas.fillText(sampleText, 50, 180);
+            
+            // Measure text
+            const metrics = wcnCanvas.measureText(sampleText);
+            wcnCanvas.setFont('16px Arial');
+            wcnCanvas.setFillStyle('#666666');
+            wcnCanvas.fillText('Text width: ' + metrics.width.toFixed(2) + 'px', 50, 200);
+            
+            // Reset font
+            wcnCanvas.setFont(fontSpec);
+            wcnCanvas.setFillStyle('#000000');
+            
+            // Draw rotated text
+            wcnCanvas.save();
+            wcnCanvas.translate(400, 300);
+            wcnCanvas.rotate(rotationAngle);
+            wcnCanvas.setFillStyle('#cc0000');
+            wcnCanvas.fillText('Rotating Text Sample', 0, 0);
+            wcnCanvas.restore();
+            
+            // Draw multiple lines of text
+            wcnCanvas.setFillStyle('#006600');
+            const lines = [
+                "Line 1: This is a sample text line",
+                "Line 2: Demonstrating multiline text rendering",
+                "Line 3: With the WCN WASM font decoder",
+                "Line 4: Each line is positioned separately"
+            ];
+            
+            for (let i = 0; i < lines.length; i++) {
+                wcnCanvas.fillText(lines[i], 50, 350 + i * 30);
+            }
+            
+            // Draw text with background
+            wcnCanvas.save();
+            wcnCanvas.setFillStyle('rgba(255, 255, 0, 0.3)');
+            wcnCanvas.fillRect(450, 350, 300, 100);
+            wcnCanvas.setFillStyle('#000000');
+            wcnCanvas.fillText('Text with', 460, 380);
+            wcnCanvas.fillText('Background', 460, 410);
+            wcnCanvas.fillText('Highlight', 460, 440);
+            wcnCanvas.restore();
+            
+            // Update rotation angle for animation
+            rotationAngle += 0.02;
+            
+            // End render pass
+            wcnCanvas.endRenderPass(renderPassInfo.textureViewId);
+            
+            // End frame and submit
+            wcnCanvas.endFrame();
+            wcnCanvas.submitCommands();
+            
+            // Continue animation loop
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        // Update status message
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+        
+        // Stop the demo
+        function stopDemo() {
+            isRunning = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            updateStatus('Demo stopped', 'loading');
+            document.getElementById('startBtn').disabled = false;
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            loadWCN();
+        });
+        
+        // Handle font changes
+        document.getElementById('fontFamily').addEventListener('change', () => {
+            if (isRunning) {
+                // Restart animation with new font
+                stopDemo();
+                setTimeout(startDemo, 100);
+            }
+        });
+        
+        document.getElementById('fontSize').addEventListener('change', () => {
+            if (isRunning) {
+                // Restart animation with new font size
+                stopDemo();
+                setTimeout(startDemo, 100);
+            }
+        });
+    </script>
+</body>
+</html>

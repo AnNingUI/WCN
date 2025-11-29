@@ -1,0 +1,328 @@
+#ifndef WCN_INTERNAL_H
+#define WCN_INTERNAL_H
+
+#include "WCN/WCN.h"
+
+// ============================================================================
+// 统一渲染系统 (Unified Rendering System)
+// ============================================================================
+
+// 实例类型枚举
+typedef enum {
+    WCN_INSTANCE_TYPE_RECT = 0,
+    WCN_INSTANCE_TYPE_TEXT = 1,
+    WCN_INSTANCE_TYPE_PATH = 2,
+    WCN_INSTANCE_TYPE_LINE = 3
+} WCN_InstanceType;
+
+// 统一实例结构 (64 字节，用于 GPU 实例化渲染)
+// 字段排列以达到精确 64 字节，无额外填充
+typedef struct {
+    float position[2];      // 8 bytes: (x, y) 屏幕空间位置
+    float size[2];          // 8 bytes: (width, height) 尺寸
+    float uv[2];            // 8 bytes: UV 起始坐标
+    float uvSize[2];        // 8 bytes: UV 尺寸
+    float transform[4];     // 16 bytes: 2x2 变换矩阵 (行优先)
+    uint32_t color;         // 4 bytes: RGBA 打包颜色 (8 bits per channel)
+    uint32_t type;          // 4 bytes: 实例类型 (WCN_InstanceType)
+    uint32_t flags;         // 4 bytes: 渲染标志
+    float param0;           // 4 bytes: 类型特定参数 0
+} WCN_Instance;             // Total: 60 bytes + 4 bytes padding = 64 bytes
+
+// 实例缓冲区（CPU 端动态数组）
+typedef struct {
+    WCN_Instance* instances;  // 动态数组
+    size_t count;             // 当前实例数量
+    size_t capacity;          // 已分配容量
+} WCN_InstanceBuffer;
+
+// 统一渲染器结构
+typedef struct WCN_Renderer {
+    // WebGPU 资源
+    WGPUDevice device;
+    WGPUQueue queue;
+    WGPURenderPipeline pipeline;
+    WGPUBindGroupLayout bind_group_layout;          // Group 0: instances + uniforms
+    WGPUBindGroupLayout sdf_bind_group_layout;      // Group 1: SDF atlas texture + sampler
+    WGPUBindGroup bind_group;
+    
+    // 缓冲区
+    WGPUBuffer instance_buffer;      // 存储缓冲区（实例数据）
+    WGPUBuffer uniform_buffer;       // 统一缓冲区（窗口尺寸）
+    size_t instance_buffer_size;     // 当前 GPU 缓冲区大小
+    
+    // CPU 端实例累积
+    WCN_InstanceBuffer cpu_instances;
+    
+    // 视口
+    uint32_t width;
+    uint32_t height;
+} WCN_Renderer;
+
+// ============================================================================
+// Old batch rendering system structures removed
+// ============================================================================
+// WCN_Vertex, WCN_RenderBatch, and WCN_VertexCollector have been removed
+// as they are no longer needed with the unified rendering system.
+// ============================================================================
+
+// ============================================================================
+// MSDF Atlas 系统
+// ============================================================================
+
+// 纹理图集中的字形条目
+typedef struct {
+    uint32_t codepoint;      // 字符码点
+    float font_size;         // 字号
+    uint16_t x, y;           // 在图集中的位置（像素）
+    uint16_t width, height;  // 字形大小（像素）
+    float uv_min[2];         // UV 坐标最小值
+    float uv_max[2];         // UV 坐标最大值
+    float offset_x, offset_y; // 字形偏移
+    float advance_width;     // 字形前进宽度
+    bool is_valid;           // 是否有效
+} WCN_AtlasGlyph;
+
+// MSDF 纹理图集（Multi-channel Signed Distance Field）
+typedef struct {
+    WGPUTexture texture;
+    WGPUTextureView texture_view;
+    uint32_t width;          // 图集宽度
+    uint32_t height;         // 图集高度
+    uint32_t current_x;      // 当前打包位置 X
+    uint32_t current_y;      // 当前打包位置 Y
+    uint32_t row_height;     // 当前行高度
+
+    // 字形缓存（哈希表）
+    WCN_AtlasGlyph* glyphs;
+    size_t glyph_count;
+    size_t glyph_capacity;
+    bool dirty;              // 是否需要刷新到 GPU
+} WCN_SDFAtlas;
+
+// WCN_Context 完整定义（内部使用）
+struct WCN_Context {
+    // WebGPU 资源
+    WGPUInstance instance;
+    WGPUDevice device;
+    WGPUQueue queue;
+    WGPUSurface surface;
+    WGPUTextureFormat surface_format;
+
+    // 状态管理
+    WCN_StateStack state_stack;
+    uint32_t next_gpu_state_slot;  // 下一个可用的 GPU 状态槽位（用于批次渲染）
+
+    // 解码器
+    WCN_FontDecoder* font_decoder;
+    WCN_ImageDecoder* image_decoder;
+
+    // 当前路径
+    WCN_Path* current_path;
+    
+    // 文本渲染状态
+    WCN_FontFace* current_font_face;
+    float current_font_size;
+    WCN_TextAlign text_align;
+    WCN_TextBaseline text_baseline;
+
+    // 当前帧状态
+    uint32_t frame_width;
+    uint32_t frame_height;
+    uint32_t width;  // 当前窗口宽度
+    uint32_t height; // 当前窗口高度
+    bool in_frame;
+
+    // 资源管理（旧的即时渲染方式，保留用于兼容）
+    WGPUBuffer vertex_buffer;
+    WGPUBuffer index_buffer;
+    WGPUBuffer uniform_buffer;
+
+    // 渲染状态
+#ifdef __EMSCRIPTEN__
+    int current_texture_view_id;
+#else
+    WGPUTextureView current_texture_view;
+#endif    
+    WGPUCommandEncoder current_command_encoder;
+    WGPURenderPassEncoder current_render_pass;
+    bool render_pass_needs_begin;
+    WGPULoadOp pending_color_load_op;
+    WGPUColor pending_clear_color;
+
+    // 顶点/索引数据管理（旧的即时渲染方式，保留用于兼容）
+    size_t vertex_buffer_offset;
+    size_t index_buffer_offset;
+
+    // 渲染状态
+    bool renderer_initialized;
+    
+    // 绘制调用计数（用于动态偏移）
+    uint32_t current_draw_call;
+    
+    // 调试信息
+    uint32_t frame_count;
+    
+    // 统一渲染系统（Unified Rendering System）
+    WCN_Renderer* renderer;
+    
+    // MSDF Atlas（新增）
+    WCN_SDFAtlas* sdf_atlas;  // 注意：虽然名为 sdf_atlas，但实际存储 MSDF 数据
+    WGPUSampler sdf_sampler;
+    WGPUBindGroup sdf_bind_group;
+    WGPUBindGroupLayout sdf_bind_group_layout;
+    
+    // GPU SDF 渲染器已被移除，使用 MSDF Atlas 系统替代
+    void* gpu_sdf_renderer;  // 保留字段以保持 ABI 兼容性，但不再使用
+
+    // 文字渲染命令队列已被移除
+    void* text_commands;     // 保留字段以保持 ABI 兼容性，但不再使用
+    size_t text_command_count;
+    size_t text_command_capacity;
+
+    // 私有数据
+    void* user_data;
+};
+
+// 渲染后端初始化函数
+bool wcn_initialize_renderer(WCN_Context* ctx);
+
+// 顶点/索引缓冲区管理（旧的即时渲染方式）
+bool wcn_write_vertex_data(WCN_Context* ctx, const void* data, size_t size, size_t* out_offset);
+bool wcn_write_index_data(WCN_Context* ctx, const void* data, size_t size, size_t* out_offset);
+
+// ============================================================================
+// Old batch rendering system function declarations removed
+// ============================================================================
+// Function declarations for wcn_init_vertex_collector, wcn_destroy_vertex_collector,
+// wcn_clear_vertex_collector, wcn_add_quad, wcn_add_triangles, wcn_optimize_batches,
+// and wcn_render_batches have been removed as they are no longer needed.
+// ============================================================================
+
+// ============================================================================
+// MSDF Atlas 管理
+// ============================================================================
+
+// 创建和销毁 MSDF Atlas
+WCN_SDFAtlas* wcn_create_sdf_atlas(WCN_Context* ctx, uint32_t width, uint32_t height);
+void wcn_destroy_sdf_atlas(WCN_SDFAtlas* atlas);
+
+// 刷新 Atlas 到 GPU
+void wcn_flush_sdf_atlas(WCN_Context* ctx);
+
+// 打包字形到 atlas（MSDF 格式：RGBA，每像素 4 字节）
+bool wcn_atlas_pack_glyph(WCN_Context* ctx,
+                          unsigned char* msdf_bitmap,
+                          int width, int height,
+                          float offset_x, float offset_y,
+                          float advance,
+                          uint32_t codepoint,
+                          float font_size,
+                          WCN_AtlasGlyph* out_glyph);
+
+// 在缓存中查找字形
+WCN_AtlasGlyph* wcn_find_glyph_in_atlas(WCN_SDFAtlas* atlas,
+                                        uint32_t codepoint,
+                                        float font_size);
+
+// 获取或创建字形
+WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
+                                        uint32_t codepoint,
+                                        float font_size);
+
+// UTF-8 解码
+uint32_t wcn_decode_utf8(const char** str);
+
+// ============================================================================
+// 统一渲染器管理 (Unified Renderer Management)
+// ============================================================================
+
+// 创建和销毁渲染器
+WCN_Renderer* wcn_create_renderer(
+    WGPUDevice device,
+    WGPUQueue queue,
+    WGPUTextureFormat surface_format,
+    uint32_t width,
+    uint32_t height
+);
+
+void wcn_destroy_renderer(WCN_Renderer* renderer);
+
+// 实例缓冲区管理
+bool wcn_instance_buffer_init(WCN_InstanceBuffer* buffer, size_t initial_capacity);
+void wcn_instance_buffer_destroy(WCN_InstanceBuffer* buffer);
+void wcn_instance_buffer_clear(WCN_InstanceBuffer* buffer);
+bool wcn_instance_buffer_grow(WCN_InstanceBuffer* buffer);
+bool wcn_instance_buffer_add(WCN_InstanceBuffer* buffer, const WCN_Instance* instance);
+
+// 实例添加函数（内部 API）
+void wcn_renderer_add_rect(
+    WCN_Renderer* renderer,
+    float x, float y, float width, float height,
+    uint32_t color,
+    const float transform[4]
+);
+
+void wcn_renderer_add_text(
+    WCN_Renderer* renderer,
+    WCN_Context* ctx,
+    const char* text,
+    float x, float y,
+    float font_size,
+    uint32_t color,
+    const float transform[4]
+);
+
+// Simple vertex structure for triangle rendering (position only)
+typedef struct {
+    float position[2];
+} WCN_SimpleVertex;
+
+void wcn_renderer_add_triangles(
+    WCN_Renderer* renderer,
+    const WCN_SimpleVertex* vertices, size_t vertex_count,
+    const uint16_t* indices, size_t index_count,
+    uint32_t color,
+    const float transform[4]
+);
+
+void wcn_renderer_add_line(
+    WCN_Renderer* renderer,
+    float x1, float y1,
+    float x2, float y2,
+    float width,
+    uint32_t color,
+    const float transform[4],
+    uint32_t line_cap  // Line cap style (WCN_LineCap)
+);
+
+// 渲染
+void wcn_renderer_render(
+    WCN_Renderer* renderer,
+    WGPURenderPassEncoder pass,
+    WGPUTextureView atlas_view
+);
+
+// 工具函数
+void wcn_renderer_clear(WCN_Renderer* renderer);
+void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height);
+
+// ============================================================================
+// 三角化函数（wcn_triangulate.c）
+// ============================================================================
+
+// 三角化单个轮廓
+bool wcn_triangulate_contour(WCN_GlyphContour* contour,
+                             float** out_vertices,
+                             uint32_t** out_indices,
+                             size_t* out_vertex_count,
+                             size_t* out_index_count);
+
+// 三角化字形（支持内轮廓/洞）
+bool wcn_triangulate_glyph_with_holes(WCN_Glyph* glyph,
+                                      float** out_vertices,
+                                      uint32_t** out_indices,
+                                      size_t* out_vertex_count,
+                                      size_t* out_index_count);
+
+#endif // WCN_INTERNAL_H

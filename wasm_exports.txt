@@ -1,0 +1,58 @@
+Processing: include/WCN/WCN_WASM.h
+Found 51 functions:
+  - wcn_arc
+  - wcn_begin_frame
+  - wcn_begin_path
+  - wcn_begin_render_pass
+  - wcn_clear_rect
+  - wcn_close_path
+  - wcn_create_context
+  - wcn_destroy_context
+  - wcn_draw_image
+  - wcn_draw_image_scaled
+  - wcn_draw_image_source
+  - wcn_end_frame
+  - wcn_end_render_pass
+  - wcn_fill
+  - wcn_fill_rect
+  - wcn_fill_text
+  - wcn_get_image_data
+  - wcn_get_surface_format
+  - wcn_line_to
+  - wcn_measure_text
+  - wcn_move_to
+  - wcn_put_image_data
+  - wcn_rect
+  - wcn_register_font_decoder
+  - wcn_register_image_decoder
+  - wcn_reset_transform
+  - wcn_restore
+  - wcn_rotate
+  - wcn_save
+  - wcn_scale
+  - wcn_set_fill_style
+  - wcn_set_font
+  - wcn_set_font_face
+  - wcn_set_global_alpha
+  - wcn_set_global_composite_operation
+  - wcn_set_line_cap
+  - wcn_set_line_join
+  - wcn_set_line_width
+  - wcn_set_miter_limit
+  - wcn_set_stroke_style
+  - wcn_set_surface_format
+  - wcn_set_text_align
+  - wcn_set_text_baseline
+  - wcn_set_transform
+  - wcn_stroke
+  - wcn_stroke_rect
+  - wcn_stroke_text
+  - wcn_submit_commands
+  - wcn_transform
+  - wcn_translate
+  - wcn_wasm_begin_render_pass_with_view
+
+Generated export list:
+_wcn_create_context,_wcn_destroy_context,_wcn_begin_frame,_wcn_end_frame,_wcn_begin_render_pass,_wcn_end_render_pass,_wcn_submit_commands,_wcn_save,_wcn_restore,_wcn_register_font_decoder,_wcn_register_image_decoder,_wcn_clear_rect,_wcn_fill_rect,_wcn_stroke_rect,_wcn_begin_path,_wcn_close_path,_wcn_move_to,_wcn_line_to,_wcn_arc,_wcn_rect,_wcn_fill,_wcn_stroke,_wcn_set_fill_style,_wcn_set_stroke_style,_wcn_set_line_width,_wcn_set_line_cap,_wcn_set_line_join,_wcn_set_miter_limit,_wcn_set_global_alpha,_wcn_set_global_composite_operation,_wcn_translate,_wcn_rotate,_wcn_scale,_wcn_transform,_wcn_set_transform,_wcn_reset_transform,_wcn_fill_text,_wcn_stroke_text,_wcn_measure_text,_wcn_set_font,_wcn_set_font_face,_wcn_set_text_align,_wcn_set_text_baseline,_wcn_draw_image,_wcn_draw_image_scaled,_wcn_draw_image_source,_wcn_get_image_data,_wcn_put_image_data,_wcn_get_surface_format,_wcn_set_surface_format,_wcn_wasm_begin_render_pass_with_view,_malloc,_free
+
+EXPORTED_FUNCTIONS=_wcn_create_context,_wcn_destroy_context,_wcn_begin_frame,_wcn_end_frame,_wcn_begin_render_pass,_wcn_end_render_pass,_wcn_submit_commands,_wcn_save,_wcn_restore,_wcn_register_font_decoder,_wcn_register_image_decoder,_wcn_clear_rect,_wcn_fill_rect,_wcn_stroke_rect,_wcn_begin_path,_wcn_close_path,_wcn_move_to,_wcn_line_to,_wcn_arc,_wcn_rect,_wcn_fill,_wcn_stroke,_wcn_set_fill_style,_wcn_set_stroke_style,_wcn_set_line_width,_wcn_set_line_cap,_wcn_set_line_join,_wcn_set_miter_limit,_wcn_set_global_alpha,_wcn_set_global_composite_operation,_wcn_translate,_wcn_rotate,_wcn_scale,_wcn_transform,_wcn_set_transform,_wcn_reset_transform,_wcn_fill_text,_wcn_stroke_text,_wcn_measure_text,_wcn_set_font,_wcn_set_font_face,_wcn_set_text_align,_wcn_set_text_baseline,_wcn_draw_image,_wcn_draw_image_scaled,_wcn_draw_image_source,_wcn_get_image_data,_wcn_put_image_data,_wcn_get_surface_format,_wcn_set_surface_format,_wcn_wasm_begin_render_pass_with_view,_malloc,_free

@@ -20,7 +20,7 @@ $platforms = @{
 
 $headerFiles = @{
     "wgpu.h"   = "https://github.com/gfx-rs/wgpu-native/raw/trunk/ffi/wgpu.h"
-    "webgpu.h" = "https://github.com/webgpu-native/webgpu-headers/raw/main/webgpu.h"
+    "webgpu.h" = "https://github.com/webgpu-native/webgpu-headers/raw/bac520839ff5ed2e2b648ed540bd9ec45edbccbc/webgpu.h"
 }
 
 

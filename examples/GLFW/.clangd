@@ -7,14 +7,9 @@ CompileFlags:
     - -I${workspaceFolder}/include
     - -I${workspaceFolder}/external/wgpu/include
     - -I${workspaceFolder}/src
+    - -Id:/Software/Dev/msys64/ucrt64/include
     - -std=c11
   # 移除可能导致问题的标志
   Remove: 
     - -pedantic
     - -Wpedantic
-
-# 索引配置
-Index:
-  # 从根目录加载 compile_commands.json
-  External:
-    File: ${workspaceFolder}/build/compile_commands.json

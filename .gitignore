@@ -10,3 +10,8 @@ cmake-build-debug
 .DS_Store
 DS_Store
 *.exe
+
+compile_commands.json
+
+.lookme/*
+.dev_docs/*

@@ -80,7 +80,7 @@ if %errorlevel% equ 0 (
         echo Failed to download wgpu.h
     )
     
-    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/webgpu-native/webgpu-headers/raw/main/webgpu.h' -OutFile '%~dp0wgpu\include\webgpu\webgpu.h'"
+    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/webgpu-native/webgpu-headers/raw/bac520839ff5ed2e2b648ed540bd9ec45edbccbc/webgpu.h' -OutFile '%~dp0wgpu\include\webgpu\webgpu.h'"
     if %errorlevel% equ 0 (
         echo Downloaded webgpu.h
     ) else (
