@@ -20,6 +20,7 @@ CMakeFiles/wcn_wasm.dir/src/wcn_instance.c.o: \
   D:\Software\Lang\Wasm\emsdk-main\upstream\lib\clang\20\include\stdbool.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\stdbool.h \
   D:\Dev-Project\c\WCN\src\shader\renderer\render_2d.wgsl.h \
+  D:\Dev-Project\c\WCN\src\shader\compute\instance_expander.wgsl.h \
   D:\Dev-Project\c\WCN\src\wcn_emcc_js.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\emscripten.h \
   D:\Software\Lang\Wasm\emsdk-main\upstream\emscripten\cache\sysroot\include\emscripten\emscripten.h \

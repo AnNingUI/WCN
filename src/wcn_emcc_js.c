@@ -47,13 +47,38 @@ EM_JS(WGPURenderPipeline, wasm_create_render_pipeline, (
     const fsEntry = UTF8ToString(fs_entry);
     const formatString = UTF8ToString(format_str);
     
+    // Check if required objects are valid
+    if (!dev || !pipelineLayout || !shaderModule) {
+        console.error('[WASM] Invalid objects for render pipeline creation');
+        console.error('[WASM] dev:', !!dev, 'pipelineLayout:', !!pipelineLayout, 'shaderModule:', !!shaderModule);
+        return 0; // Return null handle
+    }
+    
+    const vertexBufferLayout = {
+        arrayStride: instance_stride,
+        stepMode: 'vertex',
+        attributes: [
+            { shaderLocation: 0, format: 'float32x4', offset: 0 },
+            { shaderLocation: 1, format: 'float32x4', offset: 16 },
+            { shaderLocation: 2, format: 'float32x2', offset: 32 },
+            { shaderLocation: 3, format: 'uint32',   offset: 40 },
+            { shaderLocation: 4, format: 'uint32',   offset: 44 },
+            { shaderLocation: 5, format: 'float32x2', offset: 48 },
+            { shaderLocation: 6, format: 'float32',   offset: 56 },
+            { shaderLocation: 7, format: 'float32x2', offset: 64 },
+            { shaderLocation: 8, format: 'float32x2', offset: 72 },
+            { shaderLocation: 9, format: 'float32x2', offset: 80 },
+            { shaderLocation: 10, format: 'float32x2', offset: 88 },
+        ]
+    };
+
     const descriptor = {
         label: 'Unified Renderer Pipeline',
         layout: pipelineLayout,
         vertex: {
             module: shaderModule,
             entryPoint: vsEntry,
-            buffers: []  // No vertex buffers - vertices generated in shader
+            buffers: [vertexBufferLayout]
         },
         primitive: {
             topology: 'triangle-list',
@@ -86,12 +111,65 @@ EM_JS(WGPURenderPipeline, wasm_create_render_pipeline, (
         // Note: depthStencil is intentionally omitted (undefined)
     };
     
-    // console.log('[WASM] Creating pipeline with descriptor:', descriptor);
-    // console.log('[WASM] Pipeline layout:', pipelineLayout);
-    // console.log('[WASM] Shader module:', shaderModule);
-    // console.log('[WASM] Vertex entry:', vsEntry, 'Fragment entry:', fsEntry);
-    const pipeline = dev.createRenderPipeline(descriptor);
-    return WebGPU.mgrRenderPipeline.create(pipeline);
+    try {
+        // console.log('[WASM] Creating pipeline with descriptor:', descriptor);
+        // console.log('[WASM] Pipeline layout:', pipelineLayout);
+        // console.log('[WASM] Shader module:', shaderModule);
+        // console.log('[WASM] Vertex entry:', vsEntry, 'Fragment entry:', fsEntry);
+        const pipeline = dev.createRenderPipeline(descriptor);
+        return WebGPU.mgrRenderPipeline.create(pipeline);
+    } catch (error) {
+        console.error('[WASM] Failed to create render pipeline:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for render pipeline creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
+});
+
+EM_JS(WGPUComputePipeline, wasm_create_compute_pipeline, (
+    WGPUDevice device,
+    WGPUPipelineLayout layout,
+    WGPUShaderModule shader,
+    const char* entry
+), {
+    const dev = WebGPU.mgrDevice.get(device);
+    const pipelineLayout = WebGPU.mgrPipelineLayout.get(layout);
+    const shaderModule = WebGPU.mgrShaderModule.get(shader);
+    const entryPoint = UTF8ToString(entry);
+
+    // Check if required objects are valid
+    if (!dev || !pipelineLayout || !shaderModule) {
+        console.error('[WASM] Invalid objects for compute pipeline creation');
+        console.error('[WASM] dev:', !!dev, 'pipelineLayout:', !!pipelineLayout, 'shaderModule:', !!shaderModule);
+        return 0; // Return null handle
+    }
+
+    // Additional debugging - check if pipelineLayout has the expected bind group layouts
+    try {
+        // This is just for debugging purposes - we can't actually inspect the layout in JS
+        console.log('[WASM] Creating compute pipeline with layout and shader module');
+    } catch (e) {
+        console.error('[WASM] Error during compute pipeline creation debugging:', e);
+    }
+
+    const descriptor = {
+        label: 'Instance Expander Pipeline',
+        layout: pipelineLayout,
+        compute: {
+            module: shaderModule,
+            entryPoint: entryPoint
+        }
+    };
+
+    try {
+        const pipeline = dev.createComputePipeline(descriptor);
+        return WebGPU.mgrComputePipeline.create(pipeline);
+    } catch (error) {
+        console.error('[WASM] Failed to create compute pipeline:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for pipeline creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create bind group
@@ -107,6 +185,12 @@ EM_JS(WGPUBindGroup, wasm_create_bind_group, (
     const bindGroupLayout = WebGPU.mgrBindGroupLayout.get(layout);
     const instBuffer = WebGPU.mgrBuffer.get(instance_buffer);
     const unifBuffer = WebGPU.mgrBuffer.get(uniform_buffer);
+    
+    // Check if required objects are valid
+    if (!dev || !bindGroupLayout || !instBuffer || !unifBuffer) {
+        console.error('[WASM] Invalid objects for bind group creation');
+        return 0; // Return null handle
+    }
     
     const descriptor = {
         label: 'Unified Renderer Bind Group',
@@ -131,9 +215,64 @@ EM_JS(WGPUBindGroup, wasm_create_bind_group, (
         ]
     };
     
-    // console.log('[WASM] Creating bind group with descriptor:', descriptor);
-    const bindGroup = dev.createBindGroup(descriptor);
-    return WebGPU.mgrBindGroup.create(bindGroup);
+    try {
+        // console.log('[WASM] Creating bind group with descriptor:', descriptor);
+        const bindGroup = dev.createBindGroup(descriptor);
+        return WebGPU.mgrBindGroup.create(bindGroup);
+    } catch (error) {
+        console.error('[WASM] Failed to create bind group:', error);
+        return 0; // Return null handle
+    }
+});
+
+EM_JS(WGPUBindGroup, wasm_create_compute_bind_group, (
+    WGPUDevice device,
+    WGPUBindGroupLayout layout,
+    WGPUBuffer instance_buffer,
+    uint64_t instance_buffer_size,
+    WGPUBuffer vertex_buffer,
+    uint64_t vertex_buffer_size,
+    WGPUBuffer uniform_buffer,
+    uint64_t uniform_buffer_size
+), {
+    const dev = WebGPU.mgrDevice.get(device);
+    const bindGroupLayout = WebGPU.mgrBindGroupLayout.get(layout);
+    const instanceBuffer = WebGPU.mgrBuffer.get(instance_buffer);
+    const vertexBuffer = WebGPU.mgrBuffer.get(vertex_buffer);
+    const uniformBuffer = WebGPU.mgrBuffer.get(uniform_buffer);
+
+    // Check if required objects are valid
+    if (!dev || !bindGroupLayout || !instanceBuffer || !vertexBuffer || !uniformBuffer) {
+        console.error('[WASM] Invalid objects for compute bind group creation');
+        return 0; // Return null handle
+    }
+
+    const descriptor = {
+        label: 'Instance Expander Compute Bind Group',
+        layout: bindGroupLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: { buffer: instanceBuffer, offset: 0, size: Number(instance_buffer_size) }
+            },
+            {
+                binding: 1,
+                resource: { buffer: vertexBuffer, offset: 0, size: Number(vertex_buffer_size) }
+            },
+            {
+                binding: 2,
+                resource: { buffer: uniformBuffer, offset: 0, size: Number(uniform_buffer_size) }
+            }
+        ]
+    };
+
+    try {
+        const bindGroup = dev.createBindGroup(descriptor);
+        return WebGPU.mgrBindGroup.create(bindGroup);
+    } catch (error) {
+        console.error('[WASM] Failed to create compute bind group:', error);
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create buffers with proper usage flags
@@ -141,15 +280,22 @@ EM_JS(WGPUBuffer, wasm_create_buffer, (
     WGPUDevice device,
     const char* label,
     uint64_t size,
-    uint32_t usage_flags  // 1=Storage, 2=Uniform, 4=CopyDst
+    uint32_t usage_flags  // 1=Storage, 2=Uniform, 4=CopyDst, 8=Vertex
 ), {
     const dev = WebGPU.mgrDevice.get(device);
     const labelStr = UTF8ToString(label);
+    
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for buffer creation');
+        return 0; // Return null handle
+    }
     
     let usage = 0;
     if (usage_flags & 1) usage |= GPUBufferUsage.STORAGE;
     if (usage_flags & 2) usage |= GPUBufferUsage.UNIFORM;
     if (usage_flags & 4) usage |= GPUBufferUsage.COPY_DST;
+    if (usage_flags & 8) usage |= GPUBufferUsage.VERTEX;
     
     const descriptor = {
         label: labelStr,
@@ -158,12 +304,16 @@ EM_JS(WGPUBuffer, wasm_create_buffer, (
         mappedAtCreation: false
     };
     
-    // console.log('[WASM] Creating buffer:', labelStr, 'size:', size, 'usage:', usage);
-    const buffer = dev.createBuffer(descriptor);
-    return WebGPU.mgrBuffer.create(buffer);
+    try {
+        // console.log('[WASM] Creating buffer:', labelStr, 'size:', size, 'usage:', usage);
+        const buffer = dev.createBuffer(descriptor);
+        return WebGPU.mgrBuffer.create(buffer);
+    } catch (error) {
+        console.error('[WASM] Failed to create buffer:', error);
+        return 0; // Return null handle
+    }
 });
 
-// WASM-specific function to create bind group layout
 EM_JS(WGPUBindGroupLayout, wasm_create_bind_group_layout, (
     WGPUDevice device,
     const char* label,
@@ -173,6 +323,12 @@ EM_JS(WGPUBindGroupLayout, wasm_create_bind_group_layout, (
     const dev = WebGPU.mgrDevice.get(device);
     const labelStr = UTF8ToString(label);
     
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for bind group layout creation');
+        return 0; // Return null handle
+    }
+
     const descriptor = {
         label: labelStr,
         entries: [
@@ -197,9 +353,77 @@ EM_JS(WGPUBindGroupLayout, wasm_create_bind_group_layout, (
         ]
     };
     
-    // console.log('[WASM] Creating bind group layout:', labelStr, descriptor);
-    const layout = dev.createBindGroupLayout(descriptor);
-    return WebGPU.mgrBindGroupLayout.create(layout);
+    try {
+        // console.log('[WASM] Creating bind group layout:', labelStr);
+        const layout = dev.createBindGroupLayout(descriptor);
+        return WebGPU.mgrBindGroupLayout.create(layout);
+    } catch (error) {
+        console.error('[WASM] Failed to create bind group layout:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for bind group layout creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
+});
+
+EM_JS(WGPUBindGroupLayout, wasm_create_compute_bind_group_layout, (
+    WGPUDevice device,
+    const char* label,
+    uint64_t min_binding_size_0,
+    uint64_t min_binding_size_1,
+    uint64_t min_binding_size_2
+), {
+    const dev = WebGPU.mgrDevice.get(device);
+    const labelStr = UTF8ToString(label);
+
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for compute bind group layout creation');
+        return 0; // Return null handle
+    }
+
+    const descriptor = {
+        label: labelStr,
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: 'read-only-storage',
+                    hasDynamicOffset: false,
+                    minBindingSize: Number(min_binding_size_0)
+                }
+            },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: 'storage',
+                    hasDynamicOffset: false,
+                    minBindingSize: Number(min_binding_size_1)
+                }
+            },
+            {
+                binding: 2,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: 'uniform',
+                    hasDynamicOffset: false,
+                    minBindingSize: Number(min_binding_size_2)
+                }
+            }
+        ]
+    };
+
+    try {
+        // console.log('[WASM] Creating compute bind group layout:', labelStr);
+        const layout = dev.createBindGroupLayout(descriptor);
+        return WebGPU.mgrBindGroupLayout.create(layout);
+    } catch (error) {
+        console.error('[WASM] Failed to create compute bind group layout:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for compute bind group layout creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create shader module
@@ -212,14 +436,29 @@ EM_JS(WGPUShaderModule, wasm_create_shader_module, (
     const code = UTF8ToString(wgsl_code);
     const labelStr = label ? UTF8ToString(label) : 'Shader Module';
     
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for shader module creation');
+        return 0; // Return null handle
+    }
+    
     const descriptor = {
         label: labelStr,
         code: code
     };
     
-    // console.log('[WASM] Creating shader module:', labelStr, 'code length:', code.length);
-    const module = dev.createShaderModule(descriptor);
-    return WebGPU.mgrShaderModule.create(module);
+    try {
+        // console.log('[WASM] Creating shader module:', labelStr, 'code length:', code.length);
+        const module = dev.createShaderModule(descriptor);
+        return WebGPU.mgrShaderModule.create(module);
+    } catch (error) {
+        console.error('[WASM] Failed to create shader module:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for shader module creation:', JSON.stringify(descriptor, null, 2));
+        // Also log first 500 characters of the shader code for debugging
+        console.error('[WASM] Shader code (first 500 chars):', code.substring(0, 500));
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create SDF bind group layout (Group 1)
@@ -229,6 +468,12 @@ EM_JS(WGPUBindGroupLayout, wasm_create_sdf_bind_group_layout, (
 ), {
     const dev = WebGPU.mgrDevice.get(device);
     const labelStr = UTF8ToString(label);
+    
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for SDF bind group layout creation');
+        return 0; // Return null handle
+    }
     
     const descriptor = {
         label: labelStr,
@@ -252,9 +497,16 @@ EM_JS(WGPUBindGroupLayout, wasm_create_sdf_bind_group_layout, (
         ]
     };
     
-    // console.log('[WASM] Creating SDF bind group layout:', labelStr);
-    const layout = dev.createBindGroupLayout(descriptor);
-    return WebGPU.mgrBindGroupLayout.create(layout);
+    try {
+        // console.log('[WASM] Creating SDF bind group layout:', labelStr);
+        const layout = dev.createBindGroupLayout(descriptor);
+        return WebGPU.mgrBindGroupLayout.create(layout);
+    } catch (error) {
+        console.error('[WASM] Failed to create SDF bind group layout:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for SDF bind group layout creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create pipeline layout
@@ -269,14 +521,62 @@ EM_JS(WGPUPipelineLayout, wasm_create_pipeline_layout, (
     const bindGroupLayout0 = WebGPU.mgrBindGroupLayout.get(layout0);
     const bindGroupLayout1 = WebGPU.mgrBindGroupLayout.get(layout1);
     
+    // Check if required objects are valid
+    if (!dev || !bindGroupLayout0) {
+        console.error('[WASM] Invalid objects for pipeline layout creation');
+        console.error('[WASM] dev:', !!dev, 'bindGroupLayout0:', !!bindGroupLayout0, 'bindGroupLayout1:', !!bindGroupLayout1);
+        return 0; // Return null handle
+    }
+
     const descriptor = {
         label: labelStr,
         bindGroupLayouts: [bindGroupLayout0, bindGroupLayout1]
     };
     
-    // console.log('[WASM] Creating pipeline layout:', labelStr, 'with 2 bind group layouts');
-    const layout = dev.createPipelineLayout(descriptor);
-    return WebGPU.mgrPipelineLayout.create(layout);
+    try {
+        // console.log('[WASM] Creating pipeline layout:', labelStr, 'with bind group layouts');
+        const layout = dev.createPipelineLayout(descriptor);
+        return WebGPU.mgrPipelineLayout.create(layout);
+    } catch (error) {
+        console.error('[WASM] Failed to create pipeline layout:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for pipeline layout creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
+});
+
+// WASM-specific function to create pipeline layout with single bind group layout
+EM_JS(WGPUPipelineLayout, wasm_create_single_bind_group_pipeline_layout, (
+    WGPUDevice device,
+    const char* label,
+    WGPUBindGroupLayout layout
+), {
+    const dev = WebGPU.mgrDevice.get(device);
+    const labelStr = UTF8ToString(label);
+    const bindGroupLayout = WebGPU.mgrBindGroupLayout.get(layout);
+    
+    // Check if required objects are valid
+    if (!dev || !bindGroupLayout) {
+        console.error('[WASM] Invalid objects for single bind group pipeline layout creation');
+        console.error('[WASM] dev:', !!dev, 'bindGroupLayout:', !!bindGroupLayout);
+        return 0; // Return null handle
+    }
+
+    const descriptor = {
+        label: labelStr,
+        bindGroupLayouts: [bindGroupLayout]
+    };
+    
+    try {
+        // console.log('[WASM] Creating single bind group pipeline layout:', labelStr);
+        const pipelineLayout = dev.createPipelineLayout(descriptor);
+        return WebGPU.mgrPipelineLayout.create(pipelineLayout);
+    } catch (error) {
+        console.error('[WASM] Failed to create single bind group pipeline layout:', error);
+        // Log additional debugging information
+        console.error('[WASM] Descriptor used for pipeline layout creation:', JSON.stringify(descriptor, null, 2));
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create sampler
@@ -286,6 +586,12 @@ EM_JS(WGPUSampler, wasm_create_sampler, (
 ), {
     const dev = WebGPU.mgrDevice.get(device);
     const labelStr = label ? UTF8ToString(label) : 'Sampler';
+    
+    // Check if required objects are valid
+    if (!dev) {
+        console.error('[WASM] Invalid device for sampler creation');
+        return 0; // Return null handle
+    }
     
     const descriptor = {
         label: labelStr,
@@ -300,9 +606,14 @@ EM_JS(WGPUSampler, wasm_create_sampler, (
         maxAnisotropy: 1
     };
     
-    // console.log('[WASM] Creating sampler:', labelStr, descriptor);
-    const sampler = dev.createSampler(descriptor);
-    return WebGPU.mgrSampler.create(sampler);
+    try {
+        // console.log('[WASM] Creating sampler:', labelStr, descriptor);
+        const sampler = dev.createSampler(descriptor);
+        return WebGPU.mgrSampler.create(sampler);
+    } catch (error) {
+        console.error('[WASM] Failed to create sampler:', error);
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to begin render pass without depthStencil issues
@@ -315,6 +626,12 @@ EM_JS(WGPURenderPassEncoder, wasm_begin_render_pass, (
     const textureView = window.WCNJS?.getWGPUTextureView(view_id);
     // console.log('[WASM::wasm_begin_render_pass] ', "view_id: ", view_id, "textureView: ", textureView, "commandEncoder: ", commandEncoder);
     
+    // Check if required objects are valid
+    if (!commandEncoder) {
+        console.error('[WASM] Invalid command encoder for render pass creation');
+        return 0; // Return null handle
+    }
+    
     const descriptor = {
         label: 'WCN Render Pass',
         colorAttachments: [{
@@ -326,8 +643,13 @@ EM_JS(WGPURenderPassEncoder, wasm_begin_render_pass, (
         // Note: depthStencilAttachment is intentionally omitted (undefined)
     };
     
-    const renderPass = commandEncoder.beginRenderPass(descriptor);
-    return WebGPU.mgrRenderPassEncoder.create(renderPass);
+    try {
+        const renderPass = commandEncoder.beginRenderPass(descriptor);
+        return WebGPU.mgrRenderPassEncoder.create(renderPass);
+    } catch (error) {
+        console.error('[WASM] Failed to begin render pass:', error);
+        return 0; // Return null handle
+    }
 });
 
 // WASM-specific function to create SDF bind group
@@ -341,6 +663,12 @@ EM_JS(WGPUBindGroup, wasm_create_sdf_bind_group, (
     const bindGroupLayout = WebGPU.mgrBindGroupLayout.get(layout);
     const texView = WebGPU.mgrTextureView.get(texture_view);
     const samp = WebGPU.mgrSampler.get(sampler);
+    
+    // Check if required objects are valid
+    if (!dev || !bindGroupLayout || !texView || !samp) {
+        console.error('[WASM] Invalid objects for SDF bind group creation');
+        return 0; // Return null handle
+    }
     
     const descriptor = {
         label: 'SDF Bind Group',
@@ -357,8 +685,13 @@ EM_JS(WGPUBindGroup, wasm_create_sdf_bind_group, (
         ]
     };
     
-    const bindGroup = dev.createBindGroup(descriptor);
-    return WebGPU.mgrBindGroup.create(bindGroup);
+    try {
+        const bindGroup = dev.createBindGroup(descriptor);
+        return WebGPU.mgrBindGroup.create(bindGroup);
+    } catch (error) {
+        console.error('[WASM] Failed to create SDF bind group:', error);
+        return 0; // Return null handle
+    }
 });
 
 EM_JS(void, Init_WCNJS, (void), {

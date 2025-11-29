@@ -29,6 +29,27 @@ typedef struct {
     float param0;           // 4 bytes: 类型特定参数 0
 } WCN_Instance;             // Total: 60 bytes + 4 bytes padding = 64 bytes
 
+typedef struct {
+    float clip_position[4];
+    float color[4];
+    float uv[2];
+    uint32_t instance_type;
+    uint32_t flags;
+    float local_pos[2];
+    float params_x;
+    float padding0;
+    float size[2];
+    float tri_v0[2];
+    float tri_v1[2];
+    float tri_v2[2];
+} WCN_VertexGPU;
+
+typedef struct {
+    float viewport_size[2];
+    uint32_t instance_count;
+    uint32_t instance_offset;
+} WCN_RendererUniforms;
+
 // 实例缓冲区（CPU 端动态数组）
 typedef struct {
     WCN_Instance* instances;  // 动态数组
@@ -42,14 +63,20 @@ typedef struct WCN_Renderer {
     WGPUDevice device;
     WGPUQueue queue;
     WGPURenderPipeline pipeline;
+    WGPUComputePipeline compute_pipeline;
     WGPUBindGroupLayout bind_group_layout;          // Group 0: instances + uniforms
     WGPUBindGroupLayout sdf_bind_group_layout;      // Group 1: SDF atlas texture + sampler
     WGPUBindGroup bind_group;
+    WGPUBindGroupLayout compute_bind_group_layout;
+    WGPUBindGroup compute_bind_group;
     
     // 缓冲区
     WGPUBuffer instance_buffer;      // 存储缓冲区（实例数据）
     WGPUBuffer uniform_buffer;       // 统一缓冲区（窗口尺寸）
+    WGPUBuffer vertex_buffer;        // 计算阶段生成的顶点缓冲
     size_t instance_buffer_size;     // 当前 GPU 缓冲区大小
+    size_t vertex_buffer_size;
+    size_t vertex_batch_instance_capacity;
     
     // CPU 端实例累积
     WCN_InstanceBuffer cpu_instances;
@@ -298,8 +325,7 @@ void wcn_renderer_add_line(
 
 // 渲染
 void wcn_renderer_render(
-    WCN_Renderer* renderer,
-    WGPURenderPassEncoder pass,
+    WCN_Context* ctx,
     WGPUTextureView atlas_view
 );
 

@@ -21,35 +21,25 @@ const LINE_CAP_SQUARE: u32 = 2u;  // Square cap (rectangular extension)
 const LINE_CAP_START_ENABLED: u32 = 0x100u;  // Bit 8: render start cap
 const LINE_CAP_END_ENABLED: u32 = 0x200u;    // Bit 9: render end cap
 
-// Instance structure (64 bytes, GPU-aligned)
-// Carefully laid out to achieve exactly 64 bytes with GPU alignment rules
-struct Instance {
-    position: vec2<f32>,        // 8 bytes: (x, y) in screen space
-    size: vec2<f32>,            // 8 bytes: (width, height)
-    uv: vec2<f32>,              // 8 bytes: UV start coordinates
-    uvSize: vec2<f32>,          // 8 bytes: UV size (not max!)
-    transform: vec4<f32>,       // 16 bytes: 2x2 matrix as vec4 (m00, m01, m10, m11)
-    color: u32,                 // 4 bytes: packed RGBA (0xAABBGGRR)
-    instance_type: u32,         // 4 bytes: instance type
-    flags: u32,                 // 4 bytes: rendering flags
-    params_x: f32,              // 4 bytes: type-specific parameter 1
-};                              // Total: 64 bytes
-
-// Uniforms
-struct Uniforms {
-    viewport_size: vec2<f32>,
-    padding: vec2<f32>,
-};
-
-// Bind groups
-@group(0) @binding(0) var<storage, read> instances: array<Instance>;
-@group(0) @binding(1) var<uniform> uniforms: Uniforms;
-
+// Instance structure definition kept for bind group compatibility
 // SDF Atlas (for text rendering)
 @group(1) @binding(0) var sdf_atlas: texture_2d<f32>;
 @group(1) @binding(1) var sdf_sampler: sampler;
 
-// Vertex output
+struct VertexInput {
+    @location(0) clip_position: vec4<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) @interpolate(flat) instance_type: u32,
+    @location(4) @interpolate(flat) flags: u32,
+    @location(5) local_pos: vec2<f32>,
+    @location(6) params_x: f32,
+    @location(7) size: vec2<f32>,
+    @location(8) tri_v0: vec2<f32>,
+    @location(9) tri_v1: vec2<f32>,
+    @location(10) tri_v2: vec2<f32>,
+};
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -64,140 +54,29 @@ struct VertexOutput {
     @location(9) tri_v2: vec2<f32>,     // Triangle vertex 2 (for PATH instances)
 };
 
-// Unpack u32 color to vec4<f32>
-// Format: 0xAABBGGRR (alpha, blue, green, red)
-fn unpack_color(packed: u32) -> vec4<f32> {
-    let r = f32(packed & 0xFFu) / 255.0;
-    let g = f32((packed >> 8u) & 0xFFu) / 255.0;
-    let b = f32((packed >> 16u) & 0xFFu) / 255.0;
-    let a = f32((packed >> 24u) & 0xFFu) / 255.0;
-    return vec4<f32>(r, g, b, a);
-}
-
-// Vertex shader - generates quad from instance data
+// Vertex shader now consumes pre-expanded vertex data
 @vertex
-fn vs_main(
-    @builtin(vertex_index) vertex_index: u32,
-    @builtin(instance_index) instance_index: u32
-) -> VertexOutput {
+fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    
-    // Load instance data
-    let instance = instances[instance_index];
-    
-    // Generate quad vertices (0,0) to (1,1) in local space
-    // Vertex order: 0=(0,0), 1=(1,0), 2=(0,1), 3=(1,1), 4=(0,1), 5=(1,0)
-    var local_pos: vec2<f32>;
-    switch (vertex_index) {
-        case 0u: { local_pos = vec2<f32>(0.0, 0.0); }
-        case 1u: { local_pos = vec2<f32>(1.0, 0.0); }
-        case 2u: { local_pos = vec2<f32>(0.0, 1.0); }
-        case 3u: { local_pos = vec2<f32>(1.0, 1.0); }
-        case 4u: { local_pos = vec2<f32>(0.0, 1.0); }
-        default: { local_pos = vec2<f32>(1.0, 0.0); }
-    }
-    
-    // Special handling for LINE instances
-    var sized_pos: vec2<f32>;
-    if (instance.instance_type == INSTANCE_TYPE_LINE) {
-        // For lines, uv stores the normalized direction vector
-        let dir_x = instance.uv.x;
-        let dir_y = instance.uv.y;
-        
-        // Create perpendicular vector for line width
-        let perp_x = -dir_y;
-        let perp_y = dir_x;
-        
-        // Line length and width from size
-        let length = instance.size.x;
-        let width = instance.size.y;
-        let half_width = width * 0.5;
-        
-        // Get line cap style and enable flags
-        let cap_style = instance.flags & 0xFFu;  // Bits 0-7
-        let start_cap_enabled = (instance.flags & LINE_CAP_START_ENABLED) != 0u;
-        let end_cap_enabled = (instance.flags & LINE_CAP_END_ENABLED) != 0u;
-        
-        // Calculate extension based on cap style and which caps are enabled
-        var start_extension: f32 = 0.0;
-        var end_extension: f32 = 0.0;
-        
-        if (cap_style != LINE_CAP_BUTT) {
-            // SQUARE and ROUND caps extend by half_width
-            if (start_cap_enabled) {
-                start_extension = half_width;
-            }
-            if (end_cap_enabled) {
-                end_extension = half_width;
-            }
-        }
-        
-        let extended_length = length + start_extension + end_extension;
-        
-        // Map local_pos (0-1) to extended line coordinates
-        // Adjust center offset based on asymmetric extensions
-        let center_offset = (end_extension - start_extension) * 0.5;
-        let along = (local_pos.x - 0.5) * extended_length + center_offset;
-        let across = (local_pos.y - 0.5) * width;
-        
-        // Position along line direction + across perpendicular
-        sized_pos = vec2<f32>(
-            along * dir_x + across * perp_x,
-            along * dir_y + across * perp_y
-        );
-    } else {
-        // Standard quad for other instance types
-        sized_pos = local_pos * instance.size;
-    }
-    
-    // Apply 2x2 transform matrix
-    // Matrix stored as vec4: (m00, m01, m10, m11)
-    let m00 = instance.transform.x;
-    let m01 = instance.transform.y;
-    let m10 = instance.transform.z;
-    let m11 = instance.transform.w;
-    
-    let transformed_x = sized_pos.x * m00 + sized_pos.y * m01;
-    let transformed_y = sized_pos.x * m10 + sized_pos.y * m11;
-    let transformed_pos = vec2<f32>(transformed_x, transformed_y);
-    
-    // Apply position offset
-    let world_pos = transformed_pos + instance.position;
-    
-    // Convert to NDC coordinates
-    let ndc_x = (world_pos.x / uniforms.viewport_size.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (world_pos.y / uniforms.viewport_size.y) * 2.0;
-    
-    output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = unpack_color(instance.color);
-    
-    // Interpolate UV coordinates
-    // uv is the min corner, uvSize is the size (not max!)
-    output.uv = instance.uv + local_pos * instance.uvSize;
-    
-    output.instance_type = instance.instance_type;
-    output.flags = instance.flags;
-    output.local_pos = local_pos;
-    output.params_x = instance.params_x;
-    output.size = instance.size;
-    
-    // For PATH instances, pass the triangle vertices
-    if (instance.instance_type == INSTANCE_TYPE_PATH) {
-        // For now, just set default values as we're not using them
-        output.tri_v0 = vec2<f32>(0.0, 0.0);
-        output.tri_v1 = vec2<f32>(0.0, 0.0);
-        output.tri_v2 = vec2<f32>(0.0, 0.0);
-    } else {
-        // For other instances, set default values
-        output.tri_v0 = vec2<f32>(0.0, 0.0);
-        output.tri_v1 = vec2<f32>(0.0, 0.0);
-        output.tri_v2 = vec2<f32>(0.0, 0.0);
-    }
-    
+    output.position = input.clip_position;
+    output.color = input.color;
+    output.uv = input.uv;
+    output.instance_type = input.instance_type;
+    output.flags = input.flags;
+    output.local_pos = input.local_pos;
+    output.params_x = input.params_x;
+    output.size = input.size;
+    output.tri_v0 = input.tri_v0;
+    output.tri_v1 = input.tri_v1;
+    output.tri_v2 = input.tri_v2;
     return output;
 }
 
 // Fragment shader - branches based on instance type
+fn edge_function(a: vec2<f32>, b: vec2<f32>, p: vec2<f32>) -> f32 {
+    return (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var color = input.color;
@@ -244,8 +123,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             return color;
         }
         case INSTANCE_TYPE_PATH: {
-            // Simple path rendering - just fill the entire quad
-            // This is the original behavior that worked for all paths including arcs
+            let v0 = input.tri_v0;
+            let v1 = input.tri_v1;
+            let v2 = input.tri_v2;
+            let p = input.local_pos;
+
+            let e0 = edge_function(v0, v1, p);
+            let e1 = edge_function(v1, v2, p);
+            let e2 = edge_function(v2, v0, p);
+
+            let has_pos = (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0);
+            let has_neg = (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0);
+            if (!(has_pos || has_neg)) {
+                discard;
+            }
             return color;
         }
         case INSTANCE_TYPE_LINE: {
@@ -389,8 +280,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             return vec4<f32>(1.0, 0.0, 1.0, 1.0);
         }
     }
-    // This should never be reached due to the default case, but required for WGSL
-    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
 });
 
 #endif // WCN_RENDER_2D_WGSL_H

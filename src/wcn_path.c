@@ -378,7 +378,7 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
 }
 
 static void wcn_render_path(WCN_Context* ctx, WCN_Path* path, bool is_stroke) {
-    if (!ctx || !ctx->in_frame || !path || !ctx->current_render_pass) return;
+    if (!ctx || !ctx->in_frame || !path) return;
 
     if (is_stroke) {
         wcn_render_path_stroke(ctx, path);

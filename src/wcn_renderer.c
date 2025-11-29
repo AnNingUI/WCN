@@ -200,11 +200,6 @@ void wcn_submit_commands(WCN_Context* ctx) {
 
     wgpuCommandEncoderRelease(ctx->current_command_encoder);
     ctx->current_command_encoder = NULL;
-#ifdef __EMSCRIPTEN__
-    freeWGPUTextureView(ctx->current_texture_view_id);
-#else
-    ctx->current_texture_view = NULL;
-#endif
 }
 
 // ============================================================================

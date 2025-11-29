@@ -184,6 +184,9 @@ WCN_Context* wcn_create_context(WCN_GPUResources* gpu_resources) {
 #endif    
     ctx->current_command_encoder = NULL;
     ctx->current_render_pass = NULL;
+    ctx->render_pass_needs_begin = false;
+    ctx->pending_color_load_op = WGPULoadOp_Clear;
+    ctx->pending_clear_color = (WGPUColor){0.9, 0.9, 0.9, 1.0};
     ctx->vertex_buffer_offset = 0;
     ctx->index_buffer_offset = 0;
     ctx->user_data = NULL;
@@ -343,7 +346,7 @@ void wcn_end_frame(WCN_Context* ctx) {
     if (!ctx || !ctx->in_frame) return;
 
     // 使用统一渲染器渲染所有实例
-    if (ctx->renderer && ctx->current_render_pass) {
+    if (ctx->renderer && (ctx->current_render_pass || ctx->render_pass_needs_begin)) {
         // 刷新 SDF Atlas（如果有更新）
         if (ctx->sdf_atlas && ctx->sdf_atlas->dirty) {
             wcn_flush_sdf_atlas(ctx);
@@ -351,8 +354,7 @@ void wcn_end_frame(WCN_Context* ctx) {
         
         // 渲染所有累积的实例
         wcn_renderer_render(
-            ctx->renderer,
-            ctx->current_render_pass,
+            ctx,
             ctx->sdf_atlas ? ctx->sdf_atlas->texture_view : NULL
         );
         

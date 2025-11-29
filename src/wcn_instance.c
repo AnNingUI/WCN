@@ -1,10 +1,115 @@
 #include "wcn_internal.h"
 #include "shader/renderer/render_2d.wgsl.h"
+#include "shader/compute/instance_expander.wgsl.h"
 #include "wcn_emcc_js.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+
+static bool wcn_renderer_create_render_bind_group(WCN_Renderer* renderer) {
+    if (!renderer) return false;
+
+    if (renderer->bind_group) {
+        wgpuBindGroupRelease(renderer->bind_group);
+        renderer->bind_group = NULL;
+    }
+
+#ifdef __EMSCRIPTEN__
+    renderer->bind_group = wasm_create_bind_group(
+        renderer->device,
+        renderer->bind_group_layout,
+        renderer->instance_buffer,
+        renderer->instance_buffer_size,
+        renderer->uniform_buffer
+    );
+#else
+    WGPUBindGroupEntry entries[] = {
+        {
+            .binding = 0,
+            .buffer = renderer->instance_buffer,
+            .offset = 0,
+            .size = renderer->instance_buffer_size
+        },
+        {
+            .binding = 1,
+            .buffer = renderer->uniform_buffer,
+            .offset = 0,
+            .size = sizeof(WCN_RendererUniforms)
+        }
+    };
+
+    WGPUBindGroupDescriptor desc = {
+        .nextInChain = NULL,
+        .label = "Unified Renderer Bind Group",
+        .layout = renderer->bind_group_layout,
+        .entryCount = 2,
+        .entries = entries
+    };
+
+    renderer->bind_group = wgpuDeviceCreateBindGroup(renderer->device, &desc);
+#endif
+
+    return renderer->bind_group != NULL;
+}
+
+static bool wcn_renderer_create_compute_bind_group(WCN_Renderer* renderer) {
+    if (!renderer) return false;
+
+    if (renderer->compute_bind_group) {
+        wgpuBindGroupRelease(renderer->compute_bind_group);
+        renderer->compute_bind_group = NULL;
+    }
+
+#ifdef __EMSCRIPTEN__
+    renderer->compute_bind_group = wasm_create_compute_bind_group(
+        renderer->device,
+        renderer->compute_bind_group_layout,
+        renderer->instance_buffer,
+        renderer->instance_buffer_size,
+        renderer->vertex_buffer,
+        renderer->vertex_buffer_size,
+        renderer->uniform_buffer,
+        sizeof(WCN_RendererUniforms)
+    );
+#else
+    WGPUBindGroupEntry entries[] = {
+        {
+            .binding = 0,
+            .buffer = renderer->instance_buffer,
+            .offset = 0,
+            .size = renderer->instance_buffer_size
+        },
+        {
+            .binding = 1,
+            .buffer = renderer->vertex_buffer,
+            .offset = 0,
+            .size = renderer->vertex_buffer_size
+        },
+        {
+            .binding = 2,
+            .buffer = renderer->uniform_buffer,
+            .offset = 0,
+            .size = sizeof(WCN_RendererUniforms)
+        }
+    };
+
+    WGPUBindGroupDescriptor desc = {
+        .nextInChain = NULL,
+        .label = "Instance Expander Compute Bind Group",
+        .layout = renderer->compute_bind_group_layout,
+        .entryCount = 3,
+        .entries = entries
+    };
+
+    renderer->compute_bind_group = wgpuDeviceCreateBindGroup(
+        renderer->device,
+        &desc
+    );
+#endif
+
+    return renderer->compute_bind_group != NULL;
+}
 
 // ============================================================================
 // 实例缓冲区管理 (Instance Buffer Management)
@@ -199,8 +304,28 @@ WCN_Renderer* wcn_create_renderer(
         "Unified Renderer Shader"
     );
 #endif
+
+#ifdef __EMSCRIPTEN__
+    WGPUShaderModule compute_shader = wasm_create_shader_module(
+        device,
+        WCN_INSTANCE_EXPANDER_WGSL,
+        "Instance Expander Shader"
+    );
+#else
+    WGPUShaderModule compute_shader = wcn_renderer_create_shader_module(
+        device,
+        WCN_INSTANCE_EXPANDER_WGSL,
+        "Instance Expander Shader"
+    );
+#endif
     
-    if (!shader) {
+    if (!shader || !compute_shader) {
+        if (shader) {
+            wgpuShaderModuleRelease(shader);
+        }
+        if (compute_shader) {
+            wgpuShaderModuleRelease(compute_shader);
+        }
         // printf("[wcn_create_renderer] Shader module creation failed\n");
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
@@ -226,7 +351,7 @@ WCN_Renderer* wcn_create_renderer(
             .buffer = {
                 .type = WGPUBufferBindingType_Uniform,
                 .hasDynamicOffset = false,
-                .minBindingSize = 16  // vec2<f32> + padding = 16 bytes
+                .minBindingSize = sizeof(WCN_RendererUniforms)
             }
         }
     };
@@ -254,7 +379,69 @@ WCN_Renderer* wcn_create_renderer(
 #endif
     
     if (!renderer->bind_group_layout) {
+        wgpuShaderModuleRelease(compute_shader);
         wgpuShaderModuleRelease(shader);
+        wcn_instance_buffer_destroy(&renderer->cpu_instances);
+        free(renderer);
+        return NULL;
+    }
+
+#ifdef __EMSCRIPTEN__
+    renderer->compute_bind_group_layout = wasm_create_compute_bind_group_layout(
+        device,
+        "Instance Expander Compute Bind Group Layout",
+        sizeof(WCN_Instance),
+        sizeof(WCN_VertexGPU),
+        sizeof(WCN_RendererUniforms)
+    );
+#else
+    WGPUBindGroupLayoutEntry compute_bind_group_layout_entries[] = {
+        {
+            .binding = 0,
+            .visibility = WGPUShaderStage_Compute,
+            .buffer = {
+                .type = WGPUBufferBindingType_ReadOnlyStorage,
+                .hasDynamicOffset = false,
+                .minBindingSize = sizeof(WCN_Instance)
+            }
+        },
+        {
+            .binding = 1,
+            .visibility = WGPUShaderStage_Compute,
+            .buffer = {
+                .type = WGPUBufferBindingType_Storage,
+                .hasDynamicOffset = false,
+                .minBindingSize = sizeof(WCN_VertexGPU)
+            }
+        },
+        {
+            .binding = 2,
+            .visibility = WGPUShaderStage_Compute,
+            .buffer = {
+                .type = WGPUBufferBindingType_Uniform,
+                .hasDynamicOffset = false,
+                .minBindingSize = sizeof(WCN_RendererUniforms)
+            }
+        }
+    };
+
+    WGPUBindGroupLayoutDescriptor compute_bind_group_layout_desc = {
+        .nextInChain = NULL,
+        .label = "Instance Expander Compute Bind Group Layout",
+        .entryCount = 3,
+        .entries = compute_bind_group_layout_entries
+    };
+
+    renderer->compute_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
+        device,
+        &compute_bind_group_layout_desc
+    );
+#endif
+
+    if (!renderer->compute_bind_group_layout) {
+        wgpuShaderModuleRelease(compute_shader);
+        wgpuShaderModuleRelease(shader);
+        wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
         return NULL;
@@ -352,14 +539,35 @@ WCN_Renderer* wcn_create_renderer(
     };
     
     // No vertex buffer layout - vertices are generated in shader
+    WGPUVertexAttribute vertex_attributes[] = {
+        {.shaderLocation = 0, .format = WGPUVertexFormat_Float32x4, .offset = 0},
+        {.shaderLocation = 1, .format = WGPUVertexFormat_Float32x4, .offset = 16},
+        {.shaderLocation = 2, .format = WGPUVertexFormat_Float32x2, .offset = 32},
+        {.shaderLocation = 3, .format = WGPUVertexFormat_Uint32, .offset = 40},
+        {.shaderLocation = 4, .format = WGPUVertexFormat_Uint32, .offset = 44},
+        {.shaderLocation = 5, .format = WGPUVertexFormat_Float32x2, .offset = 48},
+        {.shaderLocation = 6, .format = WGPUVertexFormat_Float32, .offset = 56},
+        {.shaderLocation = 7, .format = WGPUVertexFormat_Float32x2, .offset = 64},
+        {.shaderLocation = 8, .format = WGPUVertexFormat_Float32x2, .offset = 72},
+        {.shaderLocation = 9, .format = WGPUVertexFormat_Float32x2, .offset = 80},
+        {.shaderLocation = 10, .format = WGPUVertexFormat_Float32x2, .offset = 88}
+    };
+
+    WGPUVertexBufferLayout vertex_buffer_layout = {
+        .arrayStride = sizeof(WCN_VertexGPU),
+        .stepMode = WGPUVertexStepMode_Vertex,
+        .attributeCount = (uint32_t)(sizeof(vertex_attributes) / sizeof(vertex_attributes[0])),
+        .attributes = vertex_attributes
+    };
+
     WGPUVertexState vertex_state = {
         .nextInChain = NULL,
         .module = shader,
         .entryPoint = vs_entry,
         .constantCount = 0,
         .constants = NULL,
-        .bufferCount = 0,  // No vertex buffers
-        .buffers = NULL
+        .bufferCount = 1,
+        .buffers = &vertex_buffer_layout
     };
     
     // Color target with alpha blending
@@ -427,7 +635,7 @@ WCN_Renderer* wcn_create_renderer(
         shader,
         vertex_state.entryPoint.data,
         fragment_state.entryPoint.data,
-        sizeof(WCN_Instance),
+        sizeof(WCN_VertexGPU),
         wgpuTextureFormatToString(surface_format)
     );
 #else
@@ -440,10 +648,94 @@ WCN_Renderer* wcn_create_renderer(
     // Clean up temporary resources
     wgpuPipelineLayoutRelease(pipeline_layout);
     wgpuShaderModuleRelease(shader);
-    
+
+    // Check if render pipeline creation failed
     if (!renderer->pipeline) {
+        wgpuShaderModuleRelease(compute_shader);
         wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
         wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
+        wcn_instance_buffer_destroy(&renderer->cpu_instances);
+        free(renderer);
+        return NULL;
+    }
+
+    // Create pipeline layout for compute pipeline
+    WGPUPipelineLayout compute_pipeline_layout;
+#ifdef __EMSCRIPTEN__
+    // WASM: Use custom function for single bind group layout
+    compute_pipeline_layout = wasm_create_single_bind_group_pipeline_layout(
+        device,
+        "Instance Expander Pipeline Layout",
+        renderer->compute_bind_group_layout
+    );
+#else
+    WGPUBindGroupLayout compute_layouts[] = {
+        renderer->compute_bind_group_layout
+    };
+    WGPUPipelineLayoutDescriptor compute_pipeline_layout_desc = {
+        .nextInChain = NULL,
+        .label = "Instance Expander Pipeline Layout",
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = compute_layouts
+    };
+
+    compute_pipeline_layout = wgpuDeviceCreatePipelineLayout(
+        device,
+        &compute_pipeline_layout_desc
+    );
+#endif
+
+    // Check if pipeline layout creation failed
+    if (!compute_pipeline_layout) {
+        wgpuShaderModuleRelease(compute_shader);
+        wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
+        wcn_instance_buffer_destroy(&renderer->cpu_instances);
+        free(renderer);
+        return NULL;
+    }
+
+    WGPUStringView compute_entry = {
+        .data = "main",
+        .length = 4
+    };
+
+    WGPUComputePipelineDescriptor compute_pipeline_desc = {
+        .nextInChain = NULL,
+        .label = "Instance Expander Pipeline",
+        .layout = compute_pipeline_layout,
+        .compute = {
+            .module = compute_shader,
+            .entryPoint = compute_entry,
+            .constantCount = 0,
+            .constants = NULL
+        }
+    };
+
+#ifdef __EMSCRIPTEN__
+    renderer->compute_pipeline = wasm_create_compute_pipeline(
+        device,
+        compute_pipeline_layout,
+        compute_shader,
+        compute_entry.data
+    );
+#else
+    renderer->compute_pipeline = wgpuDeviceCreateComputePipeline(
+        device,
+        &compute_pipeline_desc
+    );
+#endif
+
+    wgpuPipelineLayoutRelease(compute_pipeline_layout);
+    wgpuShaderModuleRelease(compute_shader);
+    
+    // Check if compute pipeline creation failed
+    if (!renderer->pipeline || !renderer->compute_pipeline) {
+        wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
         return NULL;
@@ -475,11 +767,50 @@ WCN_Renderer* wcn_create_renderer(
     
     if (!renderer->instance_buffer) {
         wgpuRenderPipelineRelease(renderer->pipeline);
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
         wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
         wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
         return NULL;
+    }
+
+    renderer->vertex_batch_instance_capacity = 8192;
+    renderer->vertex_buffer_size = renderer->vertex_batch_instance_capacity * 6 * sizeof(WCN_VertexGPU);
+#ifdef __EMSCRIPTEN__
+    renderer->vertex_buffer = wasm_create_buffer(
+        device,
+        "Unified Renderer Vertex Buffer",
+        renderer->vertex_buffer_size,
+        1 | 8  // Storage | Vertex
+    );
+#else
+    WGPUBufferDescriptor vertex_buffer_desc = {
+        .nextInChain = NULL,
+        .label = "Unified Renderer Vertex Buffer",
+        .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Vertex,
+        .size = renderer->vertex_buffer_size,
+        .mappedAtCreation = false
+    };
+    renderer->vertex_buffer = wgpuDeviceCreateBuffer(device, &vertex_buffer_desc);
+#endif
+
+    if (!renderer->vertex_buffer) {
+        wgpuBufferRelease(renderer->instance_buffer);
+        wgpuRenderPipelineRelease(renderer->pipeline);
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
+        wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
+        wcn_instance_buffer_destroy(&renderer->cpu_instances);
+        free(renderer);
+        return NULL;
+    }
+
+    renderer->vertex_batch_instance_capacity = renderer->vertex_buffer_size / (6 * sizeof(WCN_VertexGPU));
+    if (renderer->vertex_batch_instance_capacity == 0) {
+        renderer->vertex_batch_instance_capacity = 1;
     }
     
     // Allocate GPU uniform buffer for window size
@@ -489,7 +820,7 @@ WCN_Renderer* wcn_create_renderer(
     renderer->uniform_buffer = wasm_create_buffer(
         device,
         "Unified Renderer Uniform Buffer",
-        16,  // vec2<f32> + padding
+        sizeof(WCN_RendererUniforms),
         6  // Uniform | CopyDst
     );
 #else
@@ -497,7 +828,7 @@ WCN_Renderer* wcn_create_renderer(
         .nextInChain = NULL,
         .label = "Unified Renderer Uniform Buffer",
         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-        .size = 16,  // vec2<f32> + padding
+        .size = sizeof(WCN_RendererUniforms),
         .mappedAtCreation = false
     };
     
@@ -506,9 +837,12 @@ WCN_Renderer* wcn_create_renderer(
     
     if (!renderer->uniform_buffer) {
         wgpuBufferRelease(renderer->instance_buffer);
+        wgpuBufferRelease(renderer->vertex_buffer);
         wgpuRenderPipelineRelease(renderer->pipeline);
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
         wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
         wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
         return NULL;
@@ -518,64 +852,43 @@ WCN_Renderer* wcn_create_renderer(
     // printf("[wcn_create_renderer] Creating bind group: instance_buffer=%p, uniform_buffer=%p\n", 
     //      (void*)renderer->instance_buffer, (void*)renderer->uniform_buffer);
     
-#ifdef __EMSCRIPTEN__
-    // WASM workaround: Use EM_JS function for proper bind group creation
-    renderer->bind_group = wasm_create_bind_group(
-        device,
-        renderer->bind_group_layout,
-        renderer->instance_buffer,
-        renderer->instance_buffer_size,
-        renderer->uniform_buffer
-    );
-#else
-    WGPUBindGroupEntry bind_group_entries[] = {
-        {
-            .binding = 0,
-            .buffer = renderer->instance_buffer,
-            .offset = 0,
-            .size = renderer->instance_buffer_size
-        },
-        {
-            .binding = 1,
-            .buffer = renderer->uniform_buffer,
-            .offset = 0,
-            .size = 16
-        }
-    };
-    
-    WGPUBindGroupDescriptor bind_group_desc = {
-        .nextInChain = NULL,
-        .label = "Unified Renderer Bind Group",
-        .layout = renderer->bind_group_layout,
-        .entryCount = 2,
-        .entries = bind_group_entries
-    };
-    
-    renderer->bind_group = wgpuDeviceCreateBindGroup(device, &bind_group_desc);
-#endif
-    
-    // printf("[wcn_create_renderer] Bind group created: %p\n", (void*)renderer->bind_group);
-    
-    if (!renderer->bind_group) {
+    if (!wcn_renderer_create_render_bind_group(renderer)) {
         wgpuBufferRelease(renderer->uniform_buffer);
         wgpuBufferRelease(renderer->instance_buffer);
+        wgpuBufferRelease(renderer->vertex_buffer);
         wgpuRenderPipelineRelease(renderer->pipeline);
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
         wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
         wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
+        wcn_instance_buffer_destroy(&renderer->cpu_instances);
+        free(renderer);
+        return NULL;
+    }
+
+    if (!wcn_renderer_create_compute_bind_group(renderer)) {
+        wgpuBindGroupRelease(renderer->bind_group);
+        wgpuBufferRelease(renderer->uniform_buffer);
+        wgpuBufferRelease(renderer->vertex_buffer);
+        wgpuBufferRelease(renderer->instance_buffer);
+        wgpuRenderPipelineRelease(renderer->pipeline);
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
+        wgpuBindGroupLayoutRelease(renderer->sdf_bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
         wcn_instance_buffer_destroy(&renderer->cpu_instances);
         free(renderer);
         return NULL;
     }
     
     // Write initial viewport size to uniform buffer
-    float viewport_data[4] = {
-        (float)width,
-        (float)height,
-        0.0f,  // padding
-        0.0f   // padding
+    WCN_RendererUniforms uniform_data = {
+        .viewport_size = {(float)width, (float)height},
+        .instance_count = 0,
+        .instance_offset = 0
     };
     
-    wgpuQueueWriteBuffer(queue, renderer->uniform_buffer, 0, viewport_data, sizeof(viewport_data));
+    wgpuQueueWriteBuffer(queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
     
     return renderer;
 }
@@ -592,6 +905,11 @@ void wcn_destroy_renderer(WCN_Renderer* renderer) {
         renderer->uniform_buffer = NULL;
     }
     
+    if (renderer->vertex_buffer) {
+        wgpuBufferRelease(renderer->vertex_buffer);
+        renderer->vertex_buffer = NULL;
+    }
+    
     if (renderer->instance_buffer) {
         wgpuBufferRelease(renderer->instance_buffer);
         renderer->instance_buffer = NULL;
@@ -602,10 +920,20 @@ void wcn_destroy_renderer(WCN_Renderer* renderer) {
         wgpuBindGroupRelease(renderer->bind_group);
         renderer->bind_group = NULL;
     }
+
+    if (renderer->compute_bind_group) {
+        wgpuBindGroupRelease(renderer->compute_bind_group);
+        renderer->compute_bind_group = NULL;
+    }
     
     if (renderer->bind_group_layout) {
         wgpuBindGroupLayoutRelease(renderer->bind_group_layout);
         renderer->bind_group_layout = NULL;
+    }
+
+    if (renderer->compute_bind_group_layout) {
+        wgpuBindGroupLayoutRelease(renderer->compute_bind_group_layout);
+        renderer->compute_bind_group_layout = NULL;
     }
     
     if (renderer->sdf_bind_group_layout) {
@@ -617,6 +945,11 @@ void wcn_destroy_renderer(WCN_Renderer* renderer) {
     if (renderer->pipeline) {
         wgpuRenderPipelineRelease(renderer->pipeline);
         renderer->pipeline = NULL;
+    }
+
+    if (renderer->compute_pipeline) {
+        wgpuComputePipelineRelease(renderer->compute_pipeline);
+        renderer->compute_pipeline = NULL;
     }
     
     // Free CPU-side instance buffer
@@ -965,35 +1298,38 @@ void wcn_renderer_add_line(
 
 // 渲染所有实例
 void wcn_renderer_render(
-    WCN_Renderer* renderer,
-    WGPURenderPassEncoder pass,
+    WCN_Context* ctx,
     WGPUTextureView atlas_view
 ) {
-    if (!renderer || !pass) {
+    if (!ctx || !ctx->renderer || !ctx->current_command_encoder) {
         return;
     }
-    
-    // If no instances to render, skip
+
+    WCN_Renderer* renderer = ctx->renderer;
+
     if (renderer->cpu_instances.count == 0) {
         return;
     }
-    
-    // Upload instance data to GPU storage buffer
+
     size_t required_size = renderer->cpu_instances.count * sizeof(WCN_Instance);
-    
-    // Resize GPU buffer if needed
     if (required_size > renderer->instance_buffer_size) {
-        // Release old buffer
         if (renderer->instance_buffer) {
             wgpuBufferRelease(renderer->instance_buffer);
         }
-        
-        // Create larger buffer (round up to next power of 2 for efficiency)
-        size_t new_size = renderer->instance_buffer_size;
+
+        size_t new_size = renderer->instance_buffer_size ? renderer->instance_buffer_size : sizeof(WCN_Instance) * 1024;
         while (new_size < required_size) {
             new_size *= 2;
         }
-        
+
+#ifdef __EMSCRIPTEN__
+        renderer->instance_buffer = wasm_create_buffer(
+            renderer->device,
+            "Unified Renderer Instance Buffer (Resized)",
+            new_size,
+            1 | 4
+        );
+#else
         WGPUBufferDescriptor instance_buffer_desc = {
             .nextInChain = NULL,
             .label = "Unified Renderer Instance Buffer (Resized)",
@@ -1001,49 +1337,20 @@ void wcn_renderer_render(
             .size = new_size,
             .mappedAtCreation = false
         };
-        
         renderer->instance_buffer = wgpuDeviceCreateBuffer(
             renderer->device,
             &instance_buffer_desc
         );
-        
+#endif
         renderer->instance_buffer_size = new_size;
-        
-        // Recreate bind group with new buffer
-        if (renderer->bind_group) {
-            wgpuBindGroupRelease(renderer->bind_group);
+
+        if (!renderer->instance_buffer ||
+            !wcn_renderer_create_render_bind_group(renderer) ||
+            !wcn_renderer_create_compute_bind_group(renderer)) {
+            return;
         }
-        
-        WGPUBindGroupEntry bind_group_entries[] = {
-            {
-                .binding = 0,
-                .buffer = renderer->instance_buffer,
-                .offset = 0,
-                .size = renderer->instance_buffer_size
-            },
-            {
-                .binding = 1,
-                .buffer = renderer->uniform_buffer,
-                .offset = 0,
-                .size = 16
-            }
-        };
-        
-        WGPUBindGroupDescriptor bind_group_desc = {
-            .nextInChain = NULL,
-            .label = "Unified Renderer Bind Group (Recreated)",
-            .layout = renderer->bind_group_layout,
-            .entryCount = 2,
-            .entries = bind_group_entries
-        };
-        
-        renderer->bind_group = wgpuDeviceCreateBindGroup(
-            renderer->device,
-            &bind_group_desc
-        );
     }
-    
-    // Write instance data to GPU buffer
+
     wgpuQueueWriteBuffer(
         renderer->queue,
         renderer->instance_buffer,
@@ -1051,24 +1358,98 @@ void wcn_renderer_render(
         renderer->cpu_instances.instances,
         required_size
     );
-    
-    // Set pipeline
-    wgpuRenderPassEncoderSetPipeline(pass, renderer->pipeline);
-    
-    // Bind group 0: instance buffer and uniforms
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->bind_group, 0, NULL);
-    
-    // Bind group 1: SDF atlas texture and sampler (if provided)
-    // Create a temporary bind group for the SDF atlas
-    if (atlas_view) {
-        // We need to get the sampler from somewhere - for now we'll create a default one
-        // In a production system, this should be cached or passed as a parameter
+
+    if (!atlas_view) {
+        printf("Warning: No SDF atlas provided to renderer, skipping draw\n");
+        return;
+    }
+
+    size_t total_instances = renderer->cpu_instances.count;
+    size_t batch_capacity = renderer->vertex_batch_instance_capacity;
+    if (batch_capacity == 0) {
+        return;
+    }
+
+    size_t instance_offset = 0;
+
+    while (instance_offset < total_instances) {
+        size_t batch_instances = total_instances - instance_offset;
+        if (batch_instances > batch_capacity) {
+            batch_instances = batch_capacity;
+        }
+
+        WCN_RendererUniforms uniform_data = {
+            .viewport_size = {(float)ctx->width, (float)ctx->height},
+            .instance_count = (uint32_t)batch_instances,
+            .instance_offset = (uint32_t)instance_offset
+        };
+        wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
+
+        WGPUComputePassDescriptor compute_pass_desc = {
+            .nextInChain = NULL,
+            .label = "Instance Expand Pass"
+        };
+        WGPUComputePassEncoder compute_pass = wgpuCommandEncoderBeginComputePass(
+            ctx->current_command_encoder,
+            &compute_pass_desc
+        );
+        if (!compute_pass) {
+            return;
+        }
+
+        wgpuComputePassEncoderSetPipeline(compute_pass, renderer->compute_pipeline);
+        wgpuComputePassEncoderSetBindGroup(compute_pass, 0, renderer->compute_bind_group, 0, NULL);
+
+        uint32_t workgroups = (uint32_t)((batch_instances + 63) / 64);
+        wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroups, 1, 1);
+        wgpuComputePassEncoderEnd(compute_pass);
+
+        size_t batch_vertex_bytes = batch_instances * 6 * sizeof(WCN_VertexGPU);
+
+        WGPULoadOp load_op = ctx->render_pass_needs_begin ? ctx->pending_color_load_op : WGPULoadOp_Load;
+        ctx->render_pass_needs_begin = false;
+        ctx->pending_color_load_op = WGPULoadOp_Load;
+
 #ifdef __EMSCRIPTEN__
-        // WASM: 使用 EM_JS 函数创建 sampler，确保 LOD 参数正确
-        WGPUSampler temp_sampler = wasm_create_sampler(renderer->device, "Temp SDF Sampler");
-        
-        // WASM: 使用 EM_JS 函数创建 SDF bind group
-        WGPUBindGroup sdf_bind_group = wasm_create_sdf_bind_group(
+        ctx->current_render_pass = wasm_begin_render_pass(
+            ctx->current_command_encoder,
+            ctx->current_texture_view_id,
+            load_op == WGPULoadOp_Clear ? 1 : 0
+        );
+#else
+        WGPURenderPassColorAttachment color_attachment = {
+            .view = ctx->current_texture_view,
+            .resolveTarget = NULL,
+            .loadOp = load_op,
+            .storeOp = WGPUStoreOp_Store,
+            .clearValue = ctx->pending_clear_color
+        };
+
+        WGPURenderPassDescriptor render_pass_desc = {
+            .nextInChain = NULL,
+            .label = "WCN Render Pass",
+            .colorAttachmentCount = 1,
+            .colorAttachments = &color_attachment,
+            .depthStencilAttachment = NULL,
+            .occlusionQuerySet = NULL,
+            .timestampWrites = NULL
+        };
+
+        ctx->current_render_pass = wgpuCommandEncoderBeginRenderPass(
+            ctx->current_command_encoder,
+            &render_pass_desc
+        );
+#endif
+
+        if (!ctx->current_render_pass) {
+            return;
+        }
+
+        WGPUBindGroup sdf_bind_group = NULL;
+        WGPUSampler temp_sampler = NULL;
+#ifdef __EMSCRIPTEN__
+        temp_sampler = wasm_create_sampler(renderer->device, "Temp SDF Sampler");
+        sdf_bind_group = wasm_create_sdf_bind_group(
             renderer->device,
             renderer->sdf_bind_group_layout,
             atlas_view,
@@ -1088,19 +1469,13 @@ void wcn_renderer_render(
             .maxAnisotropy = 1,
             .label = "Temp SDF Sampler"
         };
-        WGPUSampler temp_sampler = wgpuDeviceCreateSampler(renderer->device, &sampler_desc);
-        
+        temp_sampler = wgpuDeviceCreateSampler(renderer->device, &sampler_desc);
+
         WGPUBindGroupEntry sdf_bind_group_entries[] = {
-            {
-                .binding = 0,
-                .textureView = atlas_view
-            },
-            {
-                .binding = 1,
-                .sampler = temp_sampler
-            }
+            { .binding = 0, .textureView = atlas_view },
+            { .binding = 1, .sampler = temp_sampler }
         };
-        
+
         WGPUBindGroupDescriptor sdf_bind_group_desc = {
             .nextInChain = NULL,
             .label = "Temp SDF Bind Group",
@@ -1108,35 +1483,40 @@ void wcn_renderer_render(
             .entryCount = 2,
             .entries = sdf_bind_group_entries
         };
-        
-        WGPUBindGroup sdf_bind_group = wgpuDeviceCreateBindGroup(
+
+        sdf_bind_group = wgpuDeviceCreateBindGroup(
             renderer->device,
             &sdf_bind_group_desc
         );
 #endif
-        
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, sdf_bind_group, 0, NULL);
-        
-        // Execute single instanced draw call (6 vertices per quad, N instances)
-        wgpuRenderPassEncoderDraw(
-            pass,
-            6,  // 6 vertices per quad (2 triangles)
-            (uint32_t)renderer->cpu_instances.count,  // N instances
-            0,  // First vertex
-            0   // First instance
-        );
-        
-        // Clean up temporary resources
-        wgpuBindGroupRelease(sdf_bind_group);
-        wgpuSamplerRelease(temp_sampler);
-    } else {
-        // No atlas provided - still need to bind something to group 1 to satisfy the pipeline
-        // Create a dummy 1x1 texture and sampler
-        // This is a workaround - ideally the shader should handle missing textures gracefully
-        // For now, we'll just skip rendering if no atlas is provided
-        // In production, you'd want to create a default white texture
-        printf("Warning: No SDF atlas provided to renderer, skipping draw\n");
+        if (sdf_bind_group && temp_sampler) {
+            wgpuRenderPassEncoderSetPipeline(ctx->current_render_pass, renderer->pipeline);
+            wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 0, renderer->bind_group, 0, NULL);
+            wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 1, sdf_bind_group, 0, NULL);
+            wgpuRenderPassEncoderSetVertexBuffer(ctx->current_render_pass, 0, renderer->vertex_buffer, 0, batch_vertex_bytes);
+            wgpuRenderPassEncoderDraw(ctx->current_render_pass, (uint32_t)(batch_instances * 6), 1, 0, 0);
+            wgpuBindGroupRelease(sdf_bind_group);
+            wgpuSamplerRelease(temp_sampler);
+        }
+
+        wgpuRenderPassEncoderEnd(ctx->current_render_pass);
+        wgpuRenderPassEncoderRelease(ctx->current_render_pass);
+        ctx->current_render_pass = NULL;
+
+        instance_offset += batch_instances;
     }
+
+#ifdef __EMSCRIPTEN__
+    if (ctx->current_texture_view_id >= 0) {
+        freeWGPUTextureView(ctx->current_texture_view_id);
+        ctx->current_texture_view_id = -1;
+    }
+#else
+    if (ctx->current_texture_view) {
+        wgpuTextureViewRelease(ctx->current_texture_view);
+        ctx->current_texture_view = NULL;
+    }
+#endif
 }
 
 // ============================================================================
@@ -1163,12 +1543,11 @@ void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height
     renderer->height = height;
     
     // Update uniform buffer with new window size
-    float viewport_data[4] = {
-        (float)width,
-        (float)height,
-        0.0f,  // padding
-        0.0f   // padding
+    WCN_RendererUniforms uniform_data = {
+        .viewport_size = {(float)width, (float)height},
+        .instance_count = 0,
+        .instance_offset = 0
     };
     
-    wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, viewport_data, sizeof(viewport_data));
+    wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
 }

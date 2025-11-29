@@ -26,6 +26,13 @@ WGPURenderPipeline wasm_create_render_pipeline(
     const char* format_str
 );
 
+WGPUComputePipeline wasm_create_compute_pipeline(
+    WGPUDevice device,
+    WGPUPipelineLayout layout,
+    WGPUShaderModule shader,
+    const char* entry_point
+);
+
 // Bind group creation
 WGPUBindGroup wasm_create_bind_group(
     WGPUDevice device,
@@ -35,12 +42,23 @@ WGPUBindGroup wasm_create_bind_group(
     WGPUBuffer uniform_buffer
 );
 
+WGPUBindGroup wasm_create_compute_bind_group(
+    WGPUDevice device,
+    WGPUBindGroupLayout layout,
+    WGPUBuffer instance_buffer,
+    uint64_t instance_buffer_size,
+    WGPUBuffer vertex_buffer,
+    uint64_t vertex_buffer_size,
+    WGPUBuffer uniform_buffer,
+    uint64_t uniform_buffer_size
+);
+
 // Buffer creation
 WGPUBuffer wasm_create_buffer(
     WGPUDevice device,
     const char* label,
     uint64_t size,
-    uint32_t usage_flags
+    uint32_t usage_flags  // 1=Storage, 2=Uniform, 4=CopyDst, 8=Vertex
 );
 
 // Bind group layout creation
@@ -49,6 +67,14 @@ WGPUBindGroupLayout wasm_create_bind_group_layout(
     const char* label,
     uint64_t min_binding_size_0,
     uint64_t min_binding_size_1
+);
+
+WGPUBindGroupLayout wasm_create_compute_bind_group_layout(
+    WGPUDevice device,
+    const char* label,
+    uint64_t min_binding_size_0,
+    uint64_t min_binding_size_1,
+    uint64_t min_binding_size_2
 );
 
 // Shader module creation
@@ -70,6 +96,13 @@ WGPUPipelineLayout wasm_create_pipeline_layout(
     const char* label,
     WGPUBindGroupLayout layout0,
     WGPUBindGroupLayout layout1
+);
+
+// New function for creating pipeline layout with single bind group layout
+WGPUPipelineLayout wasm_create_single_bind_group_pipeline_layout(
+    WGPUDevice device,
+    const char* label,
+    WGPUBindGroupLayout layout
 );
 
 // Sampler creation
