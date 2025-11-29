@@ -1297,6 +1297,7 @@ void wcn_renderer_add_line(
 // ============================================================================
 
 // 渲染所有实例
+// 渲染所有实例
 void wcn_renderer_render(
     WCN_Context* ctx,
     WGPUTextureView atlas_view
@@ -1311,6 +1312,7 @@ void wcn_renderer_render(
         return;
     }
 
+    // 检查并调整 Instance Buffer 大小
     size_t required_size = renderer->cpu_instances.count * sizeof(WCN_Instance);
     if (required_size > renderer->instance_buffer_size) {
         if (renderer->instance_buffer) {
@@ -1327,7 +1329,7 @@ void wcn_renderer_render(
             renderer->device,
             "Unified Renderer Instance Buffer (Resized)",
             new_size,
-            1 | 4
+            1 | 4 // Usage: Storage | CopyDst
         );
 #else
         WGPUBufferDescriptor instance_buffer_desc = {
@@ -1351,6 +1353,7 @@ void wcn_renderer_render(
         }
     }
 
+    // 上传 Instance 数据
     wgpuQueueWriteBuffer(
         renderer->queue,
         renderer->instance_buffer,
@@ -1372,15 +1375,14 @@ void wcn_renderer_render(
 
     size_t instance_offset = 0;
 
+    // --- 开始 Batch 循环 ---
     while (instance_offset < total_instances) {
         size_t batch_instances = total_instances - instance_offset;
         if (batch_instances > batch_capacity) {
             batch_instances = batch_capacity;
         }
 
-        // Debug print to see batching
-        // printf("Batch: offset=%zu, count=%zu, total=%zu\n", instance_offset, batch_instances, total_instances);
-
+        // 更新 Uniforms
         WCN_RendererUniforms uniform_data = {
             .viewport_size = {(float)ctx->width, (float)ctx->height},
             .instance_count = (uint32_t)batch_instances,
@@ -1388,6 +1390,7 @@ void wcn_renderer_render(
         };
         wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
 
+        // --- Compute Pass (顶点展开) ---
         WGPUComputePassDescriptor compute_pass_desc = {
             .nextInChain = NULL,
             .label = "Instance Expand Pass"
@@ -1403,19 +1406,22 @@ void wcn_renderer_render(
         wgpuComputePassEncoderSetPipeline(compute_pass, renderer->compute_pipeline);
         wgpuComputePassEncoderSetBindGroup(compute_pass, 0, renderer->compute_bind_group, 0, NULL);
 
-        // Make sure we're dispatching the correct number of workgroups
-        uint32_t workgroups = (uint32_t)((batch_instances + 63) / 64);
-        // Ensure at least one workgroup is dispatched
-        if (workgroups == 0 && batch_instances > 0) {
+        // [Updated] 计算 Dispatch Workgroups
+        // 逻辑变更：现在每个线程处理 1 个顶点，而不是 1 个实例。
+        // Workgroup Size 从 64 变更为 256 (匹配 Shader 中的 @workgroup_size(256))
+        uint32_t total_vertices_in_batch = (uint32_t)batch_instances * 6;
+        uint32_t workgroups = (total_vertices_in_batch + 255) / 256;
+
+        // 确保至少分发 1 个组 (虽然 total_vertices_in_batch > 0 时上面公式已保证)
+        if (workgroups == 0 && total_vertices_in_batch > 0) {
             workgroups = 1;
         }
-        
-        // Debug print
-        // printf("Dispatching %u workgroups for %zu instances\n", workgroups, batch_instances);
-        
+
         wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroups, 1, 1);
         wgpuComputePassEncoderEnd(compute_pass);
+        // wgpuComputePassEncoderRelease(compute_pass); // 注意：某些实现可能需要释放 encoder，WebGPU C API 通常由 End 隐式完成或不需要
 
+        // --- Render Pass (绘制) ---
         size_t batch_vertex_bytes = batch_instances * 6 * sizeof(WCN_VertexGPU);
 
         WGPULoadOp load_op = ctx->render_pass_needs_begin ? ctx->pending_color_load_op : WGPULoadOp_Load;
@@ -1459,6 +1465,8 @@ void wcn_renderer_render(
 
         WGPUBindGroup sdf_bind_group = NULL;
         WGPUSampler temp_sampler = NULL;
+
+        // 创建临时资源 (实际项目中建议缓存 Sampler)
 #ifdef __EMSCRIPTEN__
         temp_sampler = wasm_create_sampler(renderer->device, "Temp SDF Sampler");
         sdf_bind_group = wasm_create_sdf_bind_group(
@@ -1506,7 +1514,10 @@ void wcn_renderer_render(
             wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 0, renderer->bind_group, 0, NULL);
             wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 1, sdf_bind_group, 0, NULL);
             wgpuRenderPassEncoderSetVertexBuffer(ctx->current_render_pass, 0, renderer->vertex_buffer, 0, batch_vertex_bytes);
+
+            // Draw 调用保持不变，绘制 batch_instances * 6 个顶点
             wgpuRenderPassEncoderDraw(ctx->current_render_pass, (uint32_t)(batch_instances * 6), 1, 0, 0);
+
             wgpuBindGroupRelease(sdf_bind_group);
             wgpuSamplerRelease(temp_sampler);
         }
@@ -1518,6 +1529,7 @@ void wcn_renderer_render(
         instance_offset += batch_instances;
     }
 
+    // 清理 View 引用
 #ifdef __EMSCRIPTEN__
     if (ctx->current_texture_view_id >= 0) {
         freeWGPUTextureView(ctx->current_texture_view_id);

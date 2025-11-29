@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCN Game of Life Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        h1 {
+            color: #61dafb;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .canvas-container {
+            text-align: center;
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+        canvas {
+            border: 1px solid #444;
+            background-color: #000;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #3a3a3a;
+            color: #fff;
+            transition: background 0.2s;
+            border: 1px solid #555;
+        }
+        button:hover {
+            background-color: #505050;
+        }
+        button:disabled {
+            background-color: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+            border-color: #333;
+        }
+        button.primary {
+            background-color: #007bff;
+            border-color: #0056b3;
+        }
+        button.primary:hover {
+            background-color: #0056b3;
+        }
+        button.danger {
+            background-color: #dc3545;
+            border-color: #bd2130;
+        }
+        button.danger:hover {
+            background-color: #c82333;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #333;
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+        .status.loading { background-color: #2c3e50; color: #add8e6; }
+        .status.success { background-color: #1e4620; color: #98dfb6; }
+        .status.error { background-color: #4a1c1c; color: #ffadad; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>Conway's Game of Life (WCN WASM)</h1>
+
+    <div class="canvas-container">
+        <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn" class="primary" onclick="togglePlay()">Start</button>
+        <button onclick="stepGame()">Next Step</button>
+        <button onclick="randomizeGrid()">Randomize</button>
+        <button class="danger" onclick="clearGrid()">Clear</button>
+
+        <div class="slider-container">
+            <label for="speedRange">Speed:</label>
+            <input type="range" id="speedRange" min="10" max="500" value="100" oninput="updateSpeed(this.value)">
+            <span id="speedVal">100ms</span>
+        </div>
+    </div>
+
+    <div id="status" class="status loading">Loading WCN module...</div>
+
+    <div style="margin-top: 20px; padding: 15px; background-color: #333; border-radius: 4px; font-size: 0.9em;">
+        <h3>Stats:</h3>
+        <p>Generation: <span id="genCount">0</span> | Live Cells: <span id="liveCount">0</span></p>
+        <p style="color: #888;">Rendered via WebGPU Canvas Native (WASM)</p>
+    </div>
+</div>
+
+<script src="../../build-wasm/wcn.js"></script>
+
+<script src="./wcn_canvas.js"></script>
+
+<script>
+    let WCNModule = null;
+    let wcnCanvas = null;
+    let isRunning = false;
+    let animationId = null;
+
+    // Game of Life Config
+    const CELL_SIZE = 5;
+    const GRID_COLOR = '#111111';
+    const CELL_COLOR = '#00ff88'; // Matrix Green
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 600;
+
+    // Game State
+    let cols, rows;
+    let grid;
+    let nextGrid; // Double buffer
+    let generation = 0;
+    let lastUpdateTime = 0;
+    let updateInterval = 100; // ms
+
+    // Load the WCN module
+    async function loadWCN() {
+        try {
+            updateStatus('Loading WCN module...', 'loading');
+            WCNModule = await createWCNModule();
+
+            updateStatus('WCN module loaded. Initializing...', 'loading');
+
+            // Initialize canvas wrapper
+            wcnCanvas = await createWCNCanvas('canvas', WCNModule);
+
+            // Init Game Logic
+            initGame();
+
+            updateStatus('Ready! Press Start to evolve.', 'success');
+            document.getElementById('startBtn').disabled = false;
+
+            // Initial draw (static)
+            drawFrame(0);
+
+        } catch (error) {
+            updateStatus('Initialization failed: ' + error.message, 'error');
+            console.error(error);
+        }
+    }
+
+    function initGame() {
+        cols = Math.floor(CANVAS_WIDTH / CELL_SIZE);
+        rows = Math.floor(CANVAS_HEIGHT / CELL_SIZE);
+
+        grid = createGrid();
+        nextGrid = createGrid();
+
+        randomizeGrid();
+    }
+
+    function createGrid() {
+        let arr = new Array(cols);
+        for (let i = 0; i < arr.length; i++) {
+            arr[i] = new Uint8Array(rows); // Optimization: Use typed array
+        }
+        return arr;
+    }
+
+    function randomizeGrid() {
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                grid[i][j] = Math.random() > 0.85 ? 1 : 0; // 15% density
+            }
+        }
+        generation = 0;
+        drawFrame(0); // Force a redraw
+    }
+
+    function clearGrid() {
+        for (let i = 0; i < cols; i++) {
+            grid[i].fill(0);
+        }
+        generation = 0;
+        drawFrame(0);
+    }
+
+    function computeNextGen() {
+        let liveCount = 0;
+
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                let state = grid[i][j];
+
+                // Count neighbors (with wrapping)
+                let neighbors = 0;
+                for (let x = -1; x <= 1; x++) {
+                    for (let y = -1; y <= 1; y++) {
+                        if (x === 0 && y === 0) continue;
+
+                        let col = (i + x + cols) % cols;
+                        let row = (j + y + rows) % rows;
+                        neighbors += grid[col][row];
+                    }
+                }
+
+                // Rules of Life
+                if (state === 0 && neighbors === 3) {
+                    nextGrid[i][j] = 1; // Reproduction
+                    liveCount++;
+                } else if (state === 1 && (neighbors < 2 || neighbors > 3)) {
+                    nextGrid[i][j] = 0; // Underpopulation or Overpopulation
+                } else {
+                    nextGrid[i][j] = state; // Survival or Stasis
+                    if (state === 1) liveCount++;
+                }
+            }
+        }
+
+        // Swap grids
+        let temp = grid;
+        grid = nextGrid;
+        nextGrid = temp;
+        generation++;
+
+        // Update UI Stats
+        document.getElementById('genCount').innerText = generation;
+        document.getElementById('liveCount').innerText = liveCount;
+    }
+
+    // ==========================================
+    // WCN Rendering Logic
+    // ==========================================
+    function drawFrame(timestamp) {
+        if (!wcnCanvas) return;
+
+        // --- Update Logic based on time ---
+        if (isRunning && timestamp - lastUpdateTime > updateInterval) {
+            computeNextGen();
+            lastUpdateTime = timestamp;
+        }
+
+        // --- Render Phase ---
+        wcnCanvas.beginFrame();
+
+        const pass = wcnCanvas.beginRenderPass();
+        if (pass) {
+            // 1. Clear Background
+            wcnCanvas.setFillStyle(GRID_COLOR);
+            wcnCanvas.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // 2. Draw Live Cells
+            wcnCanvas.setFillStyle(CELL_COLOR);
+
+            // Batch drawing optimization:
+            // In a raw WebGPU implementation, instanced drawing is better.
+            // In Canvas2D/WCN, we just loop and fillRect.
+            for (let i = 0; i < cols; i++) {
+                for (let j = 0; j < rows; j++) {
+                    if (grid[i][j] === 1) {
+                        // Leave 1px gap for grid effect
+                        wcnCanvas.fillRect(
+                            i * CELL_SIZE,
+                            j * CELL_SIZE,
+                            CELL_SIZE - 1,
+                            CELL_SIZE - 1
+                        );
+                    }
+                }
+            }
+
+            // 3. Optional: Draw some overlay text
+            // wcnCanvas.setFont('12px Arial');
+            // wcnCanvas.setFillStyle('#ffffff');
+            // wcnCanvas.fillText(`Gen: ${generation}`, 10, 20);
+
+            wcnCanvas.endFrame();
+        }
+
+        if (isRunning) {
+            animationId = requestAnimationFrame(drawFrame);
+        }
+    }
+
+    // ==========================================
+    // Controls
+    // ==========================================
+    function togglePlay() {
+        isRunning = !isRunning;
+        const btn = document.getElementById('startBtn');
+
+        if (isRunning) {
+            btn.innerText = "Pause";
+            btn.classList.remove('primary');
+            lastUpdateTime = performance.now();
+            drawFrame(performance.now());
+        } else {
+            btn.innerText = "Start";
+            btn.classList.add('primary');
+            if (animationId) cancelAnimationFrame(animationId);
+        }
+    }
+
+    function stepGame() {
+        if (isRunning) togglePlay(); // Pause if running
+        computeNextGen();
+        drawFrame(performance.now()); // Force render one frame
+    }
+
+    function updateSpeed(val) {
+        updateInterval = parseInt(val);
+        document.getElementById('speedVal').innerText = val + "ms";
+    }
+
+    function updateStatus(message, type) {
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = message;
+        statusEl.className = 'status ' + type;
+    }
+
+    // Init
+    window.addEventListener('load', loadWCN);
+</script>
+</body>
+</html>

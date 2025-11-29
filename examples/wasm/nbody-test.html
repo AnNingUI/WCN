@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCN N-Body Simulation Demo</title>
+    <style>
+        /* 样式与原Game of Life demo基本保持一致 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        h1 {
+            color: #61dafb;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .canvas-container {
+            text-align: center;
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+        canvas {
+            border: 1px solid #444;
+            background-color: #000;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #3a3a3a;
+            color: #fff;
+            transition: background 0.2s;
+            border: 1px solid #555;
+        }
+        button:hover {
+            background-color: #505050;
+        }
+        button:disabled {
+            background-color: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+            border-color: #333;
+        }
+        button.primary {
+            background-color: #007bff;
+            border-color: #0056b3;
+        }
+        button.primary:hover {
+            background-color: #0056b3;
+        }
+        button.danger {
+            background-color: #dc3545;
+            border-color: #bd2130;
+        }
+        button.danger:hover {
+            background-color: #c82333;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #333;
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+        .status.loading { background-color: #2c3e50; color: #add8e6; }
+        .status.success { background-color: #1e4620; color: #98dfb6; }
+        .status.error { background-color: #4a1c1c; color: #ffadad; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>N-Body Gravity Simulation (WCN WASM)</h1>
+
+    <div class="canvas-container">
+        <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn" class="primary" onclick="togglePlay()">Start</button>
+        <button onclick="addRandomBodies()">Add 50 Bodies</button>
+        <button class="danger" onclick="clearBodies()">Clear All</button>
+
+        <div class="slider-container">
+            <label for="dtRange">Time Step ($\Delta t$):</label>
+            <input type="range" id="dtRange" min="0.001" max="0.1" step="0.001" value="0.02" oninput="updateTimeStep(this.value)">
+            <span id="dtVal">0.02</span>
+        </div>
+    </div>
+
+    <div id="status" class="status loading">Loading WCN module...</div>
+
+    <div style="margin-top: 20px; padding: 15px; background-color: #333; border-radius: 4px; font-size: 0.9em;">
+        <h3>Stats:</h3>
+        <p>Simulation Time: <span id="simTime">0.00</span>s | Total Bodies: <span id="bodyCount">0</span></p>
+        <p style="color: #888;">Rendered via WebGPU Canvas Native (WASM)</p>
+    </div>
+</div>
+
+<script src="../../build-wasm/wcn.js"></script>
+<script src="./wcn_canvas.js"></script>
+
+<script>
+    let WCNModule = null;
+    let wcnCanvas = null;
+    let isRunning = false;
+    let animationId = null;
+
+    // Simulation Config
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 600;
+    const G = 6.674e-11; // 实际的牛顿引力常数 (或使用简化值 1e-3, 1e-4)
+    const SIM_G = 0.00001; // 简化后的引力常数，用于更好的视觉效果
+    let TIME_STEP = 0.02; // Delta t for integration
+    const MAX_BODIES = 1000;
+    const BODY_COLOR = '#ffcc00'; // Stellar Yellow
+
+    // Game State
+    let bodies = [];
+    let simTime = 0;
+    let lastUpdateTime = 0; // Used for FPS timing if needed, but here mainly for loop control
+
+    // Body Structure (Simple object for demonstration)
+    class Body {
+        constructor(x, y, vx, vy, m, r, color = BODY_COLOR) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.m = m; // mass
+            this.r = r; // radius for drawing
+            this.color = color;
+        }
+    }
+
+    // Load the WCN module
+    async function loadWCN() {
+        try {
+            updateStatus('Loading WCN module...', 'loading');
+            WCNModule = await createWCNModule();
+
+            updateStatus('WCN module loaded. Initializing...', 'loading');
+
+            // Initialize canvas wrapper
+            wcnCanvas = await createWCNCanvas('canvas', WCNModule);
+
+            // Init Simulation
+            initSimulation();
+
+            updateStatus('Ready! Press Start to run simulation.', 'success');
+            document.getElementById('startBtn').disabled = false;
+
+            // Initial draw (static)
+            drawFrame(0);
+
+        } catch (error) {
+            updateStatus('Initialization failed: ' + error.message, 'error');
+            console.error(error);
+        }
+    }
+
+    function initSimulation() {
+        // Add one massive central body
+        bodies.push(new Body(
+            CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, // Center
+            0, 0, // No initial velocity
+            10000000, // Very large mass
+            10, // Large radius
+            '#ffffff' // White for the center
+        ));
+
+        // Add some random smaller orbiting bodies
+        addRandomBodies(50);
+    }
+
+    function addRandomBodies(count = 50) {
+        if (bodies.length + count > MAX_BODIES) {
+            count = MAX_BODIES - bodies.length;
+        }
+        for (let i = 0; i < count; i++) {
+            // Random position near the center
+            const dist = Math.random() * 200 + 50;
+            const angle = Math.random() * 2 * Math.PI;
+            const x = CANVAS_WIDTH / 2 + dist * Math.cos(angle);
+            const y = CANVAS_HEIGHT / 2 + dist * Math.sin(angle);
+
+            // Calculate initial tangential velocity for a near-circular orbit
+            // V_orbit = sqrt(G*M/r) - simplified for visual, using a constant V_base
+            const V_base = 0.5; // Base velocity scale
+            const vx = -V_base * Math.sin(angle);
+            const vy = V_base * Math.cos(angle);
+
+            // Small mass and radius
+            const mass = Math.random() * 100000 + 10000;
+            const radius = Math.random() * 2 + 1;
+
+            bodies.push(new Body(x, y, vx, vy, mass, radius));
+        }
+        updateStats();
+        drawFrame(performance.now()); // Force redraw
+    }
+
+    function clearBodies() {
+        bodies = [];
+        simTime = 0;
+        updateStats();
+        drawFrame(performance.now()); // Force redraw
+    }
+
+    // ==========================================
+    // Simulation Logic (Euler or Verlet integration for simplicity)
+    // ==========================================
+    function updateSimulation() {
+        const dt = TIME_STEP;
+        let newBodies = bodies.map(b => ({...b})); // Copy bodies for simultaneous update
+
+        for (let i = 0; i < bodies.length; i++) {
+            const bodyI = bodies[i];
+            let Fx = 0;
+            let Fy = 0;
+
+            // Calculate total force on body I from all other bodies J
+            for (let j = 0; j < bodies.length; j++) {
+                if (i === j) continue;
+
+                const bodyJ = bodies[j];
+
+                const dx = bodyJ.x - bodyI.x;
+                const dy = bodyJ.y - bodyI.y;
+                const r2 = dx * dx + dy * dy;
+                const r = Math.sqrt(r2);
+
+                // Use a small constant to prevent division by zero/super-high force at collision
+                const min_r2 = 1e-4;
+                const forceMagnitude = (SIM_G * bodyI.m * bodyJ.m) / Math.max(r2, min_r2);
+
+                // Force components
+                const F_x_comp = forceMagnitude * (dx / r);
+                const F_y_comp = forceMagnitude * (dy / r);
+
+                Fx += F_x_comp;
+                Fy += F_y_comp;
+            }
+
+            // Calculate acceleration (A = F/m)
+            const Ax = Fx / bodyI.m;
+            const Ay = Fy / bodyI.m;
+
+            // Update velocity (V = V + A*dt)
+            newBodies[i].vx += Ax * dt;
+            newBodies[i].vy += Ay * dt;
+
+            // Update position (P = P + V*dt)
+            newBodies[i].x += newBodies[i].vx * dt;
+            newBodies[i].y += newBodies[i].vy * dt;
+
+            // Simple boundary wrapping for an "infinite" feel (optional)
+            if (newBodies[i].x < 0) newBodies[i].x += CANVAS_WIDTH;
+            if (newBodies[i].x > CANVAS_WIDTH) newBodies[i].x -= CANVAS_WIDTH;
+            if (newBodies[i].y < 0) newBodies[i].y += CANVAS_HEIGHT;
+            if (newBodies[i].y > CANVAS_HEIGHT) newBodies[i].y -= CANVAS_HEIGHT;
+        }
+
+        bodies = newBodies;
+        simTime += dt;
+    }
+
+    // ==========================================
+    // WCN Rendering Logic
+    // ==========================================
+    function drawFrame(timestamp) {
+        if (!wcnCanvas) return;
+
+        // --- Update Logic ---
+        if (isRunning) {
+            updateSimulation();
+            updateStats();
+        }
+
+        // --- Render Phase ---
+        wcnCanvas.beginFrame();
+
+        const pass = wcnCanvas.beginRenderPass();
+        if (pass) {
+            // 1. Clear Background (Black)
+            wcnCanvas.setFillStyle('#000000');
+            wcnCanvas.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // 2. Draw Bodies
+            // Note: WCN's fillRect is efficient. For circles, we'll use fillCircle if available,
+            // or approximate with small squares (fillRect) for simplicity/compatibility.
+
+            // Check if WCN supports fillCircle (typical of a Canvas2D-like API)
+            const hasFillCircle = wcnCanvas.fillCircle !== undefined;
+
+            bodies.forEach(body => {
+                // Set the color for the current body
+                wcnCanvas.setFillStyle(body.color);
+
+                // Draw a circle or square
+                if (hasFillCircle) {
+                    wcnCanvas.fillCircle(body.x, body.y, body.r);
+                } else {
+                    // Fallback to fillRect for a simple point/square
+                    wcnCanvas.fillRect(
+                        body.x - body.r,
+                        body.y - body.r,
+                        body.r * 2,
+                        body.r * 2
+                    );
+                }
+            });
+
+            wcnCanvas.endFrame();
+        }
+
+        if (isRunning) {
+            animationId = requestAnimationFrame(drawFrame);
+        }
+    }
+
+    // ==========================================
+    // Controls
+    // ==========================================
+    function togglePlay() {
+        isRunning = !isRunning;
+        const btn = document.getElementById('startBtn');
+
+        if (isRunning) {
+            btn.innerText = "Pause";
+            btn.classList.remove('primary');
+            lastUpdateTime = performance.now();
+            drawFrame(performance.now());
+        } else {
+            btn.innerText = "Start";
+            btn.classList.add('primary');
+            if (animationId) cancelAnimationFrame(animationId);
+        }
+    }
+
+    function updateTimeStep(val) {
+        TIME_STEP = parseFloat(val);
+        document.getElementById('dtVal').innerText = val;
+    }
+
+    function updateStats() {
+        document.getElementById('simTime').innerText = simTime.toFixed(2);
+        document.getElementById('bodyCount').innerText = bodies.length;
+    }
+
+    function updateStatus(message, type) {
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = message;
+        statusEl.className = 'status ' + type;
+    }
+
+    // Init
+    window.addEventListener('load', loadWCN);
+</script>
+</body>
+</html>

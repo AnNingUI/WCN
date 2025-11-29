@@ -4,13 +4,13 @@
 #include "WCN/WCN_WGSL.h"
 
 static const char* WCN_INSTANCE_EXPANDER_WGSL = WGSL_CODE(
+
+// Constants
 const INSTANCE_TYPE_RECT: u32 = 0u;
 const INSTANCE_TYPE_TEXT: u32 = 1u;
 const INSTANCE_TYPE_PATH: u32 = 2u;
 const INSTANCE_TYPE_LINE: u32 = 3u;
 
-// Line flag bits (shared with render shader)
-const LINE_CAP_BUTT: u32 = 0u;
 const LINE_CAP_START_ENABLED: u32 = 0x100u;
 const LINE_CAP_END_ENABLED: u32 = 0x200u;
 
@@ -51,34 +51,81 @@ struct VertexData {
 @group(0) @binding(1) var<storage, read_write> vertices: array<VertexData>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-fn unpack_color(packed: u32) -> vec4<f32> {
-    let r = f32(packed & 0xFFu) / 255.0;
-    let g = f32((packed >> 8u) & 0xFFu) / 255.0;
-    let b = f32((packed >> 16u) & 0xFFu) / 255.0;
-    let a = f32((packed >> 24u) & 0xFFu) / 255.0;
-    return vec4<f32>(r, g, b, a);
-}
+// Optimization: Use Workgroup Size 256 for better occupancy on modern GPUs
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    // Parallelism: Each thread handles ONE vertex, not one instance.
+    let global_vertex_index = global_id.x;
 
-fn build_vertex(
-    instance: Instance,
-    local_pos: vec2<f32>,
-    sized_pos: vec2<f32>
-) -> VertexData {
-    let m00 = instance.transform.x;
-    let m01 = instance.transform.y;
-    let m10 = instance.transform.z;
-    let m11 = instance.transform.w;
+    // Calculate which instance and which vertex within the quad (0-5) this thread handles
+    let instance_idx_local = global_vertex_index / 6u;
+    let vertex_sub_idx = global_vertex_index % 6u; // 0..5
 
-    let transformed_x = sized_pos.x * m00 + sized_pos.y * m01;
-    let transformed_y = sized_pos.x * m10 + sized_pos.y * m11;
-    let world_pos = vec2<f32>(transformed_x, transformed_y) + instance.position;
+    // Bounds check
+    if (instance_idx_local >= uniforms.instance_count) {
+        return;
+    }
 
-    let ndc_x = (world_pos.x / uniforms.viewport_size.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (world_pos.y / uniforms.viewport_size.y) * 2.0;
+    let instance_index = uniforms.instance_offset + instance_idx_local;
+    let instance = instances[instance_index];
 
+    // Optimization: Generate local position (UV) mathematically to avoid array lookup logic
+    // Map 0->(0,0), 1->(1,0), 2->(0,1), 3->(1,1), 4->(0,1), 5->(1,0)
+    // x is 1.0 at indices 1, 3, 5
+    // y is 1.0 at indices 2, 3, 4
+    let lx = f32(vertex_sub_idx & 1u); // 1, 3, 5 are odd
+    let ly = select(0.0, 1.0, (vertex_sub_idx > 1u) & (vertex_sub_idx < 5u));
+    let local_pos = vec2<f32>(lx, ly);
+
+    var sized_pos = local_pos * instance.size;
+
+    // Line Logic
+    if (instance.instance_type == INSTANCE_TYPE_LINE) {
+        let dir = instance.uv;
+        let perp = vec2<f32>(-dir.y, dir.x);
+
+        // Use vector components directly
+        let length = instance.size.x;
+        let width = instance.size.y;
+
+        // Branchless selection for caps
+        let start_cap = (instance.flags & LINE_CAP_START_ENABLED) != 0u;
+        let end_cap = (instance.flags & LINE_CAP_END_ENABLED) != 0u;
+
+        let half_width = width * 0.5;
+        let start_ext = select(0.0, half_width, start_cap);
+        let end_ext = select(0.0, half_width, end_cap);
+
+        let extended_length = length + start_ext + end_ext;
+        let center_offset = (end_ext - start_ext) * 0.5;
+
+        let along = (local_pos.x - 0.5) * extended_length + center_offset;
+        let across = (local_pos.y - 0.5) * width;
+
+        // FMA (Fused Multiply-Add) optimization usually handled by compiler, but explicit is good
+        sized_pos = dir * along + perp * across;
+    }
+
+    // Matrix Transform
+    // Expand manually to potentially use fma instructions
+    let world_pos = vec2<f32>(
+        sized_pos.x * instance.transform.x + sized_pos.y * instance.transform.y,
+        sized_pos.x * instance.transform.z + sized_pos.y * instance.transform.w
+    ) + instance.position;
+
+    // Coordinate Space Conversion (NDC)
+    // Pre-calculate inverse scale to replace division with multiplication
+    let inv_viewport = 1.0 / uniforms.viewport_size;
+    let ndc_x = (world_pos.x * inv_viewport.x) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (world_pos.y * inv_viewport.y) * 2.0;
+
+    // Build Vertex Output
     var vertex: VertexData;
     vertex.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    vertex.color = unpack_color(instance.color);
+
+    // Optimization: Use built-in intrinsic for color unpacking
+    vertex.color = unpack4x8unorm(instance.color);
+
     vertex.uv = instance.uv + local_pos * instance.uvSize;
     vertex.instance_type = instance.instance_type;
     vertex.flags = instance.flags;
@@ -86,78 +133,26 @@ fn build_vertex(
     vertex.params_x = instance.params_x;
     vertex.padding0 = 0.0;
     vertex.size = instance.size;
-    vertex.tri_v0 = vec2<f32>(0.0, 0.0);
-    vertex.tri_v1 = vec2<f32>(0.0, 0.0);
-    vertex.tri_v2 = vec2<f32>(0.0, 0.0);
+
+    // Initialize tri vectors
+    vertex.tri_v0 = vec2<f32>(0.0);
+    vertex.tri_v1 = vec2<f32>(0.0);
+    vertex.tri_v2 = vec2<f32>(0.0);
+
+    // Path Logic
     if (instance.instance_type == INSTANCE_TYPE_PATH) {
-        let safe_size = vec2<f32>(
-            max(instance.size.x, 1e-4),
-            max(instance.size.y, 1e-4)
-        );
-        let tri0 = (vec2<f32>(instance.uv.x, instance.uv.y) - instance.position) / safe_size;
-        let tri1 = (vec2<f32>(instance.uvSize.x, instance.uvSize.y) - instance.position) / safe_size;
-        let tri2 = (vec2<f32>(instance.params_x, bitcast<f32>(instance.flags)) - instance.position) / safe_size;
-        vertex.tri_v0 = tri0;
-        vertex.tri_v1 = tri1;
-        vertex.tri_v2 = tri2;
-    }
-    return vertex;
-}
+        let safe_size = max(instance.size, vec2<f32>(1e-4));
+        let inv_safe_size = 1.0 / safe_size; // Compute division once
 
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let batch_index = global_id.x;
-    if (batch_index >= uniforms.instance_count) {
-        return;
+        // Vectorize operations
+        vertex.tri_v0 = (instance.uv - instance.position) * inv_safe_size;
+        vertex.tri_v1 = (instance.uvSize - instance.position) * inv_safe_size;
+        vertex.tri_v2 = (vec2<f32>(instance.params_x, bitcast<f32>(instance.flags)) - instance.position) * inv_safe_size;
     }
 
-    let instance_index = uniforms.instance_offset + batch_index;
-    let instance = instances[instance_index];
-    let local_positions = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(1.0, 0.0),
-        vec2<f32>(0.0, 1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(0.0, 1.0),
-        vec2<f32>(1.0, 0.0)
-    );
-
-    var vertex_base = batch_index * 6u;
-
-    for (var i: u32 = 0u; i < 6u; i = i + 1u) {
-        let local_pos = local_positions[i];
-        var sized_pos = local_pos * instance.size;
-
-        if (instance.instance_type == INSTANCE_TYPE_LINE) {
-            let dir = instance.uv;
-            let perp = vec2<f32>(-dir.y, dir.x);
-            let length = instance.size.x;
-            let width = instance.size.y;
-            let half_width = width * 0.5;
-
-            let start_cap = (instance.flags & LINE_CAP_START_ENABLED) != 0u;
-            let end_cap = (instance.flags & LINE_CAP_END_ENABLED) != 0u;
-            var start_extension = 0.0;
-            var end_extension = 0.0;
-            if (start_cap) {
-                start_extension = half_width;
-            }
-            if (end_cap) {
-                end_extension = half_width;
-            }
-            let extended_length = length + start_extension + end_extension;
-            let center_offset = (end_extension - start_extension) * 0.5;
-            let along = (local_pos.x - 0.5) * extended_length + center_offset;
-            let across = (local_pos.y - 0.5) * width;
-            sized_pos = vec2<f32>(
-                along * dir.x + across * perp.x,
-                along * dir.y + across * perp.y
-            );
-        }
-
-        let vertex = build_vertex(instance, local_pos, sized_pos);
-        vertices[vertex_base + i] = vertex;
-    }
+    // Optimization: Coalesced Global Memory Write
+    // Thread N writes to Index N.
+    vertices[global_vertex_index] = vertex;
 }
 );
 

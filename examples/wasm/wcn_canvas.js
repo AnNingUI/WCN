@@ -284,7 +284,19 @@ class WCNCanvas {
     arc(x, y, radius, startAngle, endAngle, anticlockwise = false) {
         this.WCN._wcn_arc(this.context, x, y, radius, startAngle, endAngle, anticlockwise ? 1 : 0);
     }
-    
+
+    /**
+     * Fill a circle
+     * @param {number} x - X coordinate of the circle's center
+     * @param {number} y - Y coordinate of the circle's center
+     * @param {number} radius - Circle radius
+     */
+    fillCircle(x, y, radius) {
+        wcnCanvas.beginPath();
+        wcnCanvas.arc(x, y, radius, 0, Math.PI * 2);
+        wcnCanvas.fill();
+    }
+
     /**
      * Add a rectangle to the path
      * @param {number} x - X coordinate

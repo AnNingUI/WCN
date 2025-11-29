@@ -20,55 +20,55 @@ static void add_round_join(WCN_Renderer* renderer,
                            float half_width,
                            uint32_t color,
                            const float transform[4]) {
-    float angle1 = atan2f(perp1_y, perp1_x);
-    float angle2 = atan2f(perp2_y, perp2_x);
-    
+    const float angle1 = atan2f(perp1_y, perp1_x);
+    const float angle2 = atan2f(perp2_y, perp2_x);
+
     float angle_diff = angle2 - angle1;
     if (angle_diff > M_PI) angle_diff -= 2.0f * M_PI;
     if (angle_diff < -M_PI) angle_diff += 2.0f * M_PI;
-    
+
     int segments = (int)(fabsf(angle_diff) / (M_PI / 16.0f)) + 1;
     if (segments < 4) segments = 4;
     if (segments > 32) segments = 32;
-    
+
     WCN_SimpleVertex* vertices = (WCN_SimpleVertex*)malloc((segments + 2) * sizeof(WCN_SimpleVertex));
     uint16_t* indices = (uint16_t*)malloc(segments * 3 * sizeof(uint16_t));
-    
+
     if (!vertices || !indices) {
         free(vertices);
         free(indices);
         return;
     }
-    
+
     vertices[0].position[0] = x;
     vertices[0].position[1] = y;
-    
+
     for (int i = 0; i <= segments; i++) {
-        float t = (float)i / (float)segments;
-        float angle = angle1 + angle_diff * t;
+        const float t = (float)i / (float)segments;
+        const float angle = angle1 + angle_diff * t;
         vertices[i + 1].position[0] = x + cosf(angle) * half_width;
         vertices[i + 1].position[1] = y + sinf(angle) * half_width;
     }
-    
+
     for (int i = 0; i < segments; i++) {
         indices[i * 3 + 0] = 0;
         indices[i * 3 + 1] = i + 1;
         indices[i * 3 + 2] = i + 2;
     }
-    
+
     wcn_renderer_add_triangles(renderer, vertices, segments + 2, indices, segments * 3, color, transform);
-    
+
     free(vertices);
     free(indices);
 }
 
 // 添加BEVEL连接
 static void add_bevel_join(WCN_Renderer* renderer,
-                           float x, float y,
-                           float perp1_x, float perp1_y,
-                           float perp2_x, float perp2_y,
-                           float half_width,
-                           uint32_t color,
+                           const float x, const float y,
+                           const float perp1_x, const float perp1_y,
+                           const float perp2_x, const float perp2_y,
+                           const float half_width,
+                           const uint32_t color,
                            const float transform[4]) {
     WCN_SimpleVertex vertices[3];
     vertices[0].position[0] = x;
@@ -77,58 +77,58 @@ static void add_bevel_join(WCN_Renderer* renderer,
     vertices[1].position[1] = y + perp1_y * half_width;
     vertices[2].position[0] = x + perp2_x * half_width;
     vertices[2].position[1] = y + perp2_y * half_width;
-    
-    uint16_t indices[3] = {0, 1, 2};
+
+    const uint16_t indices[3] = {0, 1, 2};
     wcn_renderer_add_triangles(renderer, vertices, 3, indices, 3, color, transform);
 }
 
 // 添加MITER连接（尖角）
 static void add_miter_join(WCN_Renderer* renderer,
-                           float x, float y,
-                           float perp1_x, float perp1_y,
-                           float perp2_x, float perp2_y,
-                           float half_width,
-                           uint32_t color,
+                           const float x, const float y,
+                           const float perp1_x, const float perp1_y,
+                           const float perp2_x, const float perp2_y,
+                           const float half_width,
+                           const uint32_t color,
                            const float transform[4],
-                           float miter_limit) {
+                           const float miter_limit) {
     // 计算两条线外边缘的端点
-    float p1_x = x + perp1_x * half_width;
-    float p1_y = y + perp1_y * half_width;
-    float p2_x = x + perp2_x * half_width;
-    float p2_y = y + perp2_y * half_width;
-    
+    const float p1_x = x + perp1_x * half_width;
+    const float p1_y = y + perp1_y * half_width;
+    const float p2_x = x + perp2_x * half_width;
+    const float p2_y = y + perp2_y * half_width;
+
     // 计算miter点（两条延长线的交点）
     // 使用线段交点公式
-    float denom = perp1_x * perp2_y - perp1_y * perp2_x;
-    
+    const float denom = perp1_x * perp2_y - perp1_y * perp2_x;
+
     if (fabsf(denom) < 0.001f) {
         // 平行线，退化为bevel
-        add_bevel_join(renderer, x, y, perp1_x, perp1_y, perp2_x, perp2_y, 
+        add_bevel_join(renderer, x, y, perp1_x, perp1_y, perp2_x, perp2_y,
                       half_width, color, transform);
         return;
     }
-    
+
     // 计算从p1沿perp1方向到p2沿perp2方向的交点
-    float dx = p2_x - p1_x;
-    float dy = p2_y - p1_y;
-    float t1 = (dx * perp2_y - dy * perp2_x) / denom;
-    
+    const float dx = p2_x - p1_x;
+    const float dy = p2_y - p1_y;
+    const float t1 = (dx * perp2_y - dy * perp2_x) / denom;
+
     // Miter点
-    float miter_x = p1_x + perp1_x * t1;
-    float miter_y = p1_y + perp1_y * t1;
-    
+    const float miter_x = p1_x + perp1_x * t1;
+    const float miter_y = p1_y + perp1_y * t1;
+
     // 检查miter长度
-    float miter_dx = miter_x - x;
-    float miter_dy = miter_y - y;
-    float miter_length = sqrtf(miter_dx * miter_dx + miter_dy * miter_dy);
-    
+    const float miter_dx = miter_x - x;
+    const float miter_dy = miter_y - y;
+    const float miter_length = sqrtf(miter_dx * miter_dx + miter_dy * miter_dy);
+
     if (miter_length > half_width * miter_limit) {
         // Miter太长，退化为bevel
-        add_bevel_join(renderer, x, y, perp1_x, perp1_y, perp2_x, perp2_y, 
+        add_bevel_join(renderer, x, y, perp1_x, perp1_y, perp2_x, perp2_y,
                       half_width, color, transform);
         return;
     }
-    
+
     // 创建miter三角形：中心点 -> p1 -> miter点 -> p2
     WCN_SimpleVertex vertices[4];
     vertices[0].position[0] = x;
@@ -139,10 +139,10 @@ static void add_miter_join(WCN_Renderer* renderer,
     vertices[2].position[1] = miter_y;
     vertices[3].position[0] = p2_x;
     vertices[3].position[1] = p2_y;
-    
+
     // 两个三角形：(0,1,2) 和 (0,2,3)
-    uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
-    
+    const uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+
     wcn_renderer_add_triangles(renderer, vertices, 4, indices, 6, color, transform);
 }
 
@@ -195,7 +195,7 @@ static void wcn_path_add_point(WCN_Path* path, float x, float y, uint8_t command
     if (!path) return;
 
     // 扩展点数组
-    size_t new_point_count = path->point_count + 2;
+    const size_t new_point_count = path->point_count + 2;
     float* new_points = (float*)realloc(path->points, new_point_count * sizeof(float));
     if (!new_points) return;
 
@@ -205,7 +205,7 @@ static void wcn_path_add_point(WCN_Path* path, float x, float y, uint8_t command
     path->point_count = new_point_count;
 
     // 扩展命令数组
-    size_t new_command_count = path->command_count + 1;
+    const size_t new_command_count = path->command_count + 1;
     uint8_t* new_commands = (uint8_t*)realloc(path->commands, new_command_count * sizeof(uint8_t));
     if (!new_commands) return;
 
@@ -223,13 +223,13 @@ static void wcn_path_close(WCN_Path* path) {
 static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
     if (!ctx || !path || path->point_count < 6 || !ctx->renderer) return;
 
-    WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
-    uint32_t color = state->fill_color;
-    size_t num_points = path->point_count / 2;
+    const WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
+    const uint32_t color = state->fill_color;
+    const size_t num_points = path->point_count / 2;
 
     // For a proper triangle fill, we need to triangulate the path
     // For a simple convex polygon (like a triangle), we can use a fan triangulation
-    
+
     // Create vertices for all points in the path
     WCN_SimpleVertex* vertices = (WCN_SimpleVertex*)malloc(num_points * sizeof(WCN_SimpleVertex));
     if (!vertices) return;
@@ -242,12 +242,12 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
 
     // Create indices for triangle fan triangulation
     // For a convex polygon, we can triangulate by connecting all vertices to the first vertex
-    size_t num_triangles = num_points - 2;
-    size_t num_indices = num_triangles * 3;
+    const size_t num_triangles = num_points - 2;
+    const size_t num_indices = num_triangles * 3;
     uint16_t* indices = (uint16_t*)malloc(num_indices * sizeof(uint16_t));
-    if (!indices) { 
-        free(vertices); 
-        return; 
+    if (!indices) {
+        free(vertices);
+        return;
     }
 
     // Generate triangle fan indices correctly
@@ -259,7 +259,7 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
         indices[i*3+2] = i+2;    // Next vertex
     }
 
-    float transform[4] = {
+    const float transform[4] = {
         state->transform_matrix[0], state->transform_matrix[1],
         state->transform_matrix[4], state->transform_matrix[5]
     };
@@ -275,40 +275,40 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
     if (!ctx || !path || path->point_count < 4 || !ctx->renderer) return; // 至少需要2个点
 
     // 获取当前样式
-    WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
-    uint32_t color = state->stroke_color;
-    float line_width = state->stroke_width;
-    float half_width = line_width * 0.5f;
-    uint32_t line_join = state->line_join;
-    float miter_limit = state->miter_limit;
-    
+    const WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
+    const uint32_t color = state->stroke_color;
+    const float line_width = state->stroke_width;
+    const float half_width = line_width * 0.5f;
+    const uint32_t line_join = state->line_join;
+    const float miter_limit = state->miter_limit;
+
     // 提取 2x2 变换矩阵（从 4x4 矩阵的左上角）
-    float transform[4] = {
+    const float transform[4] = {
         state->transform_matrix[0], state->transform_matrix[1],
         state->transform_matrix[4], state->transform_matrix[5]
     };
-    
-    size_t num_points = path->point_count / 2;
-    size_t num_segments = path->is_closed ? num_points : (num_points - 1);
+
+    const size_t num_points = path->point_count / 2;
+    const size_t num_segments = path->is_closed ? num_points : (num_points - 1);
 
     // 渲染每条线段和连接点
     for (size_t i = 0; i < num_segments; i++) {
-        size_t p1_idx = i;
-        size_t p2_idx = (i + 1) % num_points;
+        const size_t p1_idx = i;
+        const size_t p2_idx = (i + 1) % num_points;
 
-        float x1 = path->points[p1_idx * 2];
-        float y1 = path->points[p1_idx * 2 + 1];
-        float x2 = path->points[p2_idx * 2];
-        float y2 = path->points[p2_idx * 2 + 1];
+        const float x1 = path->points[p1_idx * 2];
+        const float y1 = path->points[p1_idx * 2 + 1];
+        const float x2 = path->points[p2_idx * 2];
+        const float y2 = path->points[p2_idx * 2 + 1];
 
         // 确定是否在端点渲染cap
         // 对于路径中间的线段，禁用cap（由line join处理）
         // 只在路径的真正端点才渲染cap
-        bool is_first_segment = (i == 0);
-        bool is_last_segment = (i == num_segments - 1);
-        bool render_start_cap = is_first_segment && !path->is_closed;
-        bool render_end_cap = is_last_segment && !path->is_closed;
-        
+        const bool is_first_segment = (i == 0);
+        const bool is_last_segment = (i == num_segments - 1);
+        const bool render_start_cap = is_first_segment && !path->is_closed;
+        const bool render_end_cap = is_last_segment && !path->is_closed;
+
         // 构建cap flags: bit 0-7 = cap style, bit 8 = start cap, bit 9 = end cap
         uint32_t cap_flags = state->line_cap & 0xFFu;
         if (render_start_cap) cap_flags |= (1u << 8);
@@ -324,38 +324,38 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
             transform,
             cap_flags
         );
-        
+
         // 添加连接点（如果不是最后一个线段，或者路径是闭合的）
-        bool should_add_join = (i < num_segments - 1) || path->is_closed;
-        
+        const bool should_add_join = (i < num_segments - 1) || path->is_closed;
+
         if (should_add_join && num_points >= 3) {
-            size_t p3_idx = (i + 2) % num_points;
-            
+            const size_t p3_idx = (i + 2) % num_points;
+
             // 跳过闭合路径的最后一个连接（会在第一个点处理）
             if (!path->is_closed || i < num_segments - 1) {
-                float x3 = path->points[p3_idx * 2];
-                float y3 = path->points[p3_idx * 2 + 1];
-                
+                const float x3 = path->points[p3_idx * 2];
+                const float y3 = path->points[p3_idx * 2 + 1];
+
                 // 计算两条线段的方向向量
                 float dx1 = x2 - x1;
                 float dy1 = y2 - y1;
-                float len1 = sqrtf(dx1 * dx1 + dy1 * dy1);
-                
+                const float len1 = sqrtf(dx1 * dx1 + dy1 * dy1);
+
                 float dx2 = x3 - x2;
                 float dy2 = y3 - y2;
-                float len2 = sqrtf(dx2 * dx2 + dy2 * dy2);
-                
+                const float len2 = sqrtf(dx2 * dx2 + dy2 * dy2);
+
                 if (len1 > 0.001f && len2 > 0.001f) {
                     // 归一化方向向量
                     dx1 /= len1; dy1 /= len1;
                     dx2 /= len2; dy2 /= len2;
-                    
+
                     // 计算垂直向量
-                    float perp1_x = -dy1;
-                    float perp1_y = dx1;
-                    float perp2_x = -dy2;
-                    float perp2_y = dx2;
-                    
+                    const float perp1_x = -dy1;
+                    const float perp1_y = dx1;
+                    const float perp2_x = -dy2;
+                    const float perp2_y = dx2;
+
                     // 使用三角形join
                     switch (line_join) {
                         case 0: // WCN_LINE_JOIN_MITER
@@ -370,6 +370,8 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
                             add_bevel_join(ctx->renderer, x2, y2, perp1_x, perp1_y,
                                          perp2_x, perp2_y, half_width, color, transform);
                             break;
+                        default:
+                            break;
                     }
                 }
             }
@@ -377,7 +379,7 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
     }
 }
 
-static void wcn_render_path(WCN_Context* ctx, WCN_Path* path, bool is_stroke) {
+static void wcn_render_path(WCN_Context* ctx, WCN_Path* path, const bool is_stroke) {
     if (!ctx || !ctx->in_frame || !path) return;
 
     if (is_stroke) {
@@ -407,7 +409,7 @@ void wcn_close_path(WCN_Context* ctx) {
     }
 }
 
-void wcn_move_to(WCN_Context* ctx, float x, float y) {
+void wcn_move_to(WCN_Context* ctx, const float x, const float y) {
     if (!ctx || !ctx->in_frame) return;
 
     WCN_Path* current_path = wcn_get_current_path(ctx);
@@ -416,7 +418,7 @@ void wcn_move_to(WCN_Context* ctx, float x, float y) {
     }
 }
 
-void wcn_line_to(WCN_Context* ctx, float x, float y) {
+void wcn_line_to(WCN_Context* ctx, const float x, const float y) {
     if (!ctx || !ctx->in_frame) return;
 
     WCN_Path* current_path = wcn_get_current_path(ctx);
@@ -425,30 +427,63 @@ void wcn_line_to(WCN_Context* ctx, float x, float y) {
     }
 }
 
-void wcn_arc(WCN_Context* ctx, float x, float y, float radius,
-             float start_angle, float end_angle, bool anticlockwise) {
+void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
+             const float start_angle, const float end_angle, const bool anticlockwise) {
     if (!ctx || !ctx->in_frame || radius <= 0.0f) return;
 
     WCN_Path* current_path = wcn_get_current_path(ctx);
     if (!current_path) return;
 
     float angle_diff = end_angle - start_angle;
-    if (anticlockwise && angle_diff > 0) angle_diff -= 2.0f * M_PI;
-    if (!anticlockwise && angle_diff < 0) angle_diff += 2.0f * M_PI;
+    if (anticlockwise) {
+        // 确保逆时针角度差是负的，且绝对值在 (0, 2*PI] 之间
+        while (angle_diff >= 0.0f) angle_diff -= 2.0f * M_PI;
+    } else {
+        // 确保顺时针角度差是正的，且绝对值在 (0, 2*PI] 之间
+        while (angle_diff <= 0.0f) angle_diff += 2.0f * M_PI;
+    }
 
+    // 确定细分段数
+    // 依然使用圆弧长度的启发式估计，但可以保证精度
     int segments = (int)(radius * fabsf(angle_diff) / 2.0f);
     if (segments < 4) segments = 4;
     if (segments > 256) segments = 256;
 
-    for (int i = 0; i <= segments; i++) {
-        float t = (float)i / segments;
-        float angle = start_angle + angle_diff * t;
-        float px = x + cosf(angle) * radius;
-        float py = y + sinf(angle) * radius;
+    // 如果角度差很小，segments 可能为 0，防止除以 0
+    if (segments == 0) return;
 
-        uint8_t cmd = (i == 0 && current_path->point_count == 0) ? 0 : 1;
-        wcn_path_add_point(current_path, px, py, cmd);
+    // --- 优化核心：增量旋转 ---
+    float delta_angle = angle_diff / (float)segments;
+
+    // 仅计算一次三角函数
+    const float cos_delta = cosf(delta_angle);
+    const float sin_delta = sinf(delta_angle);
+
+    // 初始点 (相对中心点的坐标)
+    float current_rx = cosf(start_angle) * radius;
+    float current_ry = sinf(start_angle) * radius;
+
+    // 添加第一个点
+    // 根据路径是否为空决定使用 move_to 还是 line_to
+    uint8_t cmd = (current_path->point_count == 0) ? 0 : 1;
+    wcn_path_add_point(current_path, x + current_rx, y + current_ry, cmd);
+
+    // 循环添加剩余的点
+    for (int i = 1; i <= segments; i++) {
+        // 旋转矩阵应用于 (current_rx, current_ry)
+        // new_x = r*cos(a+da) = r*cos(a)cos(da) - r*sin(a)sin(da)
+        // new_y = r*sin(a+da) = r*sin(a)cos(da) + r*cos(a)sin(da)
+
+        const float new_rx = current_rx * cos_delta - current_ry * sin_delta;
+        const float new_ry = current_rx * sin_delta + current_ry * cos_delta;
+
+        current_rx = new_rx;
+        current_ry = new_ry;
+
+        // 添加点 (始终使用 lineTo)
+        wcn_path_add_point(current_path, x + current_rx, y + current_ry, 1);
     }
+    // --- 增量旋转优化结束 ---
 
     // 确保闭合路径（用于填充）
     if (!current_path->is_closed && fabsf(angle_diff) >= 2.0f * M_PI - 0.001f) {

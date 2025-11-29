@@ -117,7 +117,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             
             // Discard fully transparent fragments
             if (color.a < 0.01) {
-                discard;
+                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
             }
             
             return color;
@@ -135,7 +135,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             let has_pos = (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0);
             let has_neg = (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0);
             if (!(has_pos || has_neg)) {
-                discard;
+                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
             }
             return color;
         }
@@ -270,7 +270,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             
             // Discard fully transparent fragments
             if (color.a < 0.01) {
-                discard;
+                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
             }
             
             return color;

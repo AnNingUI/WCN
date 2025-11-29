@@ -433,7 +433,7 @@ static inline bool wcn_glfw_begin_frame(WCN_GLFW_Window* wcn_window, WCN_GLFW_Re
     
     if (!frame->texture_view) {
         printf("Failed to create texture view\n");
-        wgpuTextureRelease(frame->surface_texture.texture);
+        // Note: We don't release the surface texture here as it's managed by the surface
         frame->is_valid = false;
         return false;
     }
@@ -445,7 +445,7 @@ static inline bool wcn_glfw_begin_frame(WCN_GLFW_Window* wcn_window, WCN_GLFW_Re
     if (!wcn_begin_render_pass(wcn_window->wcn_ctx, frame->texture_view)) {
         printf("Failed to begin render pass\n");
         wgpuTextureViewRelease(frame->texture_view);
-        wgpuTextureRelease(frame->surface_texture.texture);
+        // Note: We don't release the surface texture here as it's managed by the surface
         frame->is_valid = false;
         return false;
     }
@@ -464,14 +464,15 @@ static inline void wcn_glfw_end_frame(WCN_GLFW_Window* wcn_window, WCN_GLFW_Rend
     wcn_end_frame(wcn_window->wcn_ctx);
     
     // 结束渲染通道并提交命令（使用 WCN 公共 API）
+    // Note: wcn_end_render_pass already releases the texture view, so we don't need to do it here
     wcn_end_render_pass(wcn_window->wcn_ctx);
     wcn_submit_commands(wcn_window->wcn_ctx);
     
     // 呈现
     wgpuSurfacePresent(wcn_window->surface);
     
-    // 清理资源
-    wgpuTextureViewRelease(frame->texture_view);
+    // 清理资源 - texture_view is already released in wcn_end_render_pass
+    // Only release the surface texture, not the view
     wgpuTextureRelease(frame->surface_texture.texture);
     
     frame->is_valid = false;
