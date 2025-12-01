@@ -1,4 +1,5 @@
 build
+build-wasm
 .cache
 .codebuddy
 .claude
@@ -13,5 +14,6 @@ DS_Store
 
 compile_commands.json
 
+.lookme
 .lookme/*
 .dev_docs/*

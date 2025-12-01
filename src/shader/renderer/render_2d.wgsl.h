@@ -11,6 +11,7 @@ const INSTANCE_TYPE_RECT: u32 = 0u;
 const INSTANCE_TYPE_TEXT: u32 = 1u;
 const INSTANCE_TYPE_PATH: u32 = 2u;
 const INSTANCE_TYPE_LINE: u32 = 3u;
+const INSTANCE_TYPE_IMAGE: u32 = 4u;
 
 // Line cap styles (stored in flags field, bits 0-7)
 const LINE_CAP_BUTT: u32 = 0u;    // Flat cap (no extension)
@@ -25,6 +26,8 @@ const LINE_CAP_END_ENABLED: u32 = 0x200u;    // Bit 9: render end cap
 // SDF Atlas (for text rendering)
 @group(1) @binding(0) var sdf_atlas: texture_2d<f32>;
 @group(1) @binding(1) var sdf_sampler: sampler;
+@group(1) @binding(2) var image_atlas: texture_2d<f32>;
+@group(1) @binding(3) var image_sampler: sampler;
 
 struct VertexInput {
     @location(0) clip_position: vec4<f32>,
@@ -83,6 +86,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     
     // Pre-compute derivatives in uniform control flow (required by WebGPU)
     // These must be calculated before any branching
+    let uv_ddx = dpdx(input.uv);
+    let uv_ddy = dpdy(input.uv);
     let sdf_sample = textureSample(sdf_atlas, sdf_sampler, input.uv);
     let distance = sdf_sample.r;
     let dist_grad = fwidth(distance);
@@ -274,6 +279,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             }
             
             return color;
+        }
+        case INSTANCE_TYPE_IMAGE: {
+            // Move texture sampling to uniform control flow
+            let sampled_color = textureSampleGrad(
+                image_atlas, 
+                image_sampler, 
+                input.uv, 
+                uv_ddx, 
+                uv_ddy
+            );
+            
+            return sampled_color * color;
         }
         default: {
             // Unknown type - return magenta for debugging

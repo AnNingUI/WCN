@@ -85,7 +85,9 @@
     WCN_WASM_EXPORT void wcn_set_font(WCN_Context* ctx, const char* font_spec); \
     WCN_WASM_EXPORT void wcn_set_font_face(WCN_Context* ctx, WCN_FontFace* face, float size); \
     WCN_WASM_EXPORT void wcn_set_text_align(WCN_Context* ctx, WCN_TextAlign align); \
-    WCN_WASM_EXPORT void wcn_set_text_baseline(WCN_Context* ctx, WCN_TextBaseline baseline);
+    WCN_WASM_EXPORT void wcn_set_text_baseline(WCN_Context* ctx, WCN_TextBaseline baseline); \
+    WCN_WASM_EXPORT bool wcn_add_font_fallback(WCN_Context* ctx, WCN_FontFace* face); \
+    WCN_WASM_EXPORT void wcn_clear_font_fallbacks(WCN_Context* ctx);
 
 // Image Operations
 #define WCN_WASM_EXPORT_IMAGE() \
@@ -93,13 +95,16 @@
     WCN_WASM_EXPORT void wcn_draw_image_scaled(WCN_Context* ctx, WCN_ImageData* image, float dx, float dy, float dw, float dh); \
     WCN_WASM_EXPORT void wcn_draw_image_source(WCN_Context* ctx, WCN_ImageData* image, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh); \
     WCN_WASM_EXPORT WCN_ImageData* wcn_get_image_data(WCN_Context* ctx, float x, float y, float width, float height); \
-    WCN_WASM_EXPORT void wcn_put_image_data(WCN_Context* ctx, WCN_ImageData* image_data, float x, float y);
+    WCN_WASM_EXPORT void wcn_put_image_data(WCN_Context* ctx, WCN_ImageData* image_data, float x, float y); \
+    WCN_WASM_EXPORT WCN_ImageData* wcn_decode_image(WCN_Context* ctx, const uint8_t* image_bytes, size_t data_size); \
+    WCN_WASM_EXPORT void wcn_destroy_image_data(WCN_ImageData* image_data);
 
 typedef WGPUTextureView (*GetWGPUTextureViewCallback)();
 // Helper Functions
 #define WCN_WASM_EXPORT_HELPERS() \
     WCN_WASM_EXPORT WGPUTextureFormat wcn_get_surface_format(WCN_Context* ctx); \
-    WCN_WASM_EXPORT void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format); \
+WCN_WASM_EXPORT void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format); \
+WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face); \
 
 // ============================================================================
 // Export All Functions

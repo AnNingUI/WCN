@@ -100,10 +100,10 @@ cmake --build .
 
 ```bash
 # Linux/macOS
-./build-wasm.sh
+./make.build-wasm.sh
 
 # Windows
-build-wasm.bat
+make.build-wasm.bat
 ```
 
 详细的 WASM 构建说明请参考 [WASM 构建文档](docs/WASM_BUILD.md)。

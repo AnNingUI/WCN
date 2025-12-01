@@ -12,8 +12,9 @@
 // 包含 stb_truetype 解码器实现
 #include "../../impl/wcn_stb_truetype_impl.h"
 
-// 使用项目中的字体文件
-const char* font_path = "../../assets/PingFangSCMedium.ttf";
+// Demo font paths
+static const char* primary_font_path = "../../assets/NotoSerifSC-VF.ttf";
+static const char* fallback_font_path = "../../assets/font/DejaVuSans.ttf";
 
 // 辅助函数：从文件加载字体数据
 static bool load_font_data_from_file(const char* path, unsigned char** out_data, size_t* out_size) {
@@ -63,24 +64,45 @@ int main(void) {
     WCN_FontDecoder* stb_decoder = wcn_get_stb_truetype_decoder();
     wcn_register_font_decoder(ctx, stb_decoder);
 
-    // 加载字体
-    printf("Loading font: %s\n", font_path);
-    WCN_FontFace* font_face = NULL;
+    // 加载主字体与回退字体
+    WCN_FontFace* primary_face = NULL;
+    WCN_FontFace* fallback_face = NULL;
+
     unsigned char* font_data = NULL;
     size_t font_size = 0;
 
-    if (load_font_data_from_file(font_path, &font_data, &font_size)) {
-        if (stb_decoder->load_font(font_data, font_size, &font_face)) {
-            printf("Font loaded successfully\n");
-            wcn_set_font_face(ctx, font_face, 24.0f); // 设置默认字体大小
+    printf("Loading primary font: %s\n", primary_font_path);
+    if (load_font_data_from_file(primary_font_path, &font_data, &font_size)) {
+        if (stb_decoder->load_font(font_data, font_size, &primary_face)) {
+            printf("  -> primary font ready\n");
+            wcn_set_font_face(ctx, primary_face, 24.0f);
         } else {
-            printf("Failed to load font with decoder\n");
-            font_face = NULL;
+            printf("  -> failed to decode primary font\n");
         }
         free(font_data);
+        font_data = NULL;
     } else {
-        printf("Failed to load font file, using default\n");
-        font_face = NULL;
+        printf("  -> failed to read primary font file\n");
+    }
+
+    printf("Loading fallback font: %s\n", fallback_font_path);
+    if (load_font_data_from_file(fallback_font_path, &font_data, &font_size)) {
+        if (stb_decoder->load_font(font_data, font_size, &fallback_face)) {
+            printf("  -> fallback font ready\n");
+            if (!wcn_add_font_fallback(ctx, fallback_face)) {
+                printf("  -> failed to register fallback font\n");
+            }
+        } else {
+            printf("  -> failed to decode fallback font\n");
+        }
+        free(font_data);
+        font_data = NULL;
+    } else {
+        printf("  -> failed to read fallback font file\n");
+    }
+
+    if (!primary_face) {
+        printf("Warning: no primary font loaded, text rendering may be incomplete.\n");
     }
 
     printf("Starting render loop...\n");
@@ -120,8 +142,10 @@ int main(void) {
 
             // === 测试 1: 基本文本渲染 ===
             wcn_set_fill_style(ctx, 0xFFFFFFFF); // 白色文字
-            wcn_set_font_face(ctx, font_face, 32.0f);
+            wcn_set_font_face(ctx, primary_face, 32.0f);
             wcn_fill_text(ctx, "WCN SDF Text Rendering Demo", 50, 50);
+            wcn_fill_text(ctx, "❤️", 250, 100);
+            wcn_fill_text(ctx, "WCN SDF 文字渲染样例", 450, 150);
 
             // === 测试 2: 不同字体大小 ===
             float font_sizes[] = {12.0f, 16.0f, 24.0f, 32.0f};  // 减少字号数量
@@ -129,13 +153,13 @@ int main(void) {
             for (int i = 0; i < 4; i++) {  // 只测试 4 种字号
                 char text[64];
                 sprintf(text, "Font Size: %.0f", font_sizes[i]);
-                wcn_set_font_face(ctx, font_face, font_sizes[i]);
+                wcn_set_font_face(ctx, primary_face, font_sizes[i]);
                 wcn_fill_text(ctx, text, 50, y_offset);
                 y_offset += font_sizes[i] + 5;  // 减少间距
             }
 
             // === 测试 3: 文本对齐 ===
-            wcn_set_font_face(ctx, font_face, 24.0f);
+            wcn_set_font_face(ctx, primary_face, 24.0f);
             wcn_set_fill_style(ctx, 0xFFFF8000); // 橙色文字
 
             // 左对齐
@@ -179,7 +203,7 @@ int main(void) {
             wcn_fill_rect(ctx, 50, y_offset, 150, 60);  // 缩小矩形
 
             wcn_set_fill_style(ctx, 0xFFFFFFFF); // 白色文字
-            wcn_set_font_face(ctx, font_face, 16.0f);
+            wcn_set_font_face(ctx, primary_face, 16.0f);
             wcn_fill_text(ctx, "Text over Rect", 60, y_offset + 30);
 
             // 圆形 + 文字
@@ -204,7 +228,7 @@ int main(void) {
                 double fps = 1.0 / delta_time;
                 sprintf(fps_text, "FPS: %.1f | Frame: %d", fps, frame_count);
                 wcn_set_fill_style(ctx, 0xFF00FFFF); // 青色文字
-                wcn_set_font_face(ctx, font_face, 16.0f);
+                    wcn_set_font_face(ctx, primary_face, 16.0f);
                 wcn_fill_text(ctx, fps_text, width - 300, 30);
             }
             last_time = current_time;
@@ -212,7 +236,7 @@ int main(void) {
             // === 测试 8: 复杂文本（中文、emoji等） ===
             // 注意：这需要字体支持这些字符
             wcn_set_fill_style(ctx, 0xFFFFFF00); // 黄色文字
-            wcn_set_font_face(ctx, font_face, 20.0f);
+            wcn_set_font_face(ctx, primary_face, 20.0f);
             wcn_fill_text(ctx, "Hello 世界! 🎉", 50, height - 50);
 
             // 结束渲染帧
@@ -233,8 +257,11 @@ int main(void) {
     }
 
     // 清理
-    if (font_face) {
-        stb_decoder->free_font(font_face);
+    if (primary_face) {
+        stb_decoder->free_font(primary_face);
+    }
+    if (fallback_face) {
+        stb_decoder->free_font(fallback_face);
     }
     wcn_glfw_destroy_window(window);
 

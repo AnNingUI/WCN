@@ -239,7 +239,7 @@ EM_JS(void, js_free_ptr, (void* ptr), {
 // WASM Implementation Logic
 // ============================================================================
 
-static bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face) {
+WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face) {
     if (!font_data || !out_face) return false;
 
     // font_data 在 WASM 模式下被视为字体名称字符串

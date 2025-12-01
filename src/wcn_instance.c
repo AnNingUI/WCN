@@ -7,6 +7,14 @@
 #include <stdio.h>
 #include <math.h>
 
+static bool wcn_is_variation_selector(uint32_t cp) {
+    return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF);
+}
+
+static bool wcn_is_zero_width_joiner(uint32_t cp) {
+    return cp == 0x200D;
+}
+
 static bool wcn_renderer_create_render_bind_group(WCN_Renderer* renderer) {
     if (!renderer) return false;
 
@@ -452,7 +460,7 @@ WCN_Renderer* wcn_create_renderer(
     // WASM: 使用 EM_JS 函数创建 SDF bind group layout
     renderer->sdf_bind_group_layout = wasm_create_sdf_bind_group_layout(
         device,
-        "Unified Renderer SDF Bind Group Layout (Group 1)"
+        "Unified Renderer Texture Bind Group Layout (Group 1)"
     );
 #else
     WGPUBindGroupLayoutEntry sdf_bind_group_layout_entries[] = {
@@ -471,16 +479,32 @@ WCN_Renderer* wcn_create_renderer(
             .sampler = {
                 .type = WGPUSamplerBindingType_Filtering
             }
+        },
+        {
+            .binding = 2,
+            .visibility = WGPUShaderStage_Fragment,
+            .texture = {
+                .sampleType = WGPUTextureSampleType_Float,
+                .viewDimension = WGPUTextureViewDimension_2D,
+                .multisampled = false
+            }
+        },
+        {
+            .binding = 3,
+            .visibility = WGPUShaderStage_Fragment,
+            .sampler = {
+                .type = WGPUSamplerBindingType_Filtering
+            }
         }
     };
-    
+
     WGPUBindGroupLayoutDescriptor sdf_bind_group_layout_desc = {
         .nextInChain = NULL,
-        .label = "Unified Renderer SDF Bind Group Layout (Group 1)",
-        .entryCount = 2,
+        .label = "Unified Renderer Texture Bind Group Layout (Group 1)",
+        .entryCount = 4,
         .entries = sdf_bind_group_layout_entries
     };
-    
+
     renderer->sdf_bind_group_layout = wgpuDeviceCreateBindGroupLayout(
         device,
         &sdf_bind_group_layout_desc
@@ -1017,6 +1041,51 @@ void wcn_renderer_add_rect(
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
 }
 
+void wcn_renderer_add_image(
+    WCN_Renderer* renderer,
+    float x, float y,
+    float width, float height,
+    uint32_t color,
+    const float transform[4],
+    const float uv_min[2],
+    const float uv_size[2]
+) {
+    if (!renderer || width <= 0.0f || height <= 0.0f) {
+        return;
+    }
+
+    WCN_Instance instance = {0};
+
+    instance.position[0] = x;
+    instance.position[1] = y;
+    instance.size[0] = width;
+    instance.size[1] = height;
+
+    instance.color = color;
+    instance.type = WCN_INSTANCE_TYPE_IMAGE;
+
+    if (uv_min) {
+        instance.uv[0] = uv_min[0];
+        instance.uv[1] = uv_min[1];
+    }
+    if (uv_size) {
+        instance.uvSize[0] = uv_size[0];
+        instance.uvSize[1] = uv_size[1];
+    }
+
+    if (transform) {
+        instance.transform[0] = transform[0];
+        instance.transform[1] = transform[1];
+        instance.transform[2] = transform[2];
+        instance.transform[3] = transform[3];
+    } else {
+        instance.transform[0] = 1.0f;
+        instance.transform[3] = 1.0f;
+    }
+
+    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
+}
+
 // 添加文本实例
 void wcn_renderer_add_text(
     WCN_Renderer* renderer,
@@ -1036,24 +1105,63 @@ void wcn_renderer_add_text(
         return;
     }
     
-    if (!ctx->current_font_face) {
+    WCN_FontFace* primary_face = ctx->current_font_face;
+    if (!primary_face && ctx->font_fallback_count > 0) {
+        primary_face = ctx->font_fallbacks[0];
+    }
+    if (!primary_face) {
         return;
     }
-    
+
     // Iterate through text string (UTF-8 decode)
     float current_x = x;
     const char* ptr = text;
-    
+    WCN_FontFace* last_face = primary_face;
+
     while (*ptr) {
         uint32_t codepoint = wcn_decode_utf8(&ptr);
         if (codepoint == 0) break;
-        
-        // Get or create SDF atlas entry for this glyph
-        WCN_AtlasGlyph* glyph = wcn_get_or_create_glyph(ctx, codepoint, font_size);
-        if (!glyph || !glyph->is_valid) {
+
+        if (wcn_is_variation_selector(codepoint) || wcn_is_zero_width_joiner(codepoint)) {
+            continue;
+        }
+
+        WCN_AtlasGlyph* glyph = NULL;
+        WCN_FontFace* glyph_face = NULL;
+
+        if (last_face) {
+            glyph = wcn_get_or_create_glyph(ctx, last_face, codepoint, font_size);
+            if (glyph && glyph->is_valid) {
+                glyph_face = last_face;
+            }
+        }
+
+        if (!glyph_face && primary_face && primary_face != last_face) {
+            glyph = wcn_get_or_create_glyph(ctx, primary_face, codepoint, font_size);
+            if (glyph && glyph->is_valid) {
+                glyph_face = primary_face;
+            }
+        }
+
+        if (!glyph_face) {
+            for (size_t i = 0; i < ctx->font_fallback_count; i++) {
+                WCN_FontFace* fallback = ctx->font_fallbacks[i];
+                if (!fallback || fallback == last_face || fallback == primary_face) {
+                    continue;
+                }
+                glyph = wcn_get_or_create_glyph(ctx, fallback, codepoint, font_size);
+                if (glyph && glyph->is_valid) {
+                    glyph_face = fallback;
+                    break;
+                }
+            }
+        }
+
+        if (!glyph_face || !glyph || !glyph->is_valid) {
             current_x += 8.0f;  // Default advance
             continue;
         }
+        last_face = glyph_face;
         
         // For empty glyphs (like spaces), only advance without rendering
         if (glyph->width == 0 || glyph->height == 0) {
@@ -1300,7 +1408,8 @@ void wcn_renderer_add_line(
 // 渲染所有实例
 void wcn_renderer_render(
     WCN_Context* ctx,
-    WGPUTextureView atlas_view
+    WGPUTextureView sdf_atlas_view,
+    WGPUTextureView image_atlas_view
 ) {
     if (!ctx || !ctx->renderer || !ctx->current_command_encoder) {
         return;
@@ -1312,16 +1421,42 @@ void wcn_renderer_render(
         return;
     }
 
+    if (!sdf_atlas_view || !ctx->sdf_sampler) {
+        printf("Warning: No SDF atlas provided to renderer, skipping draw\n");
+        return;
+    }
+
+    if (!image_atlas_view || !ctx->image_sampler) {
+        printf("Warning: No image atlas provided to renderer, skipping draw\n");
+        return;
+    }
+
     // 检查并调整 Instance Buffer 大小
     size_t required_size = renderer->cpu_instances.count * sizeof(WCN_Instance);
     if (required_size > renderer->instance_buffer_size) {
-        if (renderer->instance_buffer) {
-            wgpuBufferRelease(renderer->instance_buffer);
+        // 保存旧缓冲区以便释放
+        WGPUBuffer old_buffer = renderer->instance_buffer;
+        WGPUBindGroup old_bind_group = renderer->bind_group;
+        WGPUBindGroup old_compute_bind_group = renderer->compute_bind_group;
+
+        // 计算新的缓冲区大小（2的幂次方，但不超过最大限制）
+        size_t new_size = renderer->instance_buffer_size ? renderer->instance_buffer_size : sizeof(WCN_Instance) * 1024;
+        const size_t MAX_INSTANCE_BUFFER_SIZE = 64 * 1024 * 1024; // 64MB 最大限制
+
+        while (new_size < required_size && new_size < MAX_INSTANCE_BUFFER_SIZE) {
+            new_size *= 2;
         }
 
-        size_t new_size = renderer->instance_buffer_size ? renderer->instance_buffer_size : sizeof(WCN_Instance) * 1024;
-        while (new_size < required_size) {
-            new_size *= 2;
+        // 如果仍然不够，使用所需大小但不超过最大限制
+        if (new_size < required_size) {
+            new_size = required_size;
+        }
+        if (new_size > MAX_INSTANCE_BUFFER_SIZE) {
+            new_size = MAX_INSTANCE_BUFFER_SIZE;
+            // 如果仍然不够，只渲染部分实例
+            if (required_size > MAX_INSTANCE_BUFFER_SIZE) {
+                required_size = MAX_INSTANCE_BUFFER_SIZE;
+            }
         }
 
 #ifdef __EMSCRIPTEN__
@@ -1344,12 +1479,36 @@ void wcn_renderer_render(
             &instance_buffer_desc
         );
 #endif
+
+        // 如果创建新缓冲区失败，恢复旧缓冲区
+        if (!renderer->instance_buffer) {
+            renderer->instance_buffer = old_buffer;
+            return;
+        }
+
         renderer->instance_buffer_size = new_size;
 
-        if (!renderer->instance_buffer ||
-            !wcn_renderer_create_render_bind_group(renderer) ||
-            !wcn_renderer_create_compute_bind_group(renderer)) {
+        // 创建新的绑定组
+        bool bind_group_ok = wcn_renderer_create_render_bind_group(renderer);
+        bool compute_bind_group_ok = wcn_renderer_create_compute_bind_group(renderer);
+
+        if (!bind_group_ok || !compute_bind_group_ok) {
+            // 如果绑定组创建失败，回滚到旧缓冲区
+            wgpuBufferRelease(renderer->instance_buffer);
+            renderer->instance_buffer = old_buffer;
+            renderer->instance_buffer_size = old_buffer ? new_size : 0;
             return;
+        }
+
+        // 成功创建新缓冲区，释放旧资源
+        if (old_buffer) {
+            wgpuBufferRelease(old_buffer);
+        }
+        if (old_bind_group) {
+            wgpuBindGroupRelease(old_bind_group);
+        }
+        if (old_compute_bind_group) {
+            wgpuBindGroupRelease(old_compute_bind_group);
         }
     }
 
@@ -1361,11 +1520,6 @@ void wcn_renderer_render(
         renderer->cpu_instances.instances,
         required_size
     );
-
-    if (!atlas_view) {
-        printf("Warning: No SDF atlas provided to renderer, skipping draw\n");
-        return;
-    }
 
     size_t total_instances = renderer->cpu_instances.count;
     size_t batch_capacity = renderer->vertex_batch_instance_capacity;
@@ -1464,43 +1618,30 @@ void wcn_renderer_render(
         }
 
         WGPUBindGroup sdf_bind_group = NULL;
-        WGPUSampler temp_sampler = NULL;
 
-        // 创建临时资源 (实际项目中建议缓存 Sampler)
+        // 创建纹理绑定组，将文本和图像图集一起绑定
 #ifdef __EMSCRIPTEN__
-        temp_sampler = wasm_create_sampler(renderer->device, "Temp SDF Sampler");
         sdf_bind_group = wasm_create_sdf_bind_group(
             renderer->device,
             renderer->sdf_bind_group_layout,
-            atlas_view,
-            temp_sampler
+            sdf_atlas_view,
+            ctx->sdf_sampler,
+            image_atlas_view,
+            ctx->image_sampler
         );
 #else
-        WGPUSamplerDescriptor sampler_desc = {
-            .addressModeU = WGPUAddressMode_ClampToEdge,
-            .addressModeV = WGPUAddressMode_ClampToEdge,
-            .addressModeW = WGPUAddressMode_ClampToEdge,
-            .magFilter = WGPUFilterMode_Linear,
-            .minFilter = WGPUFilterMode_Linear,
-            .mipmapFilter = WGPUMipmapFilterMode_Linear,
-            .lodMinClamp = 0.0f,
-            .lodMaxClamp = 32.0f,
-            .compare = WGPUCompareFunction_Undefined,
-            .maxAnisotropy = 1,
-            .label = "Temp SDF Sampler"
-        };
-        temp_sampler = wgpuDeviceCreateSampler(renderer->device, &sampler_desc);
-
         WGPUBindGroupEntry sdf_bind_group_entries[] = {
-            { .binding = 0, .textureView = atlas_view },
-            { .binding = 1, .sampler = temp_sampler }
+            { .binding = 0, .textureView = sdf_atlas_view },
+            { .binding = 1, .sampler = ctx->sdf_sampler },
+            { .binding = 2, .textureView = image_atlas_view },
+            { .binding = 3, .sampler = ctx->image_sampler }
         };
 
         WGPUBindGroupDescriptor sdf_bind_group_desc = {
             .nextInChain = NULL,
-            .label = "Temp SDF Bind Group",
+            .label = "WCN Texture Bind Group",
             .layout = renderer->sdf_bind_group_layout,
-            .entryCount = 2,
+            .entryCount = 4,
             .entries = sdf_bind_group_entries
         };
 
@@ -1509,7 +1650,7 @@ void wcn_renderer_render(
             &sdf_bind_group_desc
         );
 #endif
-        if (sdf_bind_group && temp_sampler) {
+        if (sdf_bind_group) {
             wgpuRenderPassEncoderSetPipeline(ctx->current_render_pass, renderer->pipeline);
             wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 0, renderer->bind_group, 0, NULL);
             wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 1, sdf_bind_group, 0, NULL);
@@ -1519,7 +1660,6 @@ void wcn_renderer_render(
             wgpuRenderPassEncoderDraw(ctx->current_render_pass, (uint32_t)(batch_instances * 6), 1, 0, 0);
 
             wgpuBindGroupRelease(sdf_bind_group);
-            wgpuSamplerRelease(temp_sampler);
         }
 
         wgpuRenderPassEncoderEnd(ctx->current_render_pass);

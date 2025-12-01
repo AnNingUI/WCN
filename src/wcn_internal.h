@@ -12,7 +12,8 @@ typedef enum {
     WCN_INSTANCE_TYPE_RECT = 0,
     WCN_INSTANCE_TYPE_TEXT = 1,
     WCN_INSTANCE_TYPE_PATH = 2,
-    WCN_INSTANCE_TYPE_LINE = 3
+    WCN_INSTANCE_TYPE_LINE = 3,
+    WCN_INSTANCE_TYPE_IMAGE = 4
 } WCN_InstanceType;
 
 // 统一实例结构 (64 字节，用于 GPU 实例化渲染)
@@ -100,6 +101,7 @@ typedef struct WCN_Renderer {
 // 纹理图集中的字形条目
 typedef struct {
     uint32_t codepoint;      // 字符码点
+    WCN_FontFace* font_face; // 字体引用
     float font_size;         // 字号
     uint16_t x, y;           // 在图集中的位置（像素）
     uint16_t width, height;  // 字形大小（像素）
@@ -127,6 +129,31 @@ typedef struct {
     bool dirty;              // 是否需要刷新到 GPU
 } WCN_SDFAtlas;
 
+// 图像纹理图集
+typedef struct {
+    WCN_ImageData* source;
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+    float uv_min[2];
+    float uv_max[2];
+    bool is_valid;
+} WCN_ImageCacheEntry;
+
+typedef struct {
+    WGPUTexture texture;
+    WGPUTextureView texture_view;
+    uint32_t width;
+    uint32_t height;
+    uint32_t current_x;
+    uint32_t current_y;
+    uint32_t row_height;
+    WCN_ImageCacheEntry* entries;
+    size_t entry_count;
+    size_t entry_capacity;
+} WCN_ImageAtlas;
+
 // WCN_Context 完整定义（内部使用）
 struct WCN_Context {
     // WebGPU 资源
@@ -152,6 +179,9 @@ struct WCN_Context {
     float current_font_size;
     WCN_TextAlign text_align;
     WCN_TextBaseline text_baseline;
+    WCN_FontFace** font_fallbacks;
+    size_t font_fallback_count;
+    size_t font_fallback_capacity;
 
     // 当前帧状态
     uint32_t frame_width;
@@ -198,12 +228,9 @@ struct WCN_Context {
     WGPUSampler sdf_sampler;
     WGPUBindGroup sdf_bind_group;
     WGPUBindGroupLayout sdf_bind_group_layout;
+    WCN_ImageAtlas* image_atlas;
+    WGPUSampler image_sampler;
     
-    // GPU SDF 渲染器已被移除，使用 MSDF Atlas 系统替代
-    void* gpu_sdf_renderer;  // 保留字段以保持 ABI 兼容性，但不再使用
-
-    // 文字渲染命令队列已被移除
-    void* text_commands;     // 保留字段以保持 ABI 兼容性，但不再使用
     size_t text_command_count;
     size_t text_command_capacity;
 
@@ -249,16 +276,25 @@ bool wcn_atlas_pack_glyph(WCN_Context* ctx,
 
 // 在缓存中查找字形
 WCN_AtlasGlyph* wcn_find_glyph_in_atlas(WCN_SDFAtlas* atlas,
+                                        WCN_FontFace* face,
                                         uint32_t codepoint,
                                         float font_size);
 
 // 获取或创建字形
 WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
+                                        WCN_FontFace* face,
                                         uint32_t codepoint,
                                         float font_size);
 
 // UTF-8 解码
 uint32_t wcn_decode_utf8(const char** str);
+
+// 图像图集管理
+WCN_ImageAtlas* wcn_create_image_atlas(WCN_Context* ctx, uint32_t width, uint32_t height);
+void wcn_destroy_image_atlas(WCN_ImageAtlas* atlas);
+WCN_ImageCacheEntry* wcn_image_atlas_get_entry(WCN_Context* ctx, WCN_ImageData* image);
+bool wcn_init_image_manager(WCN_Context* ctx);
+void wcn_shutdown_image_manager(WCN_Context* ctx);
 
 // ============================================================================
 // 统一渲染器管理 (Unified Renderer Management)
@@ -288,6 +324,16 @@ void wcn_renderer_add_rect(
     float x, float y, float width, float height,
     uint32_t color,
     const float transform[4]
+);
+
+void wcn_renderer_add_image(
+    WCN_Renderer* renderer,
+    float x, float y,
+    float width, float height,
+    uint32_t color,
+    const float transform[4],
+    const float uv_min[2],
+    const float uv_size[2]
 );
 
 void wcn_renderer_add_text(
@@ -326,7 +372,8 @@ void wcn_renderer_add_line(
 // 渲染
 void wcn_renderer_render(
     WCN_Context* ctx,
-    WGPUTextureView atlas_view
+    WGPUTextureView sdf_atlas_view,
+    WGPUTextureView image_atlas_view
 );
 
 // 工具函数

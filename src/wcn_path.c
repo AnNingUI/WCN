@@ -194,6 +194,14 @@ static void wcn_create_new_path(WCN_Context* ctx) {
 static void wcn_path_add_point(WCN_Path* path, float x, float y, uint8_t command) {
     if (!path) return;
 
+    // 限制路径大小，防止内存过度增长
+    const size_t MAX_PATH_POINTS = 10000;
+    const size_t MAX_PATH_COMMANDS = 5000;
+
+    if (path->point_count >= MAX_PATH_POINTS * 2 || path->command_count >= MAX_PATH_COMMANDS) {
+        return; // 路径过大，拒绝添加新点
+    }
+
     // 扩展点数组
     const size_t new_point_count = path->point_count + 2;
     float* new_points = (float*)realloc(path->points, new_point_count * sizeof(float));
@@ -207,7 +215,11 @@ static void wcn_path_add_point(WCN_Path* path, float x, float y, uint8_t command
     // 扩展命令数组
     const size_t new_command_count = path->command_count + 1;
     uint8_t* new_commands = (uint8_t*)realloc(path->commands, new_command_count * sizeof(uint8_t));
-    if (!new_commands) return;
+    if (!new_commands) {
+        // 如果命令数组分配失败，回滚点数组
+        path->points = (float*)realloc(path->points, path->point_count * sizeof(float));
+        return;
+    }
 
     path->commands = new_commands;
     path->commands[path->command_count] = command;
@@ -234,10 +246,17 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
     WCN_SimpleVertex* vertices = (WCN_SimpleVertex*)malloc(num_points * sizeof(WCN_SimpleVertex));
     if (!vertices) return;
 
-    // Fill vertices with path points
+    // Fill vertices with path points, applying the current transformation
     for (size_t i = 0; i < num_points; i++) {
-        vertices[i].position[0] = path->points[i*2];
-        vertices[i].position[1] = path->points[i*2+1];
+        float x = path->points[i*2];
+        float y = path->points[i*2+1];
+
+        // Apply transformation: result = transformation_matrix * [x, y, 0, 1]
+        // For 2D in 4x4 matrix (column-major order):
+        // x' = m[0]*x + m[4]*y + m[12]
+        // y' = m[1]*x + m[5]*y + m[13]
+        vertices[i].position[0] = x * state->transform_matrix[0] + y * state->transform_matrix[4] + state->transform_matrix[12];
+        vertices[i].position[1] = x * state->transform_matrix[1] + y * state->transform_matrix[5] + state->transform_matrix[13];
     }
 
     // Create indices for triangle fan triangulation
@@ -296,10 +315,21 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
         const size_t p1_idx = i;
         const size_t p2_idx = (i + 1) % num_points;
 
-        const float x1 = path->points[p1_idx * 2];
-        const float y1 = path->points[p1_idx * 2 + 1];
-        const float x2 = path->points[p2_idx * 2];
-        const float y2 = path->points[p2_idx * 2 + 1];
+        // Apply transformation to path points
+        // x' = m[0]*x + m[4]*y + m[12]
+        // y' = m[1]*x + m[5]*y + m[13]
+        const float x1 = path->points[p1_idx * 2] * state->transform_matrix[0] +
+                         path->points[p1_idx * 2 + 1] * state->transform_matrix[4] +
+                         state->transform_matrix[12];
+        const float y1 = path->points[p1_idx * 2] * state->transform_matrix[1] +
+                         path->points[p1_idx * 2 + 1] * state->transform_matrix[5] +
+                         state->transform_matrix[13];
+        const float x2 = path->points[p2_idx * 2] * state->transform_matrix[0] +
+                         path->points[p2_idx * 2 + 1] * state->transform_matrix[4] +
+                         state->transform_matrix[12];
+        const float y2 = path->points[p2_idx * 2] * state->transform_matrix[1] +
+                         path->points[p2_idx * 2 + 1] * state->transform_matrix[5] +
+                         state->transform_matrix[13];
 
         // 确定是否在端点渲染cap
         // 对于路径中间的线段，禁用cap（由line join处理）
@@ -333,8 +363,13 @@ static void wcn_render_path_stroke(WCN_Context* ctx, WCN_Path* path) {
 
             // 跳过闭合路径的最后一个连接（会在第一个点处理）
             if (!path->is_closed || i < num_segments - 1) {
-                const float x3 = path->points[p3_idx * 2];
-                const float y3 = path->points[p3_idx * 2 + 1];
+                // Apply transformation to path point
+                const float x3 = path->points[p3_idx * 2] * state->transform_matrix[0] +
+                                 path->points[p3_idx * 2 + 1] * state->transform_matrix[4] +
+                                 state->transform_matrix[12];
+                const float y3 = path->points[p3_idx * 2] * state->transform_matrix[1] +
+                                 path->points[p3_idx * 2 + 1] * state->transform_matrix[5] +
+                                 state->transform_matrix[13];
 
                 // 计算两条线段的方向向量
                 float dx1 = x2 - x1;

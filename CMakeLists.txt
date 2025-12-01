@@ -170,10 +170,12 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         "src/wcn_renderer.c"
         "src/wcn_sdf_atlas.c"
         "src/wcn_style.c"
+        "src/wcn_image.c"
         "src/wcn_text.c"
         "src/wcn_transform.c"
         "src/wcn_wasm_exports.c"
         "src/wcn_wasm_font_decoder.c"
+        "src/wcn_wasm_image_decoder.c"
         "src/wcn_emcc_js.c"
     )
     
@@ -236,15 +238,21 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         "_wcn_set_font_face"
         "_wcn_set_text_align"
         "_wcn_set_text_baseline"
-        # "_wcn_draw_image"
-        # "_wcn_draw_image_scaled"
-        # "_wcn_draw_image_source"
-        # "_wcn_get_image_data"
-        # "_wcn_put_image_data"
+        "_wcn_wasm_load_font"
+        "_wcn_add_font_fallback"
+        "_wcn_clear_font_fallbacks"
+        "_wcn_draw_image"
+        "_wcn_draw_image_scaled"
+        "_wcn_draw_image_source"
+        "_wcn_get_image_data"
+        "_wcn_put_image_data"
+        "_wcn_decode_image"
+        "_wcn_destroy_image_data"
         "_wcn_get_surface_format"
         "_wcn_set_surface_format"
         "_wcn_wasm_get_font_decoder"
         "_wcn_wasm_create_default_font_face"
+        "_wcn_wasm_get_image_decoder"
         "_malloc"
         "_free"
     )
@@ -260,13 +268,14 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         -sALLOW_MEMORY_GROWTH=1          # 允许内存增长
         -sMODULARIZE=1                   # 模块化输出
         -sEXPORT_NAME=createWCNModule    # 模块名称
-        -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString,stringToUTF8  # 导出运行时方法
+        -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString,stringToUTF8,lengthBytesUTF8,getValue,setValue  # 导出运行时方法
         -sEXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS}  # 只导出指定的函数
         -sENVIRONMENT=web                # 目标环境：浏览器
         -sMAXIMUM_MEMORY=2147483648      # 最大内存 (2GB)
         -sINITIAL_MEMORY=67108864        # 初始内存 (64MB)
         -sASSERTIONS=2                   # 启用详细断言
         -sSAFE_HEAP=1                    # 启用安全堆检查
+        -msimd128                        # 启用 WASM SIMD 支持
     )
     
     # WASM 链接选项 - 链接 Emscripten 的 Dawn WebGPU 实现

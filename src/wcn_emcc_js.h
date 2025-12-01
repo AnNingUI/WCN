@@ -122,8 +122,10 @@ WGPURenderPassEncoder wasm_begin_render_pass(
 WGPUBindGroup wasm_create_sdf_bind_group(
     WGPUDevice device,
     WGPUBindGroupLayout layout,
-    WGPUTextureView texture_view,
-    WGPUSampler sampler
+    WGPUTextureView sdf_texture_view,
+    WGPUSampler sdf_sampler,
+    WGPUTextureView image_texture_view,
+    WGPUSampler image_sampler
 );
 
 // Texture write function

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCN Image Decoder Demo</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .card {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            margin-top: 0;
+            text-align: center;
+            color: #333;
+        }
+
+        canvas {
+            display: block;
+            margin: 20px auto;
+            border-radius: 10px;
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+        }
+
+        .status {
+            text-align: center;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .status.loading {
+            background: #e3f2fd;
+            color: #0d47a1;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #b71c1c;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .url-controls {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            width: 100%;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            width: 300px;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #1976d2;
+            color: #fff;
+            transition: background 0.2s ease;
+        }
+
+        button:disabled {
+            background: #90a4ae;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #546e7a;
+        }
+
+        button.action {
+            background: #2e7d32;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>WCN WASM Image Decoder Demo</h1>
+        <div id="status" class="status loading">Loading WebAssembly module…</div>
+
+        <div class="controls">
+            <button id="startBtn" onclick="startDemo()" disabled>Start Demo</button>
+            <button class="secondary" onclick="stopDemo()">Stop Demo</button>
+        </div>
+
+        <!-- 新增：URL 加载控件 -->
+        <div class="url-controls">
+            <input type="text" id="imageUrlInput" placeholder="Enter Image URL (must allow CORS)"
+                value="https://upload.wikimedia.org/wikipedia/commons/6/6a/JavaScript-logo.png">
+            <button class="action" onclick="loadUrlImage()" id="loadUrlBtn" disabled>Load from URL</button>
+        </div>
+
+        <canvas id="canvas" width="800" height="480"></canvas>
+        <p>
+            This demo registers the built-in WebAssembly image decoder. Use the buttons above to load
+            external images or see the embedded TGA texture demo.
+        </p>
+    </div>
+
+    <script src="../../build-wasm/wcn.js"></script>
+    <script src="./wcn_canvas.js"></script>
+    <script>
+        // 2x2 TGA image bytes (red, green, blue, white) - 原始示例数据
+        const SAMPLE_IMAGE_BYTES = new Uint8Array([
+            0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x02, 0x00, 0x02, 0x00, 0x18, 0x00,
+            0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00,
+            0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF
+        ]);
+
+        let WCNModule = null;
+        let wcnCanvas = null;
+
+        let sampleImage = null; // Embedded TGA Sprite
+        let urlImage = null;    // Loaded from URL
+
+        let isRunning = false;
+        let angle = 0;
+
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const loadUrlBtn = document.getElementById('loadUrlBtn');
+
+        function setStatus(text, type = 'loading') {
+            statusEl.textContent = text;
+            statusEl.className = `status ${type}`;
+        }
+
+        async function loadModule() {
+            try {
+                setStatus('Loading WebAssembly module…', 'loading');
+                WCNModule = await createWCNModule();
+                setStatus('Module loaded. Click "Start Demo".', 'success');
+                startBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to load module: ' + err.message, 'error');
+            }
+        }
+
+        async function startDemo() {
+            if (isRunning) return;
+            try {
+                if (!wcnCanvas) {
+                    setStatus('Initializing canvas…', 'loading');
+                    wcnCanvas = await createWCNCanvas('canvas', WCNModule);
+                    // Canvas 初始化后启用加载按钮
+                    loadUrlBtn.disabled = false;
+                }
+
+                if (!sampleImage) {
+                    sampleImage = wcnCanvas.createImageFromBytes(SAMPLE_IMAGE_BYTES);
+                }
+
+                isRunning = true;
+                startBtn.disabled = true;
+                setStatus('Rendering...', 'success');
+                requestAnimationFrame(renderLoop);
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to start demo: ' + err.message, 'error');
+            }
+        }
+
+        function stopDemo() {
+            isRunning = false;
+            startBtn.disabled = false;
+            setStatus('Demo stopped', 'loading');
+        }
+
+        /**
+         * 辅助函数：将 ImageBitmap 转换为 32位 TGA 格式的 Uint8Array。
+         * 这样可以将 PNG/JPG 转为 WASM 能够识别的 TGA 格式。
+         */
+        function convertBitmapToTGA(bitmap) {
+            const width = bitmap.width;
+            const height = bitmap.height;
+
+            // 1. 获取像素数据 (RGBA)
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0);
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const rgbaData = imageData.data; // RGBA 顺序
+
+            // 2. 构建 TGA 文件头 (18字节)
+            // Header format: [IDLen, ColorMapType, ImageType, ColorMapSpec(5), Origin(4), W(2), H(2), Depth, Descriptor]
+            const header = new Uint8Array(18);
+            header[2] = 2; // Image type: Uncompressed True-Color
+
+            // Width (Little Endian)
+            header[12] = width & 0xFF;
+            header[13] = (width >> 8) & 0xFF;
+
+            // Height (Little Endian)
+            header[14] = height & 0xFF;
+            header[15] = (height >> 8) & 0xFF;
+
+            header[16] = 32; // 32 bits per pixel
+            header[17] = 0x28; // 0x20 (Top-Left origin) | 0x08 (8 bits alpha)
+
+            // 3. 构建像素数据 (TGA 通常是 BGRA 顺序)
+            const pixelCount = width * height;
+            const tgaData = new Uint8Array(18 + pixelCount * 4);
+
+            // 复制头部
+            tgaData.set(header, 0);
+
+            // 转换像素 (RGBA -> BGRA) 并填充
+            let offset = 18;
+            for (let i = 0; i < pixelCount * 4; i += 4) {
+                const r = rgbaData[i];
+                const g = rgbaData[i + 1];
+                const b = rgbaData[i + 2];
+                const a = rgbaData[i + 3];
+
+                tgaData[offset++] = b; // Blue
+                tgaData[offset++] = g; // Green
+                tgaData[offset++] = r; // Red
+                tgaData[offset++] = a; // Alpha
+            }
+
+            return tgaData;
+        }
+
+        // 修改后的从 URL 加载图片功能
+        async function loadUrlImage() {
+            const url = document.getElementById('imageUrlInput').value;
+            if (!url || !wcnCanvas) return;
+
+            try {
+                setStatus(`Fetching image from URL...`, 'loading');
+
+                // 1. 获取原始数据
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const blob = await response.blob();
+
+                // 2. 使用浏览器原生 API 解码 (支持 PNG, JPEG, WebP 等)
+                const bitmap = await createImageBitmap(blob);
+
+                // 3. 转换为 TGA 格式二进制数据 (WASM 仅支持 TGA)
+                const tgaBytes = convertBitmapToTGA(bitmap);
+
+                // 释放 bitmap 资源
+                bitmap.close();
+
+                // 4. 将转换后的 TGA 数据传给 WASM
+                if (urlImage && urlImage.destroy) {
+                    urlImage.destroy();
+                }
+
+                urlImage = wcnCanvas.createImageFromBytes(tgaBytes);
+
+                setStatus('Image loaded and converted successfully!', 'success');
+
+                if (!isRunning) {
+                    startDemo();
+                }
+
+            } catch (err) {
+                console.error(err);
+                setStatus('Failed to load URL: ' + err.message, 'error');
+            }
+        }
+
+        function renderLoop() {
+            if (!isRunning || !wcnCanvas) {
+                return;
+            }
+
+            wcnCanvas.beginFrame();
+            const renderPass = wcnCanvas.beginRenderPass();
+            if (!renderPass) {
+                requestAnimationFrame(renderLoop);
+                return;
+            }
+
+            // Clear background
+            wcnCanvas.setFillStyle('#f0f0f0');
+            wcnCanvas.fillRect(0, 0, 800, 480);
+
+            // 1. Draw URL Image (Background/Static)
+            if (urlImage) {
+                wcnCanvas.save();
+                // 绘制在左侧，保持纵横比缩放到合适大小
+                // 假设我们想限制在 300x300 的区域内
+                const scale = Math.min(300 / urlImage.width, 300 / urlImage.height);
+                const drawW = urlImage.width * scale;
+                const drawH = urlImage.height * scale;
+
+                wcnCanvas.translate(20, 80); // 稍微下移一点
+                wcnCanvas.drawImage(urlImage, 0, 0, drawW, drawH);
+
+                // 画个边框装饰一下
+                // (注意：这里假设 wcnCanvas 有 strokeRect，如果没有则忽略)
+                // wcnCanvas.setStrokeStyle('#333');
+                // wcnCanvas.strokeRect(0, 0, drawW, drawH);
+
+                wcnCanvas.restore();
+            }
+
+            // 2. Draw Embedded TGA Demo (Rotating Sprite)
+            if (sampleImage) {
+                const centerX = 550; // 移到右侧
+                const centerY = 240;
+                angle += 0.02;
+                const size = 120 + Math.sin(angle) * 40;
+
+                wcnCanvas.save();
+                // 使用 translate 实现旋转中心
+                wcnCanvas.translate(centerX, centerY);
+                // wcnCanvas.setTransform(1, 0.2, 0.8, 1, 0, 0);
+                wcnCanvas.rotate(angle);
+                wcnCanvas.drawImage(sampleImage, -size / 2, -size / 2, size, size);
+                wcnCanvas.restore();
+            }
+
+            // 3. Stamp grid (Bottom)
+            // 简单的装饰网格
+            if (sampleImage) {
+                const tileSize = 20;
+                for (let x = 0; x < 800; x += 40) {
+                    wcnCanvas.drawImage(sampleImage, x, 460, tileSize, tileSize);
+                }
+            }
+
+            wcnCanvas.endFrame();
+            requestAnimationFrame(renderLoop);
+        }
+
+        window.addEventListener('load', loadModule);
+    </script>
+</body>
+
+</html>

@@ -258,11 +258,17 @@ bool wcn_atlas_pack_glyph(WCN_Context* ctx,
 
 // 在缓存中查找字形
 WCN_AtlasGlyph* wcn_find_glyph_in_atlas(WCN_SDFAtlas* atlas,
+                                        WCN_FontFace* face,
                                         uint32_t codepoint,
                                         float font_size) {
+    if (!atlas || !face) {
+        return NULL;
+    }
+
     for (size_t i = 0; i < atlas->glyph_count; i++) {
         WCN_AtlasGlyph* glyph = &atlas->glyphs[i];
-        if (glyph->codepoint == codepoint && 
+        if (glyph->font_face == face &&
+            glyph->codepoint == codepoint &&
             fabsf(glyph->font_size - font_size) < 0.1f &&
             glyph->is_valid) {
             return glyph;
@@ -271,59 +277,77 @@ WCN_AtlasGlyph* wcn_find_glyph_in_atlas(WCN_SDFAtlas* atlas,
     return NULL;
 }
 
-// 获取或创建字形
+// 清理 SDF Atlas 缓存（移除不常用的字形）
+void wcn_cleanup_sdf_atlas_cache(WCN_SDFAtlas* atlas, size_t max_glyphs) {
+    if (!atlas || atlas->glyph_count <= max_glyphs) {
+        return;
+    }
+
+    // 简单的清理策略：保留最近使用的字形
+    // 在实际应用中，可以实现更复杂的LRU缓存策略
+    size_t remove_count = atlas->glyph_count - max_glyphs;
+
+    // 这里简化处理：保留前 max_glyphs 个字形
+    // 注意：这会破坏字形顺序，但在当前实现中不影响功能
+    for (size_t i = max_glyphs; i < atlas->glyph_count; i++) {
+        atlas->glyphs[i].is_valid = false;
+    }
+    atlas->glyph_count = max_glyphs;
+
+    // 标记 Atlas 需要重新整理（在实际实现中可能需要重新打包）
+    atlas->dirty = true;
+}
+
+// ???????
 WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
+                                        WCN_FontFace* face,
                                         uint32_t codepoint,
                                         float font_size) {
-    // 1. 在缓存中查找
-    WCN_AtlasGlyph* cached = wcn_find_glyph_in_atlas(ctx->sdf_atlas, codepoint, font_size);
+    if (!ctx || !ctx->sdf_atlas || !face) {
+        return NULL;
+    }
+
+    WCN_AtlasGlyph* cached = wcn_find_glyph_in_atlas(ctx->sdf_atlas, face, codepoint, font_size);
     if (cached) {
         return cached;
     }
-    
-    // 2. 检查是否有字体解码器和 MSDF 支持
+
     if (!ctx->font_decoder || !ctx->font_decoder->get_glyph_sdf) {
-        // printf("警告: 没有字体解码器或不支持 MSDF\n");
         return NULL;
     }
-    
-    if (!ctx->current_font_face) {
-        // printf("警告: 没有当前字体\n");
-        return NULL;
-    }
-    
-    // 3. 生成 MSDF
+
     unsigned char* msdf_bitmap;
     int width, height;
     float offset_x, offset_y, advance;
-    
+
     if (!ctx->font_decoder->get_glyph_sdf(
-            ctx->current_font_face, codepoint, font_size,
-            &msdf_bitmap, &width, &height, 
+            face, codepoint, font_size,
+            &msdf_bitmap, &width, &height,
             &offset_x, &offset_y, &advance)) {
-        // 对于空格等不可见字符，创建一个空字形但保留前进宽度
-        if (codepoint == 0x0020) { // 空格
-            // 获取空格的前进宽度
+        if (codepoint == 0x0020) {
             WCN_Glyph* glyph_info = NULL;
-            if (ctx->font_decoder->get_glyph(ctx->current_font_face, codepoint, &glyph_info)) {
-                float scale = font_size / ctx->current_font_face->units_per_em;
+            if (ctx->font_decoder->get_glyph(face, codepoint, &glyph_info)) {
+                float scale = font_size / face->units_per_em;
                 advance = glyph_info->advance_width * scale;
                 ctx->font_decoder->free_glyph(glyph_info);
-                
-                // 创建空字形（不占用 Atlas 空间）
+
                 if (ctx->sdf_atlas->glyph_count >= ctx->sdf_atlas->glyph_capacity) {
-                    size_t new_capacity = ctx->sdf_atlas->glyph_capacity * 2;
+                    size_t new_capacity = ctx->sdf_atlas->glyph_capacity == 0 ?
+                                          256 : ctx->sdf_atlas->glyph_capacity * 2;
                     WCN_AtlasGlyph* new_glyphs = realloc(
                         ctx->sdf_atlas->glyphs,
                         new_capacity * sizeof(WCN_AtlasGlyph)
                     );
-                    if (!new_glyphs) return NULL;
+                    if (!new_glyphs) {
+                        return NULL;
+                    }
                     ctx->sdf_atlas->glyphs = new_glyphs;
                     ctx->sdf_atlas->glyph_capacity = new_capacity;
                 }
-                
+
                 WCN_AtlasGlyph* empty_glyph = &ctx->sdf_atlas->glyphs[ctx->sdf_atlas->glyph_count];
                 empty_glyph->codepoint = codepoint;
+                empty_glyph->font_face = face;
                 empty_glyph->font_size = font_size;
                 empty_glyph->x = 0;
                 empty_glyph->y = 0;
@@ -337,19 +361,26 @@ WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
                 empty_glyph->uv_min[1] = 0;
                 empty_glyph->uv_max[0] = 0;
                 empty_glyph->uv_max[1] = 0;
-                
+
                 ctx->sdf_atlas->glyph_count++;
                 return empty_glyph;
             }
         }
-        // 其他字符失败时静默处理（避免刷屏）
         return NULL;
     }
-    
-    // 4. 扩容字形缓存（如果需要）
+
+    const size_t MAX_GLYPH_CACHE_SIZE = 4096;
+    if (ctx->sdf_atlas->glyph_count >= MAX_GLYPH_CACHE_SIZE) {
+        wcn_cleanup_sdf_atlas_cache(ctx->sdf_atlas, MAX_GLYPH_CACHE_SIZE / 2);
+    }
+
     if (ctx->sdf_atlas->glyph_count >= ctx->sdf_atlas->glyph_capacity) {
-        size_t new_capacity = ctx->sdf_atlas->glyph_capacity == 0 ? 
+        size_t new_capacity = ctx->sdf_atlas->glyph_capacity == 0 ?
                              256 : ctx->sdf_atlas->glyph_capacity * 2;
+        if (new_capacity > MAX_GLYPH_CACHE_SIZE) {
+            new_capacity = MAX_GLYPH_CACHE_SIZE;
+        }
+
         WCN_AtlasGlyph* new_glyphs = realloc(
             ctx->sdf_atlas->glyphs,
             new_capacity * sizeof(WCN_AtlasGlyph)
@@ -361,20 +392,20 @@ WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
         ctx->sdf_atlas->glyphs = new_glyphs;
         ctx->sdf_atlas->glyph_capacity = new_capacity;
     }
-    
-    // 5. 打包到 atlas
+
     WCN_AtlasGlyph* glyph = &ctx->sdf_atlas->glyphs[ctx->sdf_atlas->glyph_count];
-    
+
     if (!wcn_atlas_pack_glyph(ctx, msdf_bitmap, width, height,
                               offset_x, offset_y, advance,
                               codepoint, font_size, glyph)) {
         ctx->font_decoder->free_glyph_sdf(msdf_bitmap);
         return NULL;
     }
-    
+
     ctx->font_decoder->free_glyph_sdf(msdf_bitmap);
+    glyph->font_face = face;
     ctx->sdf_atlas->glyph_count++;
-    
+
     return glyph;
 }
 

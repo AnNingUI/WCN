@@ -461,12 +461,12 @@ EM_JS(WGPUShaderModule, wasm_create_shader_module, (
     }
 });
 
-// WASM-specific function to create SDF bind group layout (Group 1)
+  // WASM-specific function to create SDF bind group layout (Group 1)
 EM_JS(WGPUBindGroupLayout, wasm_create_sdf_bind_group_layout, (
-    WGPUDevice device,
-    const char* label
-), {
-    const dev = WebGPU.mgrDevice.get(device);
+      WGPUDevice device,
+      const char* label
+  ), {
+      const dev = WebGPU.mgrDevice.get(device);
     const labelStr = UTF8ToString(label);
     
     // Check if required objects are valid
@@ -475,27 +475,43 @@ EM_JS(WGPUBindGroupLayout, wasm_create_sdf_bind_group_layout, (
         return 0; // Return null handle
     }
     
-    const descriptor = {
-        label: labelStr,
-        entries: [
-            {
-                binding: 0,
-                visibility: GPUShaderStage.FRAGMENT,
-                texture: {
-                    sampleType: 'float',
-                    viewDimension: '2d',
-                    multisampled: false
-                }
-            },
-            {
-                binding: 1,
-                visibility: GPUShaderStage.FRAGMENT,
-                sampler: {
-                    type: 'filtering'
-                }
-            }
-        ]
-    };
+      const descriptor = {
+          label: labelStr,
+          entries: [
+              {
+                  binding: 0,
+                  visibility: GPUShaderStage.FRAGMENT,
+                  texture: {
+                      sampleType: 'float',
+                      viewDimension: '2d',
+                      multisampled: false
+                  }
+              },
+              {
+                  binding: 1,
+                  visibility: GPUShaderStage.FRAGMENT,
+                  sampler: {
+                      type: 'filtering'
+                  }
+              },
+              {
+                  binding: 2,
+                  visibility: GPUShaderStage.FRAGMENT,
+                  texture: {
+                      sampleType: 'float',
+                      viewDimension: '2d',
+                      multisampled: false
+                  }
+              },
+              {
+                  binding: 3,
+                  visibility: GPUShaderStage.FRAGMENT,
+                  sampler: {
+                      type: 'filtering'
+                  }
+              }
+          ]
+      };
     
     try {
         // console.log('[WASM] Creating SDF bind group layout:', labelStr);
@@ -656,16 +672,20 @@ EM_JS(WGPURenderPassEncoder, wasm_begin_render_pass, (
 EM_JS(WGPUBindGroup, wasm_create_sdf_bind_group, (
     WGPUDevice device,
     WGPUBindGroupLayout layout,
-    WGPUTextureView texture_view,
-    WGPUSampler sampler
+    WGPUTextureView sdf_texture_view,
+    WGPUSampler sdf_sampler,
+    WGPUTextureView image_texture_view,
+    WGPUSampler image_sampler
 ), {
     const dev = WebGPU.mgrDevice.get(device);
     const bindGroupLayout = WebGPU.mgrBindGroupLayout.get(layout);
-    const texView = WebGPU.mgrTextureView.get(texture_view);
-    const samp = WebGPU.mgrSampler.get(sampler);
+    const sdfView = WebGPU.mgrTextureView.get(sdf_texture_view);
+    const sdfSamplerObj = WebGPU.mgrSampler.get(sdf_sampler);
+    const imageView = WebGPU.mgrTextureView.get(image_texture_view);
+    const imageSamplerObj = WebGPU.mgrSampler.get(image_sampler);
     
     // Check if required objects are valid
-    if (!dev || !bindGroupLayout || !texView || !samp) {
+    if (!dev || !bindGroupLayout || !sdfView || !sdfSamplerObj || !imageView || !imageSamplerObj) {
         console.error('[WASM] Invalid objects for SDF bind group creation');
         return 0; // Return null handle
     }
@@ -676,11 +696,19 @@ EM_JS(WGPUBindGroup, wasm_create_sdf_bind_group, (
         entries: [
             {
                 binding: 0,
-                resource: texView
+                resource: sdfView
             },
             {
                 binding: 1,
-                resource: samp
+                resource: sdfSamplerObj
+            },
+            {
+                binding: 2,
+                resource: imageView
+            },
+            {
+                binding: 3,
+                resource: imageSamplerObj
             }
         ]
     };

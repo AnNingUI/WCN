@@ -1,39 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WCN WebAssembly Test</title>
     <style>
+        @font-face {
+            font-family: 'WCNPrimary';
+            src: url('../../assets/NotoSerifSC-VF.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        @font-face {
+            font-family: 'WCNEmoji';
+            src: url('../../assets/font/DejaVuSans.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f0f0f0;
         }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             background-color: white;
             padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
+
         h1 {
             color: #333;
             text-align: center;
         }
+
         .canvas-container {
             text-align: center;
             margin: 20px 0;
         }
+
         canvas {
             border: 1px solid #ddd;
             background-color: #fff;
         }
+
         .controls {
             text-align: center;
             margin: 20px 0;
         }
+
         button {
             padding: 10px 20px;
             font-size: 16px;
@@ -44,33 +65,40 @@
             background-color: #007bff;
             color: white;
         }
+
         button:hover {
             background-color: #0056b3;
         }
+
         button:disabled {
             background-color: #ccc;
             cursor: not-allowed;
         }
+
         .status {
             padding: 10px;
             margin: 10px 0;
             border-radius: 4px;
             text-align: center;
         }
+
         .status.loading {
             background-color: #d1ecf1;
             color: #0c5460;
         }
+
         .status.success {
             background-color: #d4edda;
             color: #155724;
         }
+
         .status.error {
             background-color: #f8d7da;
             color: #721c24;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>WCN WebAssembly Canvas2D Test</h1>
@@ -88,7 +116,8 @@
 
         <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;">
             <h3>About this demo:</h3>
-            <p>This demo shows the capabilities of WCN (WebGPU Canvas Native), a cross-platform Canvas2D implementation using WebGPU.</p>
+            <p>This demo shows the capabilities of WCN (WebGPU Canvas Native), a cross-platform Canvas2D implementation
+                using WebGPU.</p>
             <p>Features demonstrated:</p>
             <ul>
                 <li>Rectangle drawing with fill and stroke</li>
@@ -110,6 +139,32 @@
         let WCNModule = null;
         let wcnCanvas = null;
         let isRunning = false;
+        let fontsReadyPromise = null;
+
+        function ensureFontsLoaded() {
+            if (fontsReadyPromise) {
+                return fontsReadyPromise;
+            }
+
+            const fontDefs = [
+                { name: 'WCNPrimary', url: '../../assets/NotoSerifSC-VF.ttf' },
+                { name: 'WCNEmoji', url: '../../assets/font/DejaVuSans.ttf' }
+            ];
+
+            fontsReadyPromise = Promise.all(fontDefs.map(async (font) => {
+                if (document.fonts.check(`16px ${font.name}`)) {
+                    return;
+                }
+                const fontFace = new FontFace(font.name, `url(${font.url})`);
+                await fontFace.load();
+                document.fonts.add(fontFace);
+                console.log(`[Fonts] Loaded ${font.name}`);
+            })).catch(err => {
+                console.warn('[Fonts] Failed to preload fonts', err);
+            });
+
+            return fontsReadyPromise;
+        }
 
         // Load the WCN module
         async function loadWCN() {
@@ -136,11 +191,15 @@
             try {
                 updateStatus('Initializing canvas...', 'loading');
 
+                await ensureFontsLoaded();
+
                 // Create WCN Canvas wrapper
                 wcnCanvas = await createWCNCanvas('canvas', WCNModule);
 
-                // Load a default font
-                wcnCanvas.loadFont('Arial', 24);
+                // Load base font and register fallbacks for CJK/emoji glyphs
+                wcnCanvas.loadFont('WCNPrimary', 24);
+                wcnCanvas.loadFallbackFont('WCNEmoji', 24);
+                wcnCanvas.loadFallbackFont('Arial', 24);
 
                 updateStatus('Canvas initialized. Starting demo...', 'success');
 
@@ -223,6 +282,8 @@
             wcnCanvas.setFont('24px Arial');
             wcnCanvas.setFillStyle('#ff0000'); // Red text to make it more visible
             wcnCanvas.fillText('WCN WebAssembly Demo', 200, 300);
+            wcnCanvas.fillText('WCN 网页汇编 展示', 200, 400);
+            wcnCanvas.fillText('🤓☝️', 200, 500);
             // End frame (this will internally call wcn_renderer_render to actually render the content)
             // In WASM, wcn_end_frame handles ending the render pass and submitting commands
             wcnCanvas.endFrame();
@@ -251,4 +312,5 @@
         });
     </script>
 </body>
+
 </html>

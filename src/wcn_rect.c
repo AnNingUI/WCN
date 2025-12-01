@@ -30,18 +30,23 @@ void wcn_fill_rect(WCN_Context* ctx, float x, float y, float width, float height
 
     WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
 
-    // 提取 2x2 变换矩阵（从 4x4 矩阵的左上角）
-    float transform[4] = {
+    // 提取 2x2 变换矩阵（从 4x4 矩阵的左上角）- 用于实例变换
+    float instance_transform[4] = {
         state->transform_matrix[0], state->transform_matrix[1],
         state->transform_matrix[4], state->transform_matrix[5]
     };
 
+    // 计算应用变换后的矩形位置
+    // 将原始位置 (x, y) 应用变换矩阵的平移分量
+    float transformed_x = x * state->transform_matrix[0] + y * state->transform_matrix[4] + state->transform_matrix[12];
+    float transformed_y = x * state->transform_matrix[1] + y * state->transform_matrix[5] + state->transform_matrix[13];
+
     // 添加矩形实例到统一渲染器
     wcn_renderer_add_rect(
         ctx->renderer,
-        x, y, width, height,
+        transformed_x, transformed_y, width, height,
         state->fill_color,
-        transform
+        instance_transform
     );
 }
 

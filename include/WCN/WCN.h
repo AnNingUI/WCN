@@ -313,6 +313,8 @@ void wcn_stroke_text(WCN_Context* ctx, const char* text, float x, float y);
 WCN_TextMetrics wcn_measure_text(WCN_Context* ctx, const char* text);
 void wcn_set_font(WCN_Context* ctx, const char* font_spec);
 void wcn_set_font_face(WCN_Context* ctx, WCN_FontFace* face, float size);
+bool wcn_add_font_fallback(WCN_Context* ctx, WCN_FontFace* face);
+void wcn_clear_font_fallbacks(WCN_Context* ctx);
 void wcn_set_text_align(WCN_Context* ctx, WCN_TextAlign align);
 void wcn_set_text_baseline(WCN_Context* ctx, WCN_TextBaseline baseline);
 
@@ -325,6 +327,8 @@ void wcn_draw_image_scaled(WCN_Context* ctx, WCN_ImageData* image, float dx, flo
 void wcn_draw_image_source(WCN_Context* ctx, WCN_ImageData* image, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
 WCN_ImageData* wcn_get_image_data(WCN_Context* ctx, float x, float y, float width, float height);
 void wcn_put_image_data(WCN_Context* ctx, WCN_ImageData* image_data, float x, float y);
+WCN_ImageData* wcn_decode_image(WCN_Context* ctx, const uint8_t* image_bytes, size_t data_size);
+void wcn_destroy_image_data(WCN_ImageData* image_data);
 
 
 // ============================================================================

@@ -100,9 +100,18 @@ bool wcn_initialize_renderer(WCN_Context* ctx) {
     if (!ctx->sdf_sampler) {
         // printf("[wcn_initialize_renderer] Line 9: Sampler creation failed\n");
         wcn_destroy_sdf_atlas(ctx->sdf_atlas);
+        ctx->sdf_atlas = NULL;
         return false;
     }
     // printf("[wcn_initialize_renderer] Line 10: Sampler OK\n");
+
+    if (!wcn_init_image_manager(ctx)) {
+        wgpuSamplerRelease(ctx->sdf_sampler);
+        ctx->sdf_sampler = NULL;
+        wcn_destroy_sdf_atlas(ctx->sdf_atlas);
+        ctx->sdf_atlas = NULL;
+        return false;
+    }
     
     // 创建统一渲染器
     // printf("[wcn_initialize_renderer] Line 11: Creating unified renderer\n");
@@ -116,8 +125,15 @@ bool wcn_initialize_renderer(WCN_Context* ctx) {
     // printf("[wcn_initialize_renderer] Line 12: Renderer created\n");
     if (!ctx->renderer) {
         // printf("[wcn_initialize_renderer] Line 13: Renderer creation failed\n");
-        wgpuSamplerRelease(ctx->sdf_sampler);
-        wcn_destroy_sdf_atlas(ctx->sdf_atlas);
+        if (ctx->sdf_sampler) {
+            wgpuSamplerRelease(ctx->sdf_sampler);
+            ctx->sdf_sampler = NULL;
+        }
+        if (ctx->sdf_atlas) {
+            wcn_destroy_sdf_atlas(ctx->sdf_atlas);
+            ctx->sdf_atlas = NULL;
+        }
+        wcn_shutdown_image_manager(ctx);
         return false;
     }
     // printf("[wcn_initialize_renderer] Line 14: Renderer OK\n");
@@ -185,7 +201,6 @@ void wcn_submit_commands(WCN_Context* ctx) {
     if (!ctx || !ctx->current_command_encoder) return;
 
     // 文字渲染现在使用 SDF Atlas 系统，在 wcn_render_batches() 中处理
-    // 不再需要单独的 flush_text_commands 调用
 
     WGPUCommandBufferDescriptor command_buffer_desc = {
         .nextInChain = NULL,
