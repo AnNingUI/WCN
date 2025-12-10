@@ -106,8 +106,6 @@ cmake --build .
 make.build-wasm.bat
 ```
 
-详细的 WASM 构建说明请参考 [WASM 构建文档](docs/WASM_BUILD.md)。
-
 ### WebAssembly 特性
 
 WCN 的 WebAssembly 版本现在包含以下增强功能：

@@ -652,8 +652,8 @@ bool TestVec4() {
     }
 
     // Test ceil
-    WMATH_TYPE(Vec4) v6 = WMATH_CREATE(Vec4)((WMATH_CREATE_TYPE(Vec4)){.v_x = 1.3f, .v_y = 2.7f, .v_z = 3.2f, .v_w = 4.8f});
-    WMATH_TYPE(Vec4) v7 = WMATH_CEIL(Vec4)(v6);
+    const WMATH_TYPE(Vec4) v6 = WMATH_CREATE(Vec4)((WMATH_CREATE_TYPE(Vec4)){.v_x = 1.3f, .v_y = 2.7f, .v_z = 3.2f, .v_w = 4.8f});
+    const WMATH_TYPE(Vec4) v7 = WMATH_CEIL(Vec4)(v6);
     if (v7.v[0] != ceilf(1.3f) || v7.v[1] != ceilf(2.7f) || v7.v[2] != ceilf(3.2f) || v7.v[3] != ceilf(4.8f)) {
         printf("Vec4 ceil test failed\n");
         return false;
@@ -1698,11 +1698,18 @@ bool TestMat4() {
         return false;
     }
 
-    // Frustum matrices should also be singular (like perspective)
+    // 4. Frustum matrices (INCORRECT in original code)
+    // FIX: They are structurally identical to perspective matrices and MUST be invertible.
+    // Determinant should be NON-ZERO.
     float frustum_det = WMATH_DETERMINANT(Mat4)(m34);
+    if (fabsf(frustum_det) < wcn_math_get_epsilon()) { // Changed form > to <
+        printf("Mat4 frustum matrix determinant test failed: got %f (Expected non-zero)\n", frustum_det);
+        return false;
+    }
+
     float frustum_revz_det = WMATH_DETERMINANT(Mat4)(m35);
-    if (fabsf(frustum_det) > wcn_math_get_epsilon() || fabsf(frustum_revz_det) > wcn_math_get_epsilon()) {
-        printf("Mat4 frustum matrix determinant test failed: expected ~0, got %f and %f\n", frustum_det, frustum_revz_det);
+    if (fabsf(frustum_revz_det) < wcn_math_get_epsilon()) { // Changed form > to <
+        printf("Mat4 frustum_reverse_z matrix determinant test failed: got %f (Expected non-zero)\n", frustum_revz_det);
         return false;
     }
 
@@ -1748,7 +1755,6 @@ bool TestMat4() {
         const float expected = (i % 5 == 0) ? 1.0f : 0.0f;
         if (fabsf(m39.m[i] - expected) > wcn_math_get_epsilon() ||
             fabsf(m40.m[i] - expected) > wcn_math_get_epsilon()) {
-            printf("[e-e]: m39:%f m40:%f \n",  m39.m[i] - expected, m40.m[i] - expected);
             printf("Mat4 from_quat/from_mat3 test failed at index %d\n", i);
             return false;
         }
@@ -1767,7 +1773,7 @@ bool TestMat4() {
     // Should be close to identity
     for (int i = 0; i < 16; i++) {
         const float expected = (i % 5 == 0) ? 1.0f : 0.0f;
-        if (fabsf(product.m[i] - expected) > 1e-4f) {
+        if (fabsf(product.m[i] - expected) > wcn_math_get_epsilon() * 100.0f) {
             printf("Mat4 inverse test failed at index %d\n", i);
             return false;
         }

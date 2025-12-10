@@ -4,7 +4,6 @@
 // SIMD includes on supported platforms
 #include <math.h>
 #include <stdbool.h>
-#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -220,37 +219,28 @@ float wcn_math_get_epsilon();
 // #define WMATH_NUM_LERP(a, b, t) ((a) + ((b) - (a)) * (t))
 // Impl of lerp for float, double, int, and float_t
 // ==================================================================
-static  int WMATH_LERP(int)(const int a, const int b, const float t) {
-  return (int)(a + ((b) - (a)) * t);
-}
-static  float WMATH_LERP(float)(const float a, const float b, const float t) {
-  return (a + ((b) - (a)) * t);
-}
-static  double WMATH_LERP(double)(const double a, const double b, const double t) {
-  return (a + ((b) - (a)) * t);
-}
-
-static  float_t WMATH_LERP(float_t)(const float_t a, const float_t b, const float_t t) {
-  return (a + ((b) - (a)) * t);
-}
-
-static  double_t WMATH_LERP(double_t)(const double_t a, const double_t b, const double_t t) {
-  return (a + ((b) - (a)) * t);
-}
+int WMATH_LERP(int)(const int a, const int b, const float t);
+float WMATH_LERP(float)(const float a, const float b, const float t);
+double WMATH_LERP(double)(const double a, const double b, const double t);
+float_t WMATH_LERP(float_t)(const float_t a, const float_t b, const float_t t);
+double_t WMATH_LERP(double_t)(const double_t a, const double_t b, const double_t t);
 // ==================================================================
 
 // Impl of random for float, double, int, and float_t
 // ==================================================================
-static inline int WMATH_RANDOM(int)() { return rand(); }
-
-static inline float WMATH_RANDOM(float)() { return ((float)rand()) / RAND_MAX; }
-
-static inline double WMATH_RANDOM(double)() { return ((double)rand()) / RAND_MAX; }
-
-static inline float_t WMATH_RANDOM(float_t)() { return ((float_t)rand()) / RAND_MAX; }
-
-static inline double_t WMATH_RANDOM(double_t)() { return ((double_t)rand()) / RAND_MAX; }
+int WMATH_RANDOM(int)();
+float WMATH_RANDOM(float)();
+double WMATH_RANDOM(double)();
+float_t WMATH_RANDOM(float_t)();
+double_t WMATH_RANDOM(double_t)();
 // ==================================================================
+
+// Impl of clamp for float, double, int, and float_t
+int WMATH_CLAMP(int)(int v, int min, int max);
+float WMATH_CLAMP(float)(float v, float min, float max);
+double WMATH_CLAMP(double)(double v, double min, double max);
+float_t WMATH_CLAMP(float_t)(float_t v, float_t min, float_t max);
+double_t WMATH_CLAMP(double_t)(float_t v, float_t min, float_t max);
 
 #define WMATH_INVERSE_LERP(a, b, t)                                            \
   (fabsf((b) - (a)) < wcn_math_get_epsilon() ? 0.0f                            \
@@ -743,6 +733,9 @@ WMATH_CREATE(Mat3)(WMATH_CREATE_TYPE(Mat3) mat3_c);
 
 WMATH_TYPE(Mat3)
 WMATH_COPY(Mat3)(WMATH_TYPE(Mat3) mat);
+
+bool WMATH_EQUALS(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b);
+bool WMATH_EQUALS_APPROXIMATELY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b);
 
 WMATH_TYPE(Mat3)
 WMATH_SET(Mat3)(WMATH_TYPE(Mat3) mat, float m00, float m01, float m02,

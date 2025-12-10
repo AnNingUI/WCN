@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 
-project(WCN C)
+project(WCN C CXX)
 
 # 包含必要的 CMake 模块
 include(CheckCCompilerFlag)
@@ -56,6 +56,7 @@ option(WCN_ENABLE_SSE41 "Enable SSE4.1 instructions" ON)
 option(WCN_ENABLE_SSE42 "Enable SSE4.2 instructions" ON)
 option(WCN_ENABLE_AVX "Enable AVX instructions" ON)
 option(WCN_ENABLE_AVX2 "Enable AVX2 instructions" ON)
+option(WCN_ENABLE_FMA "Enable FMA instructions" ON)
 option(WCN_ENABLE_NEON "Enable NEON instructions" ON)
 
 # SIMD 检测宏定义
@@ -125,6 +126,14 @@ if(WCN_ENABLE_SIMD)
         endif()
     endif()
     
+    if(WCN_ENABLE_FMA)
+        check_c_compiler_flag(-mfma SUPPORTS_FMA)
+        if(SUPPORTS_FMA)
+            target_compile_options(wcn PRIVATE -mfma)
+            target_compile_definitions(wcn PRIVATE WCN_ENABLE_FMA)
+        endif()
+    endif()
+
     if(WCN_ENABLE_NEON)
         check_c_compiler_flag(-mfpu=neon SUPPORTS_NEON)
         if(SUPPORTS_NEON)

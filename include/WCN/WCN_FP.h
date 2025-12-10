@@ -1,6 +1,3 @@
-//
-// Created by AnNingUI on 25-9-20.
-//
 
 #ifndef WCN_FP_H
 #define WCN_FP_H
@@ -9,125 +6,91 @@
 extern "C" {
 #endif
 
-// -------------------------
-// GNU C / Clang 支持 __typeof__
-// -------------------------
-#if defined(__GNUC__) || defined(__clang__)
-#define CROSS_TYPEOF(expr) __typeof__(expr)
-// MSVC C++ 支持 decltype
-#elif defined(_MSC_VER) && defined(__cplusplus)
-#define CROSS_TYPEOF(expr) decltype(expr)
-// C11 支持 _Generic
-#elif __STDC_VERSION__ >= 201112L
-#define CROSS_TYPEOF(x)                                                        \
-  _Generic((x),                                                                \
-      char: char,                                                              \
-      signed char: signed char,                                                \
-      unsigned char: unsigned char,                                            \
-      short: short,                                                            \
-      unsigned short: unsigned short,                                          \
-      int: int,                                                                \
-      unsigned int: unsigned int,                                              \
-      long: long,                                                              \
-      unsigned long: unsigned long,                                            \
-      long long: long long,                                                    \
-      unsigned long long: unsigned long long,                                  \
-      float: float,                                                            \
-      double: double,                                                          \
-      long double: long double,                                                \
-      default: _Generic(&(x),                                                  \
-          void *: void *,                                                      \
-          default: __typeof__(*(0 ? &(x)                                       \
-                                  : (x *)0)) /* 推导 struct/union/数组 */      \
-                        ))
+#include <stddef.h> /* for size_t */
+#include <assert.h> /* for assert */
 
-// 其他情况报错
-#else
-#error "Compiler does not support typeof. You need C11 or C++11 or GCC/Clang."
-#endif
+/**
+ * 工业级 C FP 宏库设计规范：
+ * 1. 所有的源数组 (SRC) 必须传入长度 (LEN)。
+ * 2. 所有的目标数组 (DEST) 必须由用户预先分配好内存（栈或堆）。
+ * 3. 宏内部使用 const 修饰源数据，保证不被篡改。
+ */
 
-#define Fp_Send(arr, new_value) arr[_index] = new_value
-#define Fp_ForIn(arr)                                                          \
-  for (int _index = 0, _now_index = 0; _index < sizeof(arr) / sizeof(arr[0]);  \
-       _index++)                                                               \
-    for (CROSS_TYPEOF(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
-         _now_index++)
+// ==========================================
+// 1. ForEach
+// ==========================================
+// 用法: FP_ForEach(int, x, arr, len, { printf("%d ", x); });
+#define FP_ForEach(TYPE, VAR_NAME, SRC_ARR, LEN, CODE_BODY) \
+do { \
+    const TYPE* _fp_src = (SRC_ARR); \
+    size_t _fp_len = (LEN); \
+    assert(_fp_src != NULL && "Source array cannot be NULL"); \
+    for (size_t _i = 0; _i < _fp_len; ++_i) { \
+        const TYPE VAR_NAME = _fp_src[_i]; \
+        CODE_BODY \
+    } \
+} while(0)
 
-#define Fp_Let(TYPE_VAL, NEXT_FUNC)                                            \
-  TYPE_VAL;                                                                    \
-  NEXT_FUNC
+// ==========================================
+// 2. Map
+// ==========================================
+// 将映射结果存入 DEST_ARR。DEST_ARR 大小必须 >= LEN。
+// 用法: FP_Map(int, x, src, dest, len, (x * x));
+#define FP_Map(TYPE, VAR_NAME, SRC_ARR, DEST_ARR, LEN, EXPR) \
+do { \
+    const TYPE* _fp_src = (SRC_ARR); \
+    TYPE* _fp_dest = (DEST_ARR); \
+    size_t _fp_len = (LEN); \
+    assert(_fp_src != NULL && "Source array cannot be NULL"); \
+    assert(_fp_dest != NULL && "Dest array cannot be NULL"); \
+    for (size_t _i = 0; _i < _fp_len; ++_i) { \
+        const TYPE VAR_NAME = _fp_src[_i]; \
+        _fp_dest[_i] = (EXPR); \
+    } \
+} while(0)
 
-/// ==============================
-/// Map
-/// ==============================
-#define Fp_Map(arr)                                                            \
-  {0};                                                                         \
-  Fp_ForIn(arr)
+// ==========================================
+// 3. Filter
+// ==========================================
+// 将符合 CONDITION 的元素存入 DEST_ARR。
+// OUT_LEN_PTR 是一个 size_t*，用于返回筛选后的数量。
+// 注意：DEST_ARR 最好分配为与 SRC_ARR 等大，以防全选。
+// 用法: FP_Filter(int, x, src, dest, len, (x > 10), &out_len);
+#define FP_Filter(TYPE, VAR_NAME, SRC_ARR, DEST_ARR, LEN, CONDITION, OUT_LEN_PTR) \
+do { \
+    const TYPE* _fp_src = (SRC_ARR); \
+    TYPE* _fp_dest = (DEST_ARR); \
+    size_t _fp_len = (LEN); \
+    size_t _fp_count = 0; \
+    assert(_fp_src != NULL && "Source array cannot be NULL"); \
+    assert(_fp_dest != NULL && "Dest array cannot be NULL"); \
+    assert(OUT_LEN_PTR != NULL && "Output length pointer cannot be NULL"); \
+    for (size_t _i = 0; _i < _fp_len; ++_i) { \
+        TYPE VAR_NAME = _fp_src[_i]; \
+        if (CONDITION) { \
+            _fp_dest[_fp_count++] = VAR_NAME; \
+        } \
+    } \
+    *(OUT_LEN_PTR) = _fp_count; \
+} while(0)
 
-#define Fp_MapLet(TYPE, VAL_NAME, MAP_ARR, CODE_BODY)                          \
-  TYPE VAL_NAME[sizeof(MAP_ARR) / sizeof(MAP_ARR[0])] = {0};                   \
-  typedef TYPE _Self;                                                          \
-  Fp_ForIn(MAP_ARR) {                                                          \
-    TYPE __NOW_VALUE;                                                          \
-    CODE_BODY                                                                  \
-    Fp_Send(VAL_NAME, __NOW_VALUE);                                            \
-  }
-
-#define Fp_MapLet_Send(new_value) __NOW_VALUE = (_Self)new_value
-
-/// ==============================
-/// Reduce
-/// ==============================
-#define Fp_Reduce_Send(bind_value, new_value)                                  \
-  _acc = (_Self)new_value;                                                     \
-  bind_value = _acc
-#define Fp_Reduce(TYPE, SRC_ARR, INIT, CODE_BODY)                              \
-  {0};                                                                         \
-  {                                                                            \
-    TYPE _acc = (TYPE)(INIT);                                                  \
-    for (int _index = 0, _now_index = 0;                                       \
-         _index < sizeof(arr) / sizeof(arr[0]); _index++) {                    \
-      for (__typeof__(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
-           _now_index++) {                                                     \
-        typedef TYPE _Self;                                                    \
-        CODE_BODY                                                              \
-      }                                                                        \
-    }                                                                          \
-  }
-
-#define Fp_ReduceLet(TYPE, VAL_NAME, SRC_ARR, INIT, CODE_BODY)                 \
-  TYPE VAL_NAME;                                                               \
-  {                                                                            \
-    typedef TYPE _Self;                                                        \
-    TYPE _acc = (_Self)INIT;                                                   \
-    for (int _index = 0, _now_index = 0;                                       \
-         _index < sizeof(arr) / sizeof(arr[0]); _index++) {                    \
-      for (__typeof__(arr[0]) _value = arr[_index]; _index - _now_index == 0;  \
-           _now_index++) {                                                     \
-        CODE_BODY                                                              \
-      }                                                                        \
-    }                                                                          \
-    VAL_NAME = _acc;                                                           \
-  }
-
-#define Fp_ReduceLet_Send(new_value) _acc = (_Self)new_value
-
-/// ==============================
-/// Filter
-/// ==============================    
-#define Fp_FilterLet(TYPE, VAL_NAME, SRC_ARR, CODE_BODY)                        \
-TYPE VAL_NAME[sizeof(SRC_ARR) / sizeof(SRC_ARR[0])] = {0};                      \
-size_t VAL_NAME##_size = 0;                                                     \
-{                                                                               \
-    int _count = 0;                                                             \
-    Fp_ForIn(SRC_ARR) {                                                         \
-        typedef TYPE _Self;                                                     \
-        if (CODE_BODY) {                                                        \
-            VAL_NAME[_count++] = (_Self)_value;                                 \
-        }                                                                       \
-    }                                                                           \
-    VAL_NAME##_size = _count;                                                   \
-}
+// ==========================================
+// 4. Reduce
+// ==========================================
+// 归约。ACC_VAR 是累加器变量名，INIT_VAL 是初始值。
+// 结果会保留在 ACC_VAR 中 (注意 ACC_VAR 必须在宏外部定义)。
+// 用法: int sum; FP_Reduce(int, x, sum, src, len, 0, (sum + x));
+#define FP_Reduce(TYPE, VAR_NAME, ACC_VAR, SRC_ARR, LEN, INIT_VAL, EXPR) \
+do { \
+    const TYPE* _fp_src = (SRC_ARR); \
+    size_t _fp_len = (LEN); \
+    assert(_fp_src != NULL && "Source array cannot be NULL"); \
+    ACC_VAR = (INIT_VAL); \
+    for (size_t _i = 0; _i < _fp_len; ++_i) { \
+        const TYPE VAR_NAME = _fp_src[_i]; \
+        ACC_VAR = (EXPR); \
+    } \
+} while(0)
 
 #ifdef __cplusplus
 }
