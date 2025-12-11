@@ -1,5 +1,5 @@
-#ifndef WCN_SIMD_MACROS_H
-#define WCN_SIMD_MACROS_H
+#ifndef WCN_PLATFORM_MACROS_H
+#define WCN_PLATFORM_MACROS_H
 
 // ========================================================================
 // Unified SIMD architecture detection macros
@@ -73,4 +73,11 @@
   #define WCN_HAS_LOONGARCH 0
 #endif
 
-#endif // WCN_SIMD_MACROS_H
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#define WCN_WASM_EXPORT EMSCRIPTEN_KEEPALIVE
+#else
+#define WCN_WASM_EXPORT
+#endif
+
+#endif // WCN_PLATFORM_MACROS_H

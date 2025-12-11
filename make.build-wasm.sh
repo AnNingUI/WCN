@@ -62,7 +62,7 @@ echo ""
 emcmake cmake .. \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     -DWCN_BUILD_WASM=ON \
-    -DWCN_ENABLE_SIMD=OFF
+    -DWCN_ENABLE_SIMD=ON
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}CMake configuration failed!${NC}"
@@ -87,7 +87,7 @@ echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Output files:"
-echo "  JavaScript: $BUILD_DIR/wcn.js"
+echo "  JavaScript : $BUILD_DIR/wcn.js"
 echo "  WebAssembly: $BUILD_DIR/wcn.wasm"
 echo ""
 
@@ -96,7 +96,7 @@ if [ -f "wcn.js" ] && [ -f "wcn.wasm" ]; then
     JS_SIZE=$(du -h wcn.js | cut -f1)
     WASM_SIZE=$(du -h wcn.wasm | cut -f1)
     echo "File sizes:"
-    echo "  wcn.js:   $JS_SIZE"
+    echo "  wcn.js  : $JS_SIZE"
     echo "  wcn.wasm: $WASM_SIZE"
     echo ""
 fi

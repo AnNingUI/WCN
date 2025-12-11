@@ -134,8 +134,194 @@ static bool wcn_stb_get_glyph(WCN_FontFace* face, uint32_t codepoint, WCN_Glyph*
     return true;
 }
 
-// 获取字形 MSDF 位图（核心功能）
-// 使用 stb_truetype 的 SDF 生成伪 MSDF（将单通道复制到 RGB 通道）
+// 辅助：简单的 2D 向量
+typedef struct { float x, y; } WCN_Vec2;
+
+// 辅助：计算平方距离
+static float wcn_dist_sq(WCN_Vec2 a, WCN_Vec2 b) {
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    return dx*dx + dy*dy;
+}
+
+// 辅助：ESDT (Euclidean Signed Distance Transform) 算法
+// 输入: alpha_map (w x h)
+// 输出: dist_map (w x h), offset_map (w x h)
+// spread: SDF 扩散半径
+static void wcn_compute_esdt(const unsigned char* alpha_map, int w, int h, int spread,
+                             float* out_dist, WCN_Vec2* out_offsets) {
+    // 初始化
+    int count = w * h;
+    const float INF = 1e9f;
+    
+    // 这里的网格用于存储最近的"边界像素"的坐标
+    WCN_Vec2* grid_inside = (WCN_Vec2*)malloc(count * sizeof(WCN_Vec2));
+    WCN_Vec2* grid_outside = (WCN_Vec2*)malloc(count * sizeof(WCN_Vec2));
+    
+    if (!grid_inside || !grid_outside) {
+        free(grid_inside);
+        free(grid_outside);
+        return;
+    }
+
+    // 1. 初始化网格
+    // 这里的"边界"定义为 alpha 在 (0, 255) 之间的区域，或者是 alpha 阈值穿越的地方
+    // 为了简化且高效，我们将 alpha >= 128 视为内部，< 128 视为外部
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int idx = y * w + x;
+            unsigned char a = alpha_map[idx];
+            
+            grid_inside[idx] = (WCN_Vec2){INF, INF};
+            grid_outside[idx] = (WCN_Vec2){INF, INF};
+            
+            // 如果是边界像素
+            // 简单的阈值判定法：
+            if (a >= 128) {
+                // 内部像素
+                // 初始化 grid_inside 为自身坐标
+                grid_inside[idx].x = (float)x;
+                grid_inside[idx].y = (float)y;
+            } else {
+                // 外部像素
+                // 初始化 grid_outside 为自身坐标
+                grid_outside[idx].x = (float)x;
+                grid_outside[idx].y = (float)y;
+            }
+        }
+    }
+
+    // 2. 传播距离 (Dead Reckoning / Chamfer Distance 的两遍扫描变体)
+    // Pass 1: Forward (top-left to bottom-right)
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int idx = y * w + x;
+            WCN_Vec2 p = {(float)x, (float)y};
+            
+            // 检查周围像素 (左，上，左上，右上)
+            int neighbors[4][2] = {{-1, 0}, {0, -1}, {-1, -1}, {1, -1}};
+            
+            for (int k = 0; k < 4; k++) {
+                int nx = x + neighbors[k][0];
+                int ny = y + neighbors[k][1];
+                
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nidx = ny * w + nx;
+                    
+                    // Update Inside Grid
+                    if (grid_inside[nidx].x != INF) {
+                        float d_curr = wcn_dist_sq(p, grid_inside[idx]);
+                        float d_new = wcn_dist_sq(p, grid_inside[nidx]);
+                        if (d_new < d_curr) grid_inside[idx] = grid_inside[nidx];
+                    }
+                    
+                    // Update Outside Grid
+                    if (grid_outside[nidx].x != INF) {
+                        float d_curr = wcn_dist_sq(p, grid_outside[idx]);
+                        float d_new = wcn_dist_sq(p, grid_outside[nidx]);
+                        if (d_new < d_curr) grid_outside[idx] = grid_outside[nidx];
+                    }
+                }
+            }
+        }
+    }
+    
+    // Pass 2: Backward (bottom-right to top-left)
+    for (int y = h - 1; y >= 0; y--) {
+        for (int x = w - 1; x >= 0; x--) {
+            int idx = y * w + x;
+            WCN_Vec2 p = {(float)x, (float)y};
+            
+            // 检查周围像素 (右，下，右下，左下)
+            int neighbors[4][2] = {{1, 0}, {0, 1}, {1, 1}, {-1, 1}};
+            
+            for (int k = 0; k < 4; k++) {
+                int nx = x + neighbors[k][0];
+                int ny = y + neighbors[k][1];
+                
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nidx = ny * w + nx;
+                    
+                    // Update Inside Grid
+                    if (grid_inside[nidx].x != INF) {
+                        float d_curr = wcn_dist_sq(p, grid_inside[idx]);
+                        float d_new = wcn_dist_sq(p, grid_inside[nidx]);
+                        if (d_new < d_curr) grid_inside[idx] = grid_inside[nidx];
+                    }
+                    
+                    // Update Outside Grid
+                    if (grid_outside[nidx].x != INF) {
+                        float d_curr = wcn_dist_sq(p, grid_outside[idx]);
+                        float d_new = wcn_dist_sq(p, grid_outside[nidx]);
+                        if (d_new < d_curr) grid_outside[idx] = grid_outside[nidx];
+                    }
+                }
+            }
+        }
+    }
+    
+    // 3. 合成 SDF
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int idx = y * w + x;
+            WCN_Vec2 p = {(float)x, (float)y};
+            
+            // 计算到最近的"外部像素"的距离 (dist to outside)
+            float dist_to_outside = sqrtf(wcn_dist_sq(p, grid_outside[idx]));
+            // 计算到最近的"内部像素"的距离 (dist to inside)
+            float dist_to_inside = sqrtf(wcn_dist_sq(p, grid_inside[idx]));
+            
+            float sdf = 0.0f;
+            WCN_Vec2 nearest = {0, 0};
+            
+            unsigned char alpha = alpha_map[idx];
+            if (alpha >= 128) {
+                // Inside: 距离是负的 (或者在 0.5-1.0 范围映射)
+                // dist_to_outside 代表我们离背景有多远
+                sdf = dist_to_outside - 0.5f; // -0.5 是因为 grid 指向的是像素中心
+                nearest = grid_outside[idx];
+            } else {
+                // Outside: 距离是正的
+                // dist_to_inside 代表我们离形状有多远
+                sdf = -(dist_to_inside - 0.5f);
+                nearest = grid_inside[idx];
+            }
+            
+            // 存储距离 (Regular SDF)
+            out_dist[idx] = sdf;
+            
+            // 存储 Offset (Vector to boundary)
+            // 指向边界的向量
+            out_offsets[idx].x = nearest.x - p.x;
+            out_offsets[idx].y = nearest.y - p.y;
+            
+            // Hybrid Approach:
+            // 1. Geometric SDF (sdf) gives robust global distance.
+            // 2. Alpha value gives precise local distance for the edge.
+            // If we blindly threshold at 128, thin strokes (max alpha < 128) disappear (broken paths).
+            // If we blindly trust alpha, we get noise (hairy edges).
+            // Solution: Use alpha-derived distance when near the "visual" edge (alpha > 0 and < 255).
+            if (alpha > 0 && alpha < 255) {
+                // Map alpha 0..255 to distance +0.5..-0.5
+                // alpha 0   => dist +0.5 (outside)
+                // alpha 128 => dist  0.0 (edge)
+                // alpha 255 => dist -0.5 (inside)
+                float alpha_dist = 0.5f - ((float)alpha / 255.0f);
+                
+                // Only replace if the geometric SDF is consistent with the alpha hint
+                // or if we are dealing with a thin feature (where geometric SDF might be wrong).
+                // For thin features, geometric SDF might say "+2.0" (outside) while alpha says "+0.1" (near edge).
+                // We trust alpha if it indicates we are 'close' to the edge.
+                out_dist[idx] = alpha_dist;
+            }
+        }
+    }
+    
+    free(grid_inside);
+    free(grid_outside);
+}
+
+// 获取字形 MSDF 位图（核心功能 - 替换为 Alpha+Offsets Pipeline）
 static bool wcn_stb_get_glyph_sdf(WCN_FontFace* face, uint32_t codepoint, float font_size,
                                   unsigned char** out_bitmap,
                                   int* out_width, int* out_height,
@@ -147,76 +333,131 @@ static bool wcn_stb_get_glyph_sdf(WCN_FontFace* face, uint32_t codepoint, float 
     
     WCN_STB_FontData* font_data = (WCN_STB_FontData*)face->user_data;
     
-    // 计算缩放比例
+    // 1. 获取基础字形 Alpha 位图
     float scale = stbtt_ScaleForPixelHeight(&font_data->font_info, font_size);
-    
-    // 获取字形索引
     int glyph_index = stbtt_FindGlyphIndex(&font_data->font_info, codepoint);
-    if (glyph_index == 0) {
-        // 静默处理不存在的字形（避免刷屏）
+    if (glyph_index == 0) return false;
+
+    // Use 4x Oversampling for high-quality SDF generation
+    const int OVERSAMPLE = 4;
+    float high_res_scale = scale * OVERSAMPLE;
+
+    int x0, y0, x1, y1;
+    stbtt_GetGlyphBitmapBox(&font_data->font_info, glyph_index, scale, scale, &x0, &y0, &x1, &y1);
+    
+    int content_width = x1 - x0;
+    int content_height = y1 - y0;
+    if (content_width <= 0 || content_height <= 0) return false;
+    
+    // Spread in target pixels
+    int spread = 4; 
+    int padding = spread + 1;
+    
+    // Target dimensions
+    int target_w = content_width + padding * 2;
+    int target_h = content_height + padding * 2;
+    
+    // High-res dimensions
+    int high_res_w = target_w * OVERSAMPLE;
+    int high_res_h = target_h * OVERSAMPLE;
+    
+    unsigned char* alpha_bitmap = (unsigned char*)calloc(high_res_w * high_res_h, 1);
+    if (!alpha_bitmap) return false;
+    
+    // Render Alpha at 4x resolution
+    // Note: Padding is also scaled
+    stbtt_MakeGlyphBitmap(&font_data->font_info, 
+                          alpha_bitmap + (padding * OVERSAMPLE) * high_res_w + (padding * OVERSAMPLE), 
+                          content_width * OVERSAMPLE, content_height * OVERSAMPLE, 
+                          high_res_w, 
+                          high_res_scale, high_res_scale, 
+                          glyph_index);
+
+    // 2. 运行 SDF 生成管线 (ESDT + Offsets) on High-Res Bitmap
+    // The spread also needs to be scaled for the calculation
+    int high_res_spread = spread * OVERSAMPLE;
+    
+    float* dist_map = (float*)malloc(high_res_w * high_res_h * sizeof(float));
+    WCN_Vec2* offsets_map = (WCN_Vec2*)malloc(high_res_w * high_res_h * sizeof(WCN_Vec2));
+    
+    if (!dist_map || !offsets_map) {
+        free(alpha_bitmap);
+        if(dist_map) free(dist_map);
+        if(offsets_map) free(offsets_map);
         return false;
     }
     
-    // 生成单通道 SDF
-    // 关键参数调整：
-    // - padding: 4 像素，平衡质量和空间（减少以节省 Atlas 空间）
-    // - onedge_value: 128 (0.5 * 255)，边缘值
-    // - pixel_dist_scale: 32.0，控制距离场的梯度（值越小越清晰）
-    int xoff, yoff;
-    unsigned char* sdf = stbtt_GetGlyphSDF(
-        &font_data->font_info,
-        scale,
-        glyph_index,
-        4,      // padding - 4 像素平衡质量和空间
-        128,    // onedge_value (0.5 in 0-255 range)
-        32.0f,  // pixel_dist_scale - 降低到 32 以获得更清晰的边缘
-        out_width, out_height,
-        &xoff, &yoff
-    );
+    wcn_compute_esdt(alpha_bitmap, high_res_w, high_res_h, high_res_spread, dist_map, offsets_map);
     
-    if (!sdf) {
-        // 静默处理 SDF 生成失败（通常是空格等不可见字符）
+    // 3. 打包数据到 RGBA (Downsampling)
+    unsigned char* output_rgba = (unsigned char*)malloc(target_w * target_h * 4);
+    if (!output_rgba) {
+        free(alpha_bitmap);
+        free(dist_map);
+        free(offsets_map);
         return false;
     }
     
-    // SDF 生成成功（调试信息已关闭）
+    float inv_range = 1.0f / (float)(spread * 2); // Spread in target pixels
+    // Note: high_res distance is in high_res pixels. 
+    // dist_in_target_pixels = dist_in_high_res / OVERSAMPLE
     
-    // 转换为伪 MSDF 格式（RGBA）
-    // 将单通道 SDF 复制到 RGB 通道，A 通道设为 255
-    int pixel_count = (*out_width) * (*out_height);
-    unsigned char* msdf = (unsigned char*)malloc(pixel_count * 4);
-    if (!msdf) {
-        stbtt_FreeSDF(sdf, NULL);
-        return false;
+    for (int y = 0; y < target_h; y++) {
+        for (int x = 0; x < target_w; x++) {
+            // Sample the center of the 4x4 block
+            // center_x = x * OVERSAMPLE + OVERSAMPLE/2
+            int src_x = x * OVERSAMPLE + OVERSAMPLE / 2;
+            int src_y = y * OVERSAMPLE + OVERSAMPLE / 2;
+            
+            // Clamp to be safe
+            if (src_x >= high_res_w) src_x = high_res_w - 1;
+            if (src_y >= high_res_h) src_y = high_res_h - 1;
+            
+            int src_idx = src_y * high_res_w + src_x;
+            
+            // Get High-Res values
+            float d_high = dist_map[src_idx];
+            float off_x_high = offsets_map[src_idx].x;
+            float off_y_high = offsets_map[src_idx].y;
+            
+            // Convert to Target Space
+            float d_target = d_high / OVERSAMPLE;
+            float off_x_target = off_x_high / OVERSAMPLE;
+            float off_y_target = off_y_high / OVERSAMPLE;
+            
+            // Normalize
+            float norm_d = 0.5f + (d_target * inv_range);
+            norm_d = norm_d < 0.0f ? 0.0f : (norm_d > 1.0f ? 1.0f : norm_d);
+            
+            float norm_off_x = 0.5f + (off_x_target * inv_range);
+            float norm_off_y = 0.5f + (off_y_target * inv_range);
+            
+            norm_off_x = norm_off_x < 0.0f ? 0.0f : (norm_off_x > 1.0f ? 1.0f : norm_off_x);
+            norm_off_y = norm_off_y < 0.0f ? 0.0f : (norm_off_y > 1.0f ? 1.0f : norm_off_y);
+            
+            int dst_idx = y * target_w + x;
+            output_rgba[dst_idx*4 + 0] = (unsigned char)(norm_d * 255.0f);   // R
+            output_rgba[dst_idx*4 + 1] = (unsigned char)(norm_off_x * 255.0f); // G
+            output_rgba[dst_idx*4 + 2] = (unsigned char)(norm_off_y * 255.0f); // B
+            output_rgba[dst_idx*4 + 3] = 255; // A
+        }
     }
     
-    for (int i = 0; i < pixel_count; i++) {
-        unsigned char value = sdf[i];
-        msdf[i * 4 + 0] = value;  // R
-        msdf[i * 4 + 1] = value;  // G
-        msdf[i * 4 + 2] = value;  // B
-        msdf[i * 4 + 3] = 255;    // A (不透明)
-    }
+    // 4. 清理与返回
+    free(alpha_bitmap);
+    free(dist_map);
+    free(offsets_map);
     
-    // 释放原始 SDF
-    stbtt_FreeSDF(sdf, NULL);
+    *out_bitmap = output_rgba;
+    *out_width = target_w;
+    *out_height = target_h;
     
-    *out_bitmap = msdf;
-    *out_offset_x = (float)xoff;
-    // stb_truetype 的 Y 坐标系：yoff 是字形顶部相对于基线的偏移
-    // 正值表示在基线上方，负值表示在基线下方
-    // WebGPU 坐标系：Y 轴向下为正
-    // 因此不需要取反，直接使用
-    *out_offset_y = (float)yoff;
+    *out_offset_x = (float)(x0 - padding);
+    *out_offset_y = (float)(y0 - padding);
     
-    // 获取前进宽度
     int advance, lsb;
     stbtt_GetGlyphHMetrics(&font_data->font_info, glyph_index, &advance, &lsb);
     *out_advance = advance * scale;
-    
-    // 仅在调试时打印
-    // printf("stb_truetype: 生成 MSDF U+%04X 尺寸 %dx%d 偏移 (%.1f, %.1f) 前进 %.1f\n",
-    //        codepoint, *out_width, *out_height, *out_offset_x, *out_offset_y, *out_advance);
     
     return true;
 }

@@ -9,13 +9,7 @@
 // ============================================================================
 
 #include "webgpu/webgpu.h"
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#define WCN_WASM_EXPORT EMSCRIPTEN_KEEPALIVE
-#else
-#define WCN_WASM_EXPORT
-#endif
-
+#include "WCN/WCN_PLATFORM_MACROS.h"
 // ============================================================================
 // Export Macro Definitions
 // ============================================================================
@@ -103,8 +97,8 @@ typedef WGPUTextureView (*GetWGPUTextureViewCallback)();
 // Helper Functions
 #define WCN_WASM_EXPORT_HELPERS() \
     WCN_WASM_EXPORT WGPUTextureFormat wcn_get_surface_format(WCN_Context* ctx); \
-WCN_WASM_EXPORT void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format); \
-WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face); \
+    WCN_WASM_EXPORT void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format); \
+    WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face); \
 
 // ============================================================================
 // Export All Functions

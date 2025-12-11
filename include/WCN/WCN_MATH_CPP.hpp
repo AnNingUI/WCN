@@ -50,6 +50,7 @@ namespace WCN
                       
     inline float                       clamp                      (const float v, const float min, const float max)                                                            { return WMATH_CLAMP(float)(v, min, max); }
     inline int                         clamp                      (const int   v, const int   min, const int   max)                                                            { return WMATH_CLAMP(int)(v, min, max); }
+    inline int                         clamp                      (const double v, const double min, const double max)                                                         { return WMATH_CLAMP(double)(v, min, max); }
                       
     inline float                       inverse_lerp               (const float a, const float b, const float t)                                                                { return WMATH_INVERSE_LERP(a, b, t); }
     inline float                       euclidean_modulo           (const float n, const float m)                                                                               { return WMATH_EUCLIDEAN_MODULO(n, m); }

@@ -318,10 +318,11 @@ void wcn_instance_buffer_clear(WCN_InstanceBuffer* buffer);
 bool wcn_instance_buffer_grow(WCN_InstanceBuffer* buffer);
 bool wcn_instance_buffer_add(WCN_InstanceBuffer* buffer, const WCN_Instance* instance);
 
-// 实例添加函数（内部 API）
+// 添加矩形实例
 void wcn_renderer_add_rect(
     WCN_Renderer* renderer,
     float x, float y, float width, float height,
+    float radius,  // Added radius parameter
     uint32_t color,
     const float transform[4]
 );

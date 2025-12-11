@@ -97,30 +97,89 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Branch based on instance type
     switch (input.instance_type) {
         case INSTANCE_TYPE_RECT: {
-            // Solid color rectangle - no additional processing
+            // SDF-based Rounded Rectangle
+            // params_x holds the corner radius
+            let radius = clamp(input.params_x, 0.0, min(input.size.x, input.size.y) * 0.5);
+            
+            // Convert local_pos (0..1) to centered coordinates
+            let p = (input.local_pos - 0.5) * input.size;
+            let b = (input.size * 0.5) - vec2<f32>(radius, radius);
+            
+            // SDF for rounded box
+            let q = abs(p) - b;
+            let d = length(max(q, vec2<f32>(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - radius;
+            
+            // Anti-aliasing
+            // We can use the pre-computed derivatives dx/dy for the gradient length
+            // or simply use a fixed width (1.0 pixel) since d is in pixel units?
+            // Wait, p is in logical pixels (world space local).
+            // We need screen space width.
+            // length(vec2(dx, dy)) gives the rate of change of local_pos.
+            // size * length(vec2(dx, dy)) gives rate of change in pixels.
+            // Simpler: fwidth(d). 
+            // Since we are in non-uniform control flow, we can use the pre-computed dx/dy
+            // to estimate the gradient.
+            // Gradient of SDF is unit length in world space? 
+            // If the transformation is uniform scale, yes. 
+            // If non-uniform, it's harder.
+            // Let's assume uniform-ish scale or use fwidth(d) with caution.
+            // NOTE: Using fwidth here might be flagged by strict validators.
+            // But since 'd' depends on 'p' which depends on 'local_pos', 
+            // and we have dx/dy for local_pos...
+            
+            // Let's use a safe 1.0 pixel AA width assuming 1:1 screen mapping for now,
+            // or better: use the 'dist_grad' if it was computed from screen space?
+            // No, 'dist_grad' was for text SDF.
+            
+            // Standard derivative approximation using pre-computed dx, dy
+            // Gradient of p.x is input.size.x * dx
+            // Gradient of p.y is input.size.y * dy
+            // Approximate pixel size in local space:
+            let px_size = length(vec2<f32>(dx * input.size.x, dy * input.size.y));
+            // Or just fwidth of d if available/safe.
+            
+            // Smoothstep for AA
+            let alpha = 1.0 - smoothstep(-0.5, 0.5, d); // 1px smooth edge
+            
+            color.a *= alpha;
+            if (color.a < 0.01) {
+                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            }
             return color;
         }
         case INSTANCE_TYPE_TEXT: {
-            // MSDF text rendering with sharpening
-            // Use pre-computed distance and gradient
+            // ... (existing text code)
+            // New "Alpha + Offsets" SDF Rendering
+            // Texture Format:
+            // R: Signed Distance (Normalized, 0.5 = Edge)
+            // G: Subpixel Offset X (Vector to nearest edge)
+            // B: Subpixel Offset Y (Vector to nearest edge)
+            // A: Opacity (usually 1.0)
             
-            // Sharper rendering with tighter transition
-            // Reduce the width for crisper edges
-            let sharpness = 0.15;  // Smaller = sharper (was 0.2 in width/2)
+            // We primarily use the Red channel (Distance) which has been generated 
+            // with subpixel precision using the ESDT algorithm.
+            // Note: 'distance' and 'dist_grad' (fwidth) are pre-calculated 
+            // outside this non-uniform control flow block for portability.
             
-            // Use pre-computed gradient for adaptive sharpening
-            let adaptive_width = max(sharpness, dist_grad * 0.5);
+            // AA Width Calculation
+            // The SDF spread is approx 3 pixels in the atlas.
+            // adaptive_width determines the smoothness of the edge.
+            // Lower 'sharpness' constant allows for crisper edges on high-DPI screens.
+            let sharpness = 0.1; 
+            let adaptive_width = max(sharpness, dist_grad * 0.7);
             
-            // Apply smoothstep with adaptive width
+            // Apply Smoothstep
+            // Maps the distance field to opacity with an anti-aliased edge
             let alpha = smoothstep(0.5 - adaptive_width, 0.5 + adaptive_width, distance);
             
-            // Optional: Apply additional sharpening curve
-            // This enhances contrast at the edges
-            let sharpened_alpha = pow(alpha, 0.9);  // Slightly sharpen
+            // Gamma / Perceptual Correction
+            // Slight sharpening curve to enhance readability
+            let sharpened_alpha = pow(alpha, 1.1);
             
             color.a *= sharpened_alpha;
             
-            // Discard fully transparent fragments
+            // Optimization: Return transparent for invisible pixels
+            // (Avoid 'discard' for better compatibility)
             if (color.a < 0.01) {
                 return vec4<f32>(0.0, 0.0, 0.0, 0.0);
             }
@@ -137,11 +196,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             let e1 = edge_function(v1, v2, p);
             let e2 = edge_function(v2, v0, p);
 
+            // Support both winding orders (CCW and CW)
+            // CCW: All edges >= 0
+            // CW:  All edges <= 0
             let has_pos = (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0);
             let has_neg = (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0);
+            
             if (!(has_pos || has_neg)) {
                 return vec4<f32>(0.0, 0.0, 0.0, 0.0);
             }
+            
             return color;
         }
         case INSTANCE_TYPE_LINE: {

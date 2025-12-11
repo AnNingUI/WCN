@@ -45,6 +45,7 @@ void wcn_fill_rect(WCN_Context* ctx, float x, float y, float width, float height
     wcn_renderer_add_rect(
         ctx->renderer,
         transformed_x, transformed_y, width, height,
+        0.0f, // radius
         state->fill_color,
         instance_transform
     );

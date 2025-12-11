@@ -991,6 +991,7 @@ void wcn_destroy_renderer(WCN_Renderer* renderer) {
 void wcn_renderer_add_rect(
     WCN_Renderer* renderer,
     float x, float y, float width, float height,
+    float radius,
     uint32_t color,
     const float transform[4]
 ) {
@@ -1033,9 +1034,9 @@ void wcn_renderer_add_rect(
     instance.uvSize[0] = 0.0f;
     instance.uvSize[1] = 0.0f;
     
-    // Flags and params not used for rectangles
+    // Store corner radius in param0
     instance.flags = 0;
-    instance.param0 = 0.0f;
+    instance.param0 = radius;
     
     // Add instance to CPU buffer
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
