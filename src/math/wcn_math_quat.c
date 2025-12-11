@@ -1,6 +1,6 @@
 #include "WCN/WCN_Math.h"
 #include "wcn_math_internal.h"
-#include "WCN/wcn_simd_macros.h"
+#include "WCN/WCN_PLATFORM_MACROS.h"
 
 // BEGIN Quat
 
@@ -550,7 +550,7 @@ WMATH_NORMALIZE(Quat)(WMATH_TYPE(Quat) a) {
   if (len_sq > 0.00001f) {
     // Use fast inverse square root for better performance
     float32x4_t vec_len_sq = vdupq_n_f32(len_sq);
-    float32x4_t inv_len = wcn_fast_inv_sqrt_f32(vec_len_sq);
+    float32x4_t inv_len = wcn_fast_inv_sqrt_platform(vec_len_sq);
     float32x4_t vec_res = vmulq_f32(vec_a, inv_len);
     vst1q_f32(result.v, vec_res);
   } else {
@@ -573,7 +573,7 @@ WMATH_NORMALIZE(Quat)(WMATH_TYPE(Quat) a) {
   if (len_sq > 0.00001f) {
     // Use fast inverse square root for better performance
     v128_t vec_len_sq = wasm_f32x4_splat(len_sq);
-    v128_t inv_len = wcn_fast_inv_sqrt_f32x4(vec_len_sq);
+    v128_t inv_len = wcn_fast_inv_sqrt_wasm(vec_len_sq);
     v128_t vec_res = wasm_f32x4_mul(vec_a, inv_len);
     wasm_v128_store(result.v, vec_res);
   } else {
@@ -597,7 +597,7 @@ WMATH_NORMALIZE(Quat)(WMATH_TYPE(Quat) a) {
   if (len_sq > 0.00001f) {
     // Use fast inverse square root for better performance
     vfloat32m1_t vec_len_sq = __riscv_vfmv_v_f_f32m1(len_sq, vl);
-    vfloat32m1_t inv_len = wcn_fast_inv_sqrt_f32m1(vec_len_sq, vl);
+    vfloat32m1_t inv_len = wcn_fast_inv_sqrt_platform(vec_len_sq);
     vfloat32m1_t vec_res = __riscv_vfmul_vv_f32m1(vec_a, inv_len, vl);
     __riscv_vse32_v_f32m1(result.v, vec_res, vl);
   } else {
@@ -620,7 +620,7 @@ WMATH_NORMALIZE(Quat)(WMATH_TYPE(Quat) a) {
   if (len_sq > 0.00001f) {
     // Use fast inverse square root for better performance
     __m128 vec_len_sq = __lsx_vldrepl_w(&len_sq, 0);
-    __m128 inv_len = wcn_fast_inv_sqrt_f32x4(vec_len_sq);
+    __m128 inv_len = wcn_fast_inv_sqrt_lsx(vec_len_sq);
     __m128 vec_res = __lsx_vfmul_s(vec_a, inv_len);
     __lsx_vst(vec_res, result.v, 0);
   } else {

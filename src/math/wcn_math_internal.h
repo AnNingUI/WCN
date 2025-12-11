@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "WCN/WCN_SIMD_MACROS.h"
+#include "WCN/WCN_PLATFORM_MACROS.h"
 
 // ========================================================================
 
@@ -315,7 +315,7 @@ static inline vfloat32m1_t wcn_mat4_get_col(const WMATH_TYPE(Mat4) * mat, int co
 
 // Helper functions for WebAssembly SIMD
 static inline v128_t wcn_load_vec2_partial(const float *v) {
-  return wasm_v128_const(wasm_f32x4_extract_lane(wasm_v128_load(v), 0),
+  return wasm_f32x4_make(wasm_f32x4_extract_lane(wasm_v128_load(v), 0),
                          wasm_f32x4_extract_lane(wasm_v128_load(v), 1),
                          0.0f, 0.0f);
 }
@@ -326,7 +326,7 @@ static inline void wcn_store_vec2_partial(float *v, v128_t vec) {
 }
 
 static inline v128_t wcn_load_vec3_partial(const float *v) {
-  return wasm_v128_const(v[0], v[1], v[2], 0.0f);
+  return wasm_f32x4_make(v[0], v[1], v[2], 0.0f);
 }
 
 static inline void wcn_store_vec3_partial(float *v, v128_t vec) {
@@ -337,19 +337,19 @@ static inline void wcn_store_vec3_partial(float *v, v128_t vec) {
 
 static inline float wcn_hadd_f32(v128_t vec) {
   // Perform horizontal sum using WASM intrinsics
-  v128_t shuf = wasm_f32x4_shuffle(vec, vec, 2, 3, 0, 1);
+  v128_t shuf = wasm_i32x4_shuffle(vec, vec, 2, 3, 0, 1);
   v128_t sums = wasm_f32x4_add(vec, shuf);
-  shuf = wasm_f32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   return wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
 }
 
 // WASM cross product helper for 3D vectors
 static inline v128_t wcn_cross_wasm(v128_t a, v128_t b) {
   // Cross product: a x b = (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
-  v128_t a_yzx = wasm_f32x4_shuffle(a, a, 1, 2, 0, 3);
-  v128_t b_zxy = wasm_f32x4_shuffle(b, b, 2, 0, 1, 3);
-  v128_t a_zxy = wasm_f32x4_shuffle(a, a, 2, 0, 1, 3);
-  v128_t b_yzx = wasm_f32x4_shuffle(b, b, 1, 2, 0, 3);
+  v128_t a_yzx = wasm_i32x4_shuffle(a, a, 1, 2, 0, 3);
+  v128_t b_zxy = wasm_i32x4_shuffle(b, b, 2, 0, 1, 3);
+  v128_t a_zxy = wasm_i32x4_shuffle(a, a, 2, 0, 1, 3);
+  v128_t b_yzx = wasm_i32x4_shuffle(b, b, 1, 2, 0, 3);
 
   v128_t mul1 = wasm_f32x4_mul(a_yzx, b_zxy);
   v128_t mul2 = wasm_f32x4_mul(a_zxy, b_yzx);
@@ -374,7 +374,7 @@ static inline void wcn_mat4_set_row(WMATH_TYPE(Mat4) * mat, int row, v128_t vec)
 }
 
 static inline v128_t wcn_mat4_get_col(const WMATH_TYPE(Mat4) * mat, int col) {
-  return wasm_v128_const(mat->m[col], mat->m[col + 4], mat->m[col + 8], mat->m[col + 12]);
+  return wasm_f32x4_make(mat->m[col], mat->m[col + 4], mat->m[col + 8], mat->m[col + 12]);
 }
 
 #endif
@@ -466,7 +466,7 @@ static inline __m128 wcn_fma_neg_mul_add_ps(const __m128 a, const __m128 b, cons
 }
 #endif
 
-// Missing cross product functions for RISC-V and WASM
+// Missing cross product functions for RISC-V
 #if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
 static inline vfloat32m1_t wcn_cross_rvv(vfloat32m1_t a, vfloat32m1_t b) {
   // Cross product: a x b = (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
@@ -489,20 +489,6 @@ static inline vfloat32m1_t wcn_cross_rvv(vfloat32m1_t a, vfloat32m1_t b) {
   vfloat32m1_t mul1 = __riscv_vfmul_vv_f32m1(a_yzx, b_zxy, 4);
   vfloat32m1_t mul2 = __riscv_vfmul_vv_f32m1(a_zxy, b_yzx, 4);
   return __riscv_vfsub_vv_f32m1(mul1, mul2, 4);
-}
-#endif
-
-#if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-static inline v128_t wcn_cross_wasm(v128_t a, v128_t b) {
-  // Cross product: a x b = (a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x)
-  v128_t a_yzx = wasm_f32x4_shuffle(a, a, 1, 2, 0, 3);
-  v128_t b_zxy = wasm_f32x4_shuffle(b, b, 2, 0, 1, 3);
-  v128_t a_zxy = wasm_f32x4_shuffle(a, a, 2, 0, 1, 3);
-  v128_t b_yzx = wasm_f32x4_shuffle(b, b, 1, 2, 0, 3);
-
-  v128_t mul1 = wasm_f32x4_mul(a_yzx, b_zxy);
-  v128_t mul2 = wasm_f32x4_mul(a_zxy, b_yzx);
-  return wasm_f32x4_sub(mul1, mul2);
 }
 #endif
 
@@ -626,6 +612,18 @@ static inline __m128 wcn_fast_inv_sqrt_platform(__m128 x) {
   return wcn_fast_inv_sqrt_lsx(x);
 }
 #endif
+
+// Scalar fast inverse square root function
+static inline float wcn_fast_inv_sqrt(const float x) {
+  // Fast inverse square root using Quake's famous algorithm
+  float x_half = 0.5f * x;
+  int i = *(int*)&x;          // Evil bit-level hacking
+  i = 0x5f3759df - (i >> 1);  // Magic number and bit shift
+  float y = *(float*)&i;
+  // One Newton-Raphson iteration to improve precision
+  y = y * (1.5f - x_half * y * y);
+  return y;
+}
 
 extern const int WCN_MATH_ROTATION_SIGN_TABLE[WCN_MATH_ROTATION_ORDER_COUNT][4];
 

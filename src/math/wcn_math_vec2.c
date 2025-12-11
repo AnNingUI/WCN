@@ -291,8 +291,8 @@ float WMATH_DOT(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   v128_t mul = wasm_f32x4_mul(va, vb);
 
   // Extract and add each component to get dot product
-  v128_t v = wasm_v32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(mul, mul, 2, 3, 2, 3);
+  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
+  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
   v128_t sum = wasm_f32x4_add(v, v2);
   return wasm_f32x4_extract_lane(sum, 0);
 
@@ -559,13 +559,13 @@ float WMATH_ANGLE(Vec2)(const WMATH_TYPE(Vec2) a, const WMATH_TYPE(Vec2) b) {
   v128_t va_sq = wasm_f32x4_mul(va, va);
   v128_t vb_sq = wasm_f32x4_mul(vb, vb);
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(va_sq, va_sq, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(va_sq, va_sq, 2, 3, 2, 3);
+  v128_t v = wasm_i32x4_shuffle(va_sq, va_sq, 0, 1, 0, 1);
+  v128_t v2 = wasm_i32x4_shuffle(va_sq, va_sq, 2, 3, 2, 3);
   v128_t sum = wasm_f32x4_add(v, v2);
   float mag_1_sq = wasm_f32x4_extract_lane(sum, 0);
 
-  v = wasm_v32x4_shuffle(vb_sq, vb_sq, 0, 1, 0, 1);
-  v2 = wasm_v32x4_shuffle(vb_sq, vb_sq, 2, 3, 2, 3);
+  v = wasm_i32x4_shuffle(vb_sq, vb_sq, 0, 1, 0, 1);
+  v2 = wasm_i32x4_shuffle(vb_sq, vb_sq, 2, 3, 2, 3);
   sum = wasm_f32x4_add(v, v2);
   float mag_2_sq = wasm_f32x4_extract_lane(sum, 0);
 
@@ -1046,18 +1046,15 @@ WMATH_DIV_SCALAR(Vec2)(WMATH_TYPE(Vec2) a, float scalar) {
   float epsilon = wcn_math_get_epsilon();
   v128_t vec_epsilon = wasm_f32x4_splat(epsilon);
 
-  // Create absolute value of scalar
-  v128_t sign_mask = wasm_i32x4_const(0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
-  v128_t int_scalar = wasm_v128_bitcast_i32x4(vec_scalar);
-  v128_t abs_int = wasm_v128_and(int_scalar, sign_mask);
-  v128_t vec_abs_scalar = wasm_v128_bitcast_f32x4(abs_int);
+  // Create absolute value of scalar using the proper WASM SIMD function
+  v128_t vec_abs_scalar = wasm_f32x4_abs(vec_scalar);
 
   // Compare with epsilon
   v128_t cmp_mask = wasm_f32x4_lt(vec_abs_scalar, vec_epsilon);
 
   // Perform division
   v128_t vec_div = wasm_f32x4_div(vec_a, vec_scalar);
-  v128_t vec_zero = wasm_f32x4_const(0.0f, 0.0f, 0.0f, 0.0f);
+  v128_t vec_zero = wasm_f32x4_make(0.0f, 0.0f, 0.0f, 0.0f);
 
   // Select result based on comparison
   v128_t vec_res = wasm_v128_bitselect(vec_div, vec_zero, cmp_mask); // If mask is 1, select from vec_zero; if mask is 0, select from vec_div
@@ -1233,9 +1230,9 @@ float WMATH_LENGTH(Vec2)(WMATH_TYPE(Vec2) v) {
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
+  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
+  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
+  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
   float len_sq = wasm_f32x4_extract_lane(sum, 0);
   return sqrtf(len_sq);
 
@@ -1281,9 +1278,9 @@ float WMATH_LENGTH_SQ(Vec2)(WMATH_TYPE(Vec2) v) {
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
+  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
+  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
+  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
   return wasm_f32x4_extract_lane(sum, 0);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
@@ -1334,8 +1331,8 @@ float WMATH_DISTANCE(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   v128_t mul = wasm_f32x4_mul(diff, diff);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(mul, mul, 2, 3, 2, 3);
+  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
+  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
   v128_t sum = wasm_f32x4_add(v, v2);
   return sqrtf(wasm_f32x4_extract_lane(sum, 0));
 
@@ -1387,8 +1384,8 @@ float WMATH_DISTANCE_SQ(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   v128_t mul = wasm_f32x4_mul(diff, diff);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(mul, mul, 2, 3, 2, 3);
+  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
+  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
   v128_t sum = wasm_f32x4_add(v, v2);
   return wasm_f32x4_extract_lane(sum, 0);
 
@@ -1535,9 +1532,9 @@ WMATH_NORMALIZE(Vec2)(WMATH_TYPE(Vec2) v) {
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
+  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
+  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
+  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
   float len_sq = wasm_f32x4_extract_lane(sum, 0);
 
   if (len_sq > epsilon * epsilon) {

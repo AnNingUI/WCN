@@ -678,21 +678,21 @@ WMATH_INVERSE(Mat3)(const WMATH_TYPE(Mat3) a) {
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
     // ========================= WebAssembly SIMD 实现 =========================
 
-    v128_t inv_r0 = wasm_f32x4_const(
+    v128_t inv_r0 = wasm_f32x4_make(
         0.0f,
         (m01*m12 - m02*m11) * inv_det,
         (m02*m21 - m01*m22) * inv_det,
         (m11*m22 - m12*m21) * inv_det
     );
 
-    v128_t inv_r1 = wasm_f32x4_const(
+    v128_t inv_r1 = wasm_f32x4_make(
         0.0f,
         (m02*m10 - m00*m12) * inv_det,
         (m00*m22 - m02*m20) * inv_det,
         (m12*m20 - m10*m22) * inv_det
     );
 
-    v128_t inv_r2 = wasm_f32x4_const(
+    v128_t inv_r2 = wasm_f32x4_make(
         0.0f,
         (m00*m11 - m01*m10) * inv_det,
         (m01*m20 - m00*m21) * inv_det,
@@ -968,71 +968,71 @@ WMATH_MULTIPLY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
 
   // Calculate the first row of a result
   // [0] = a[0]*b[0] + a[1]*b[4] + a[2]*b[8]
-  v128_t row = wasm_f32x4_const(0.0f, a.m[2], a.m[1], a.m[0]);
-  v128_t col = wasm_f32x4_const(0.0f, b.m[8], b.m[4], b.m[0]);
+  v128_t row = wasm_f32x4_make(0.0f, a.m[2], a.m[1], a.m[0]);
+  v128_t col = wasm_f32x4_make(0.0f, b.m[8], b.m[4], b.m[0]);
   v128_t prod = wasm_f32x4_mul(row, col);
-  v128_t sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  v128_t sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[0] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[1] = a[0]*b[1] + a[1]*b[5] + a[2]*b[9]
-  col = wasm_f32x4_const(0.0f, b.m[9], b.m[5], b.m[1]);
+  col = wasm_f32x4_make(0.0f, b.m[9], b.m[5], b.m[1]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[1] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[2] = a[0]*b[2] + a[1]*b[6] + a[2]*b[10]
-  col = wasm_f32x4_const(0.0f, b.m[10], b.m[6], b.m[2]);
+  col = wasm_f32x4_make(0.0f, b.m[10], b.m[6], b.m[2]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[2] = wasm_f32x4_extract_lane(sum, 0);
 
   // Calculate second row of result
   // result[4] = a[4]*b[0] + a[5]*b[4] + a[6]*b[8]
-  row = wasm_f32x4_const(0.0f, a.m[6], a.m[5], a.m[4]);
-  col = wasm_f32x4_const(0.0f, b.m[8], b.m[4], b.m[0]);
+  row = wasm_f32x4_make(0.0f, a.m[6], a.m[5], a.m[4]);
+  col = wasm_f32x4_make(0.0f, b.m[8], b.m[4], b.m[0]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[4] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[5] = a[4]*b[1] + a[5]*b[5] + a[6]*b[9]
-  col = wasm_f32x4_const(0.0f, b.m[9], b.m[5], b.m[1]);
+  col = wasm_f32x4_make(0.0f, b.m[9], b.m[5], b.m[1]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[5] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[6] = a[4]*b[2] + a[5]*b[6] + a[6]*b[10]
-  col = wasm_f32x4_const(0.0f, b.m[10], b.m[6], b.m[2]);
+  col = wasm_f32x4_make(0.0f, b.m[10], b.m[6], b.m[2]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[6] = wasm_f32x4_extract_lane(sum, 0);
 
   // Calculate the third row of a result
   // [8] = a[8]*b[0] + a[9]*b[4] + a[10]*b[8]
-  row = wasm_f32x4_const(0.0f, a.m[10], a.m[9], a.m[8]);
-  col = wasm_f32x4_const(0.0f, b.m[8], b.m[4], b.m[0]);
+  row = wasm_f32x4_make(0.0f, a.m[10], a.m[9], a.m[8]);
+  col = wasm_f32x4_make(0.0f, b.m[8], b.m[4], b.m[0]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[8] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[9] = a[8]*b[1] + a[9]*b[5] + a[10]*b[9]
-  col = wasm_f32x4_const(0.0f, b.m[9], b.m[5], b.m[1]);
+  col = wasm_f32x4_make(0.0f, b.m[9], b.m[5], b.m[1]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[9] = wasm_f32x4_extract_lane(sum, 0);
 
   // result[10] = a[8]*b[2] + a[9]*b[6] + a[10]*b[10]
-  col = wasm_f32x4_const(0.0f, b.m[10], b.m[6], b.m[2]);
+  col = wasm_f32x4_make(0.0f, b.m[10], b.m[6], b.m[2]);
   prod = wasm_f32x4_mul(row, col);
-  sum = wasm_f32x4_add(prod, wasm_v32x4_shuffle(prod, prod, 2, 3, 0, 1));
-  sum = wasm_f32x4_add(sum, wasm_v32x4_shuffle(sum, sum, 1, 0, 0, 0));
+  sum = wasm_f32x4_add(prod, wasm_i32x4_shuffle(prod, prod, 2, 3, 0, 1));
+  sum = wasm_f32x4_add(sum, wasm_i32x4_shuffle(sum, sum, 1, 0, 0, 0));
   result.m[10] = wasm_f32x4_extract_lane(sum, 0);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR

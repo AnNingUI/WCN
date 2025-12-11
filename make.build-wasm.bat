@@ -58,7 +58,7 @@ REM Configure with Emscripten
 call emcmake cmake .. ^
     -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
     -DWCN_BUILD_WASM=ON ^
-    -DWCN_ENABLE_SIMD=OFF ^
+    -DWCN_ENABLE_SIMD=ON ^
     -G "MinGW Makefiles"
 
 if %ERRORLEVEL% neq 0 (
@@ -84,7 +84,7 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Output files:
-echo   JavaScript: %BUILD_DIR%\wcn.js
+echo   JavaScript : %BUILD_DIR%\wcn.js
 echo   WebAssembly: %BUILD_DIR%\wcn.wasm
 echo.
 

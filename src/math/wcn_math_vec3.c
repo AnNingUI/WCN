@@ -250,8 +250,8 @@ float WMATH_DOT(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   v128_t vec_mul = wasm_f32x4_mul(vec_a, vec_b);
 
   // Extract and add each component to get sum of products
-  v128_t v = wasm_v32x4_shuffle(vec_mul, vec_mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(vec_mul, vec_mul, 2, 3, 2, 3);
+  v128_t v = wasm_i32x4_shuffle(vec_mul, vec_mul, 0, 1, 0, 1);
+  v128_t v2 = wasm_i32x4_shuffle(vec_mul, vec_mul, 2, 3, 2, 3);
   v128_t sum = wasm_f32x4_add(v, v2);
   return wasm_f32x4_extract_lane(sum, 0);
 
@@ -317,12 +317,12 @@ WMATH_CROSS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   v128_t vec_b = wasm_v128_load(b.v);
 
   // Create shuffled vectors: (a2, a3, a1) and (b3, b1, b2)
-  v128_t a2_a3_a1_ = wasm_v32x4_shuffle(vec_a, vec_a, 1, 2, 0, 3);
-  v128_t b3_b1_b2_ = wasm_v32x4_shuffle(vec_b, vec_b, 2, 0, 1, 3);
+  v128_t a2_a3_a1_ = wasm_i32x4_shuffle(vec_a, vec_a, 1, 2, 0, 3);
+  v128_t b3_b1_b2_ = wasm_i32x4_shuffle(vec_b, vec_b, 2, 0, 1, 3);
 
   // Create shuffled vectors: (a3, a1, a2) and (b2, b3, b1)
-  v128_t a3_a1_a2_ = wasm_v32x4_shuffle(vec_a, vec_a, 2, 0, 1, 3);
-  v128_t b2_b3_b1_ = wasm_v32x4_shuffle(vec_b, vec_b, 1, 2, 0, 3);
+  v128_t a3_a1_a2_ = wasm_i32x4_shuffle(vec_a, vec_a, 2, 0, 1, 3);
+  v128_t b2_b3_b1_ = wasm_i32x4_shuffle(vec_b, vec_b, 1, 2, 0, 3);
 
   // Calculate cross product: (a2*b3 - a3*b2, a3*b1 - a1*b3, a1*b2 - a2*b1)
   v128_t prod1 = wasm_f32x4_mul(a2_a3_a1_, b3_b1_b2_);
@@ -429,9 +429,9 @@ WMATH_NORMALIZE(Vec3)(WMATH_TYPE(Vec3) v) {
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
 
   // Extract and add each component to get sum of squares
-  v128_t v = wasm_v32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v2 = wasm_v32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
+  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
+  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
+  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
   float len_sq = wasm_f32x4_extract_lane(sum, 0);
 
   if (len_sq > epsilon * epsilon) {
@@ -1271,9 +1271,9 @@ float WMATH_DISTANCE(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   v128_t mul = wasm_f32x4_mul(diff, diff);
 
   // Horizontal add to get sum
-  v128_t shuf = wasm_v32x4_shuffle(mul, mul, 2, 3, 0, 1);
+  v128_t shuf = wasm_i32x4_shuffle(mul, mul, 2, 3, 0, 1);
   v128_t sums = wasm_f32x4_add(mul, shuf);
-  shuf = wasm_v32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   float sum = wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
   return sqrtf(sum);
 
@@ -1330,9 +1330,9 @@ float WMATH_DISTANCE_SQ(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   v128_t mul = wasm_f32x4_mul(diff, diff);
 
   // Horizontal add to get sum
-  v128_t shuf = wasm_v32x4_shuffle(mul, mul, 2, 3, 0, 1);
+  v128_t shuf = wasm_i32x4_shuffle(mul, mul, 2, 3, 0, 1);
   v128_t sums = wasm_f32x4_add(mul, shuf);
-  shuf = wasm_v32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   return wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR

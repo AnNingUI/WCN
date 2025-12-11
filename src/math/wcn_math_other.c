@@ -1,5 +1,5 @@
 #include "wcn_math_internal.h"
-#include "WCN/WCN_SIMD_MACROS.h"
+#include "WCN/WCN_PLATFORM_MACROS.h"
 // FROM
 
 WMATH_TYPE(Mat3)
@@ -173,9 +173,9 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
   v128_t zero  = wasm_f32x4_splat(0.0f);
 
   // 2. Broadcast (Shuffle inputs)
-  v128_t q_x = wasm_v32x4_shuffle(q_vec, q_vec, 0, 0, 0, 0);
-  v128_t q_y = wasm_v32x4_shuffle(q_vec, q_vec, 1, 1, 1, 1);
-  v128_t q_z = wasm_v32x4_shuffle(q_vec, q_vec, 2, 2, 2, 2);
+  v128_t q_x = wasm_i32x4_shuffle(q_vec, q_vec, 0, 0, 0, 0);
+  v128_t q_y = wasm_i32x4_shuffle(q_vec, q_vec, 1, 1, 1, 1);
+  v128_t q_z = wasm_i32x4_shuffle(q_vec, q_vec, 2, 2, 2, 2);
 
   // 3. Products
   v128_t qx_q2 = wasm_f32x4_mul(q_x, q2); // [2xx, 2xy, 2xz, 2xw]
@@ -185,26 +185,26 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
   // 4. Construct Terms
   // Extracts here are VIRTUAL (shuffles), not CPU extracts
   // Col 0
-  v128_t yy = wasm_v32x4_shuffle(qy_q2, qy_q2, 1, 1, 1, 1);
-  v128_t zz = wasm_v32x4_shuffle(qz_q2, qz_q2, 2, 2, 2, 2);
+  v128_t yy = wasm_i32x4_shuffle(qy_q2, qy_q2, 1, 1, 1, 1);
+  v128_t zz = wasm_i32x4_shuffle(qz_q2, qz_q2, 2, 2, 2, 2);
   v128_t diag0 = wasm_f32x4_sub(one, wasm_f32x4_add(yy, zz));
 
-  v128_t xy = wasm_v32x4_shuffle(qx_q2, qx_q2, 1, 1, 1, 1);
-  v128_t wz = wasm_v32x4_shuffle(qz_q2, qz_q2, 3, 3, 3, 3);
+  v128_t xy = wasm_i32x4_shuffle(qx_q2, qx_q2, 1, 1, 1, 1);
+  v128_t wz = wasm_i32x4_shuffle(qz_q2, qz_q2, 3, 3, 3, 3);
   v128_t m10 = wasm_f32x4_add(xy, wz);
 
-  v128_t xz = wasm_v32x4_shuffle(qx_q2, qx_q2, 2, 2, 2, 2);
-  v128_t wy = wasm_v32x4_shuffle(qy_q2, qy_q2, 3, 3, 3, 3);
+  v128_t xz = wasm_i32x4_shuffle(qx_q2, qx_q2, 2, 2, 2, 2);
+  v128_t wy = wasm_i32x4_shuffle(qy_q2, qy_q2, 3, 3, 3, 3);
   v128_t m20 = wasm_f32x4_sub(xz, wy);
 
   // Col 1
   v128_t m01 = wasm_f32x4_sub(xy, wz);
   
-  v128_t xx = wasm_v32x4_shuffle(qx_q2, qx_q2, 0, 0, 0, 0);
+  v128_t xx = wasm_i32x4_shuffle(qx_q2, qx_q2, 0, 0, 0, 0);
   v128_t diag1 = wasm_f32x4_sub(one, wasm_f32x4_add(xx, zz));
 
-  v128_t yz = wasm_v32x4_shuffle(qy_q2, qy_q2, 2, 2, 2, 2);
-  v128_t wx = wasm_v32x4_shuffle(qx_q2, qx_q2, 3, 3, 3, 3);
+  v128_t yz = wasm_i32x4_shuffle(qy_q2, qy_q2, 2, 2, 2, 2);
+  v128_t wx = wasm_i32x4_shuffle(qx_q2, qx_q2, 3, 3, 3, 3);
   v128_t m21 = wasm_f32x4_add(yz, wx);
 
   // Col 2
@@ -222,21 +222,21 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
   
   // Create Col0: 0 from diag0, 4 from m10, 0 from m20, 4 from zero (re-ordered via nested shuffles)
   // Or simpler:
-  v128_t col0_lo = wasm_v32x4_shuffle(diag0, m10, 0, 4, 0, 4); // [d0, m10, d0, m10]
-  v128_t col0_hi = wasm_v32x4_shuffle(m20, zero, 0, 4, 0, 4);  // [m20, 0, m20, 0]
-  v128_t col0 = wasm_v32x4_shuffle(col0_lo, col0_hi, 0, 1, 4, 5);
+  v128_t col0_lo = wasm_i32x4_shuffle(diag0, m10, 0, 4, 0, 4); // [d0, m10, d0, m10]
+  v128_t col0_hi = wasm_i32x4_shuffle(m20, zero, 0, 4, 0, 4);  // [m20, 0, m20, 0]
+  v128_t col0 = wasm_i32x4_shuffle(col0_lo, col0_hi, 0, 1, 4, 5);
   wasm_v128_store(&newDst.m[0], col0);
 
   // Col 1
-  v128_t col1_lo = wasm_v32x4_shuffle(m01, diag1, 0, 4, 0, 4);
-  v128_t col1_hi = wasm_v32x4_shuffle(m21, zero, 0, 4, 0, 4);
-  v128_t col1 = wasm_v32x4_shuffle(col1_lo, col1_hi, 0, 1, 4, 5);
+  v128_t col1_lo = wasm_i32x4_shuffle(m01, diag1, 0, 4, 0, 4);
+  v128_t col1_hi = wasm_i32x4_shuffle(m21, zero, 0, 4, 0, 4);
+  v128_t col1 = wasm_i32x4_shuffle(col1_lo, col1_hi, 0, 1, 4, 5);
   wasm_v128_store(&newDst.m[4], col1);
 
   // Col 2
-  v128_t col2_lo = wasm_v32x4_shuffle(m02, m12, 0, 4, 0, 4);
-  v128_t col2_hi = wasm_v32x4_shuffle(diag2, zero, 0, 4, 0, 4);
-  v128_t col2 = wasm_v32x4_shuffle(col2_lo, col2_hi, 0, 1, 4, 5);
+  v128_t col2_lo = wasm_i32x4_shuffle(m02, m12, 0, 4, 0, 4);
+  v128_t col2_hi = wasm_i32x4_shuffle(diag2, zero, 0, 4, 0, 4);
+  v128_t col2 = wasm_i32x4_shuffle(col2_lo, col2_hi, 0, 1, 4, 5);
   wasm_v128_store(&newDst.m[8], col2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
@@ -649,54 +649,54 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   v128_t one   = wasm_f32x4_splat(1.0f);
   v128_t zero  = wasm_f32x4_splat(0.0f);
 
-  v128_t q_x = wasm_v32x4_shuffle(q_vec, q_vec, 0, 0, 0, 0);
-  v128_t q_y = wasm_v32x4_shuffle(q_vec, q_vec, 1, 1, 1, 1);
-  v128_t q_z = wasm_v32x4_shuffle(q_vec, q_vec, 2, 2, 2, 2);
+  v128_t q_x = wasm_i32x4_shuffle(q_vec, q_vec, 0, 0, 0, 0);
+  v128_t q_y = wasm_i32x4_shuffle(q_vec, q_vec, 1, 1, 1, 1);
+  v128_t q_z = wasm_i32x4_shuffle(q_vec, q_vec, 2, 2, 2, 2);
 
   v128_t qx_q2 = wasm_f32x4_mul(q_x, q2);
   v128_t qy_q2 = wasm_f32x4_mul(q_y, q2);
   v128_t qz_q2 = wasm_f32x4_mul(q_z, q2);
 
   // Component Shuffles
-  v128_t yy = wasm_v32x4_shuffle(qy_q2, qy_q2, 1, 1, 1, 1);
-  v128_t zz = wasm_v32x4_shuffle(qz_q2, qz_q2, 2, 2, 2, 2);
-  v128_t xx = wasm_v32x4_shuffle(qx_q2, qx_q2, 0, 0, 0, 0);
+  v128_t yy = wasm_i32x4_shuffle(qy_q2, qy_q2, 1, 1, 1, 1);
+  v128_t zz = wasm_i32x4_shuffle(qz_q2, qz_q2, 2, 2, 2, 2);
+  v128_t xx = wasm_i32x4_shuffle(qx_q2, qx_q2, 0, 0, 0, 0);
 
-  v128_t xy = wasm_v32x4_shuffle(qx_q2, qx_q2, 1, 1, 1, 1);
-  v128_t wz = wasm_v32x4_shuffle(qz_q2, qz_q2, 3, 3, 3, 3);
+  v128_t xy = wasm_i32x4_shuffle(qx_q2, qx_q2, 1, 1, 1, 1);
+  v128_t wz = wasm_i32x4_shuffle(qz_q2, qz_q2, 3, 3, 3, 3);
   
-  v128_t xz = wasm_v32x4_shuffle(qx_q2, qx_q2, 2, 2, 2, 2);
-  v128_t wy = wasm_v32x4_shuffle(qy_q2, qy_q2, 3, 3, 3, 3);
+  v128_t xz = wasm_i32x4_shuffle(qx_q2, qx_q2, 2, 2, 2, 2);
+  v128_t wy = wasm_i32x4_shuffle(qy_q2, qy_q2, 3, 3, 3, 3);
 
-  v128_t yz = wasm_v32x4_shuffle(qy_q2, qy_q2, 2, 2, 2, 2);
-  v128_t wx = wasm_v32x4_shuffle(qx_q2, qx_q2, 3, 3, 3, 3);
+  v128_t yz = wasm_i32x4_shuffle(qy_q2, qy_q2, 2, 2, 2, 2);
+  v128_t wx = wasm_i32x4_shuffle(qx_q2, qx_q2, 3, 3, 3, 3);
 
   // Row 0
   v128_t r0_diag = wasm_f32x4_sub(one, wasm_f32x4_add(yy, zz));
   v128_t r0_x    = wasm_f32x4_add(xy, wz);
   v128_t r0_y    = wasm_f32x4_sub(xz, wy);
   // Construct [diag, x, y, 0]
-  v128_t r0_lo = wasm_v32x4_shuffle(r0_diag, r0_x, 0, 4, 0, 4); 
-  v128_t r0_hi = wasm_v32x4_shuffle(r0_y, zero, 0, 4, 0, 4);
-  v128_t row0  = wasm_v32x4_shuffle(r0_lo, r0_hi, 0, 1, 4, 5);
+  v128_t r0_lo = wasm_i32x4_shuffle(r0_diag, r0_x, 0, 4, 0, 4); 
+  v128_t r0_hi = wasm_i32x4_shuffle(r0_y, zero, 0, 4, 0, 4);
+  v128_t row0  = wasm_i32x4_shuffle(r0_lo, r0_hi, 0, 1, 4, 5);
   wasm_v128_store(&m.m[0], row0);
 
   // Row 1
   v128_t r1_x    = wasm_f32x4_sub(xy, wz);
   v128_t r1_diag = wasm_f32x4_sub(one, wasm_f32x4_add(xx, zz));
   v128_t r1_y    = wasm_f32x4_add(yz, wx);
-  v128_t r1_lo = wasm_v32x4_shuffle(r1_x, r1_diag, 0, 4, 0, 4);
-  v128_t r1_hi = wasm_v32x4_shuffle(r1_y, zero, 0, 4, 0, 4);
-  v128_t row1  = wasm_v32x4_shuffle(r1_lo, r1_hi, 0, 1, 4, 5);
+  v128_t r1_lo = wasm_i32x4_shuffle(r1_x, r1_diag, 0, 4, 0, 4);
+  v128_t r1_hi = wasm_i32x4_shuffle(r1_y, zero, 0, 4, 0, 4);
+  v128_t row1  = wasm_i32x4_shuffle(r1_lo, r1_hi, 0, 1, 4, 5);
   wasm_v128_store(&m.m[4], row1);
 
   // Row 2
   v128_t r2_x    = wasm_f32x4_add(xz, wy);
   v128_t r2_y    = wasm_f32x4_sub(yz, wx);
   v128_t r2_diag = wasm_f32x4_sub(one, wasm_f32x4_add(xx, yy));
-  v128_t r2_lo = wasm_v32x4_shuffle(r2_x, r2_y, 0, 4, 0, 4);
-  v128_t r2_hi = wasm_v32x4_shuffle(r2_diag, zero, 0, 4, 0, 4);
-  v128_t row2  = wasm_v32x4_shuffle(r2_lo, r2_hi, 0, 1, 4, 5);
+  v128_t r2_lo = wasm_i32x4_shuffle(r2_x, r2_y, 0, 4, 0, 4);
+  v128_t r2_hi = wasm_i32x4_shuffle(r2_diag, zero, 0, 4, 0, 4);
+  v128_t row2  = wasm_i32x4_shuffle(r2_lo, r2_hi, 0, 1, 4, 5);
   wasm_v128_store(&m.m[8], row2);
 
   // Row 3
@@ -1037,8 +1037,8 @@ WMATH_CALL(Vec2, transform_mat4)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat4) m) {
   v128_t vec_v = wasm_v128_load64_zero(v.v); // Load 2 floats, zero rest
 
   // 2. Broadcast
-  v128_t x_splat = wasm_v32x4_shuffle(vec_v, vec_v, 0, 0, 0, 0);
-  v128_t y_splat = wasm_v32x4_shuffle(vec_v, vec_v, 1, 1, 1, 1);
+  v128_t x_splat = wasm_i32x4_shuffle(vec_v, vec_v, 0, 0, 0, 0);
+  v128_t y_splat = wasm_i32x4_shuffle(vec_v, vec_v, 1, 1, 1, 1);
 
   // 3. Load Cols
   v128_t col0 = wasm_v128_load(&m.m[0]);
@@ -1431,9 +1431,9 @@ WMATH_CALL(Vec3, transform_mat4_upper3x3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat4) m
   v128_t vec_v = wasm_f32x4_replace_lane(v_xy, 2, v.v[2]); // x, y, z, 0
 
   // 2. Broadcast
-  v128_t x_splat = wasm_v32x4_shuffle(vec_v, vec_v, 0, 0, 0, 0);
-  v128_t y_splat = wasm_v32x4_shuffle(vec_v, vec_v, 1, 1, 1, 1);
-  v128_t z_splat = wasm_v32x4_shuffle(vec_v, vec_v, 2, 2, 2, 2);
+  v128_t x_splat = wasm_i32x4_shuffle(vec_v, vec_v, 0, 0, 0, 0);
+  v128_t y_splat = wasm_i32x4_shuffle(vec_v, vec_v, 1, 1, 1, 1);
+  v128_t z_splat = wasm_i32x4_shuffle(vec_v, vec_v, 2, 2, 2, 2);
 
   // 3. Load Columns
   v128_t col0 = wasm_v128_load(&m.m[0]);
@@ -1710,16 +1710,16 @@ WMATH_CALL(Vec3, transform_quat)
   v128_t v_vec = wcn_load_vec3_partial(v.v); // [x, y, z, 0]
   v128_t q_vec = wasm_v128_load(q.v);        // [qx, qy, qz, qw]
 
-  v128_t q_yzx = wasm_f32x4_shuffle(q_vec, q_vec, 3, 0, 2, 1);
-  v128_t q_zxy = wasm_f32x4_shuffle(q_vec, q_vec, 3, 1, 0, 2);
+  v128_t q_yzx = wasm_i32x4_shuffle(q_vec, q_vec, 3, 0, 2, 1);
+  v128_t q_zxy = wasm_i32x4_shuffle(q_vec, q_vec, 3, 1, 0, 2);
 
-  v128_t v_yzx = wasm_f32x4_shuffle(v_vec, v_vec, 3, 0, 2, 1);
-  v128_t v_zxy = wasm_f32x4_shuffle(v_vec, v_vec, 3, 1, 0, 2);
+  v128_t v_yzx = wasm_i32x4_shuffle(v_vec, v_vec, 3, 0, 2, 1);
+  v128_t v_zxy = wasm_i32x4_shuffle(v_vec, v_vec, 3, 1, 0, 2);
 
   v128_t uv = wasm_f32x4_sub(wasm_f32x4_mul(q_yzx, v_zxy), wasm_f32x4_mul(q_zxy, v_yzx));
 
-  v128_t uv_yzx = wasm_f32x4_shuffle(uv, uv, 3, 0, 2, 1);
-  v128_t uv_zxy = wasm_f32x4_shuffle(uv, uv, 3, 1, 0, 2);
+  v128_t uv_yzx = wasm_i32x4_shuffle(uv, uv, 3, 0, 2, 1);
+  v128_t uv_zxy = wasm_i32x4_shuffle(uv, uv, 3, 1, 0, 2);
   v128_t uuv = wasm_f32x4_sub(wasm_f32x4_mul(q_yzx, uv_zxy), wasm_f32x4_mul(q_zxy, uv_yzx));
 
   // 这里用 q_w（而不是 2*q_w）
@@ -2215,9 +2215,9 @@ WMATH_CALL(Vec3, get_scale)(WMATH_TYPE(Mat4) m) {
   v128_t sq_z = wasm_f32x4_mul(col_z, col_z);
 
   // Horizontally add to get a sum of squares for each column
-  float sum_x = wcn_hadd_wasm(sq_x);
-  float sum_y = wcn_hadd_wasm(sq_y);
-  float sum_z = wcn_hadd_wasm(sq_z);
+  float sum_x = wcn_hadd_f32(sq_x);
+  float sum_y = wcn_hadd_f32(sq_y);
+  float sum_z = wcn_hadd_f32(sq_z);
 
   // Take square root
   result.v[0] = sqrtf(sum_x);
@@ -2401,8 +2401,8 @@ WMATH_ROTATE_X(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
 
   // --- WASM SIMD implementation ---
-  v128_t va = wcn_load_vec3_partial_wasm(a.v); // [px, py, pz, 0]
-  v128_t vb = wcn_load_vec3_partial_wasm(b.v);
+  v128_t va = wcn_load_vec3_partial(a.v); // [px, py, pz, 0]
+  v128_t vb = wcn_load_vec3_partial(b.v);
   v128_t vp = wasm_f32x4_sub(va, vb);
 
   // Extract lanes and broadcast
@@ -2431,13 +2431,13 @@ WMATH_ROTATE_X(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
   float y_s  = wasm_f32x4_extract_lane(v_y, 0);
   float z_s  = wasm_f32x4_extract_lane(v_z, 0);
 
-  v128_t vres = wasm_v128_const(
+  v128_t vres = wasm_i32x4_make(
     *(int*)&rx_s, *(int*)&y_s, *(int*)&z_s, 0
   );
 
   // add center and store
   vres = wasm_f32x4_add(vres, vb);
-  wcn_store_vec3_partial_wasm(vec3.v, vres);
+  wcn_store_vec3_partial(vec3.v, vres);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
 
@@ -2600,8 +2600,8 @@ WMATH_ROTATE_Y(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
 
   // --- WASM SIMD implementation ---
-  v128_t va = wcn_load_vec3_partial_wasm(a.v); // [px, py, pz, 0]
-  v128_t vb = wcn_load_vec3_partial_wasm(b.v);
+  v128_t va = wcn_load_vec3_partial(a.v); // [px, py, pz, 0]
+  v128_t vb = wcn_load_vec3_partial(b.v);
   v128_t vp = wasm_f32x4_sub(va, vb);
 
   // Extract lanes and broadcast
@@ -2633,13 +2633,13 @@ WMATH_ROTATE_Y(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
   float x_s = wasm_f32x4_extract_lane(v_x, 0);
   float z_s = wasm_f32x4_extract_lane(v_z, 0);
 
-  v128_t vres = wasm_v128_const(
+  v128_t vres = wasm_i32x4_make(
     *(int*)&x_s, *(int*)&py, *(int*)&z_s, 0
   );
 
   // add center and store
   vres = wasm_f32x4_add(vres, vb);
-  wcn_store_vec3_partial_wasm(vec3.v, vres);
+  wcn_store_vec3_partial(vec3.v, vres);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
 
@@ -2808,8 +2808,8 @@ WMATH_ROTATE_Z(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
 
   // --- WASM SIMD implementation ---
-  v128_t va = wcn_load_vec3_partial_wasm(a.v); // [px, py, pz, 0]
-  v128_t vb = wcn_load_vec3_partial_wasm(b.v);
+  v128_t va = wcn_load_vec3_partial(a.v); // [px, py, pz, 0]
+  v128_t vb = wcn_load_vec3_partial(b.v);
   v128_t vp = wasm_f32x4_sub(va, vb);
 
   // Extract lanes and broadcast
@@ -2843,13 +2843,13 @@ WMATH_ROTATE_Z(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b, float rad) {
   float x_s = wasm_f32x4_extract_lane(v_x, 0);
   float y_s = wasm_f32x4_extract_lane(v_y, 0);
 
-  v128_t vres = wasm_v128_const(
+  v128_t vres = wasm_i32x4_make(
     *(int*)&x_s, *(int*)&y_s, *(int*)&pz, 0
   );
 
   // add center and store
   vres = wasm_f32x4_add(vres, vb);
-  wcn_store_vec3_partial_wasm(vec3.v, vres);
+  wcn_store_vec3_partial(vec3.v, vres);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
 
@@ -3366,20 +3366,20 @@ WMATH_ROTATE_Y(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
   v128_t c_mul_q = wasm_f32x4_mul(q_vec, c_vec);
 
   // Create shuffled quaternion [q_z, q_w, q_x, q_y] for s multiplication
-  v128_t q_shuffled = wasm_f32x4_shuffle(q_vec, q_vec, 2, 3, 0, 1);
+  v128_t q_shuffled = wasm_i32x4_shuffle(q_vec, q_vec, 2, 3, 0, 1);
 
   // Calculate s * [q_z, q_w, q_x, q_y] = [s*q_z, s*q_w, s*q_x, s*q_y]
   v128_t s_mul_shuffled = wasm_f32x4_mul(q_shuffled, s_vec);
 
   // Apply signs based on rotation formula: [1, 1, -1, -1]
-  v128_t sign_mask = wasm_v128_const(0x00000000, 0x00000000, 0x80000000, 0x80000000);  // [0, 0, -0, -0]
+  v128_t sign_mask = wasm_i32x4_make(0x00000000, 0x00000000, 0x80000000, 0x80000000);  // [0, 0, -0, -0]
   v128_t s_signed = wasm_v128_xor(s_mul_shuffled, sign_mask);
 
   // Add c*q and signed s*[q_z, q_w, q_x, q_y] to get [c*q_x-s*q_z, c*q_y+s*q_w, c*q_z-s*q_x, c*q_w-s*q_y]
   v128_t result_vec = wasm_f32x4_add(c_mul_q, s_signed);
 
   // Reorder to get [c*q_x-s*q_z, c*q_y+s*q_w, c*q_z+s*q_x, c*q_w-s*q_y] (correct for y rotation)
-  result_vec = wasm_f32x4_shuffle(result_vec, result_vec, 0, 1, 2, 3);
+  result_vec = wasm_i32x4_shuffle(result_vec, result_vec, 0, 1, 2, 3);
 
   // Store result
   wasm_v128_store(result.v, result_vec);
@@ -3524,13 +3524,13 @@ WMATH_ROTATE_Z(Quat)(WMATH_TYPE(Quat) q, float angleInRadians) {
   v128_t c_mul_q = wasm_f32x4_mul(q_vec, c_vec);
 
   // Create shuffled quaternion [q_y, q_x, q_w, q_z] for s multiplication
-  v128_t q_shuffled = wasm_f32x4_shuffle(q_vec, q_vec, 1, 0, 3, 2);
+  v128_t q_shuffled = wasm_i32x4_shuffle(q_vec, q_vec, 1, 0, 3, 2);
 
   // Calculate s * [q_y, q_x, q_w, q_z] = [s*q_y, s*q_x, s*q_w, s*q_z]
   v128_t s_mul_shuffled = wasm_f32x4_mul(q_shuffled, s_vec);
 
   // Apply signs based on rotation formula: [1, -1, 1, -1]
-  v128_t sign_mask = wasm_v128_const(0x00000000, 0x80000000, 0x00000000, 0x80000000);  // [0, -0, 0, -0]
+  v128_t sign_mask = wasm_i32x4_make(0x00000000, 0x80000000, 0x00000000, 0x80000000);  // [0, -0, 0, -0]
   v128_t s_signed = wasm_v128_xor(s_mul_shuffled, sign_mask);
 
   // Add c*q and signed s*[q_y, q_x, q_w, q_z] to get [c*q_x+s*q_y, c*q_y-s*q_x, c*q_z+s*q_w, c*q_w-s*q_z]
@@ -4809,10 +4809,10 @@ WMATH_CALL(Mat4, axis_rotate)
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD Implementation
 
-  v128_t row0 = wcn_mat4_get_row_wasm(&m, 0);
-  v128_t row1 = wcn_mat4_get_row_wasm(&m, 1);
-  v128_t row2 = wcn_mat4_get_row_wasm(&m, 2);
-  v128_t row3 = wcn_mat4_get_row_wasm(&m, 3);
+  v128_t row0 = wcn_mat4_get_row(&m, 0);
+  v128_t row1 = wcn_mat4_get_row(&m, 1);
+  v128_t row2 = wcn_mat4_get_row(&m, 2);
+  v128_t row3 = wcn_mat4_get_row(&m, 3);
 
   // Row 0
   v128_t nr0 = wasm_f32x4_mul(row0, wasm_f32x4_splat(r00));
@@ -4829,10 +4829,10 @@ WMATH_CALL(Mat4, axis_rotate)
   nr2 = wasm_f32x4_add(nr2, wasm_f32x4_mul(row1, wasm_f32x4_splat(r21)));
   nr2 = wasm_f32x4_add(nr2, wasm_f32x4_mul(row2, wasm_f32x4_splat(r22)));
 
-  wcn_mat4_set_row_wasm(&newDst, 0, nr0);
-  wcn_mat4_set_row_wasm(&newDst, 1, nr1);
-  wcn_mat4_set_row_wasm(&newDst, 2, nr2);
-  wcn_mat4_set_row_wasm(&newDst, 3, row3);
+  wcn_mat4_set_row(&newDst, 0, nr0);
+  wcn_mat4_set_row(&newDst, 1, nr1);
+  wcn_mat4_set_row(&newDst, 2, nr2);
+  wcn_mat4_set_row(&newDst, 3, row3);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Implementation
@@ -5423,16 +5423,16 @@ WMATH_TRANSLATION(Mat4)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // ========================= WASM SIMD implementation =========================
-  v128_t row0 = wasm_v128_const(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
+  v128_t row0 = wasm_i32x4_make(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
   row0 = wasm_f32x4_replace_lane(row0, 0, 1.0f);
 
-  v128_t row1 = wasm_v128_const(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
+  v128_t row1 = wasm_i32x4_make(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
   row1 = wasm_f32x4_replace_lane(row1, 1, 1.0f);
 
-  v128_t row2 = wasm_v128_const(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
+  v128_t row2 = wasm_i32x4_make(0x00000000, 0x00000000, 0x00000000, 0x3F800000); // [0, 0, 0, 1.0]
   row2 = wasm_f32x4_replace_lane(row2, 2, 1.0f);
 
-  v128_t row3 = wasm_v128_const(0x3F800000, 0x00000000, 0x00000000, 0x3F800000); // [1.0, 0, 0, 1.0]
+  v128_t row3 = wasm_i32x4_make(0x3F800000, 0x00000000, 0x00000000, 0x3F800000); // [1.0, 0, 0, 1.0]
   row3 = wasm_f32x4_replace_lane(row3, 0, v.v[0]);
   row3 = wasm_f32x4_replace_lane(row3, 1, v.v[1]);
   row3 = wasm_f32x4_replace_lane(row3, 2, v.v[2]);
@@ -5755,16 +5755,16 @@ WMATH_CALL(Mat4, translate)
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation - optimized matrix translation
   v128_t vec_v = wcn_load_vec3_partial(v.v);
-  v128_t row0 = wcn_mat4_get_row_wasm(&m, 0);
-  v128_t row1 = wcn_mat4_get_row_wasm(&m, 1);
-  v128_t row2 = wcn_mat4_get_row_wasm(&m, 2);
-  v128_t row3 = wcn_mat4_get_row_wasm(&m, 3);
+  v128_t row0 = wcn_mat4_get_row(&m, 0);
+  v128_t row1 = wcn_mat4_get_row(&m, 1);
+  v128_t row2 = wcn_mat4_get_row(&m, 2);
+  v128_t row3 = wcn_mat4_get_row(&m, 3);
 
   // Copy the first three rows unchanged if matrices are different
   if (!WMATH_EQUALS(Mat4)(newDst, m)) {
-    wcn_mat4_set_row_wasm(&newDst, 0, row0);
-    wcn_mat4_set_row_wasm(&newDst, 1, row1);
-    wcn_mat4_set_row_wasm(&newDst, 2, row2);
+    wcn_mat4_set_row(&newDst, 0, row0);
+    wcn_mat4_set_row(&newDst, 1, row1);
+    wcn_mat4_set_row(&newDst, 2, row2);
   }
 
   // Calculate translation components using SIMD
@@ -5784,7 +5784,7 @@ WMATH_CALL(Mat4, translate)
   v128_t trans_sum = wasm_f32x4_add(sum_xyz, row3);
 
   // Store the translation row
-  wcn_mat4_set_row_wasm(&newDst, 3, trans_sum);
+  wcn_mat4_set_row(&newDst, 3, trans_sum);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector implementation - optimized matrix translation
@@ -5998,10 +5998,10 @@ WMATH_ROTATE_X(Mat4)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation - optimized X-axis rotation
-  v128_t row0 = wcn_mat4_get_row_wasm(&m, 0);
-  v128_t row1 = wcn_mat4_get_row_wasm(&m, 1);
-  v128_t row2 = wcn_mat4_get_row_wasm(&m, 2);
-  v128_t row3 = wcn_mat4_get_row_wasm(&m, 3);
+  v128_t row0 = wcn_mat4_get_row(&m, 0);
+  v128_t row1 = wcn_mat4_get_row(&m, 1);
+  v128_t row2 = wcn_mat4_get_row(&m, 2);
+  v128_t row3 = wcn_mat4_get_row(&m, 3);
 
   // Precompute sine and cosine
   float c = cosf(angleInRadians);
@@ -6015,13 +6015,13 @@ WMATH_ROTATE_X(Mat4)
   v128_t new_row2 = wasm_f32x4_add(wasm_f32x4_mul(vec_c, row2), wasm_f32x4_mul(vec_neg_s, row1));
 
   // Store results
-  wcn_mat4_set_row_wasm(&newDst, 0, row0);
-  wcn_mat4_set_row_wasm(&newDst, 1, new_row1);
-  wcn_mat4_set_row_wasm(&newDst, 2, new_row2);
+  wcn_mat4_set_row(&newDst, 0, row0);
+  wcn_mat4_set_row(&newDst, 1, new_row1);
+  wcn_mat4_set_row(&newDst, 2, new_row2);
 
   // Copy the fourth row unchanged if matrices are different
   if (!WMATH_EQUALS(Mat4)(newDst, m)) {
-    wcn_mat4_set_row_wasm(&newDst, 3, row3);
+    wcn_mat4_set_row(&newDst, 3, row3);
   }
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
@@ -6202,10 +6202,10 @@ WMATH_ROTATE_Y(Mat4)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation - optimized Y-axis rotation
-  v128_t row0 = wcn_mat4_get_row_wasm(&m, 0);
-  v128_t row1 = wcn_mat4_get_row_wasm(&m, 1);
-  v128_t row2 = wcn_mat4_get_row_wasm(&m, 2);
-  v128_t row3 = wcn_mat4_get_row_wasm(&m, 3);
+  v128_t row0 = wcn_mat4_get_row(&m, 0);
+  v128_t row1 = wcn_mat4_get_row(&m, 1);
+  v128_t row2 = wcn_mat4_get_row(&m, 2);
+  v128_t row3 = wcn_mat4_get_row(&m, 3);
 
   // Precompute sine and cosine
   float c = cosf(angleInRadians);
@@ -6219,13 +6219,13 @@ WMATH_ROTATE_Y(Mat4)
   v128_t new_row2 = wasm_f32x4_add(wasm_f32x4_mul(vec_c, row2), wasm_f32x4_mul(vec_s, row0));
 
   // Store results
-  wcn_mat4_set_row_wasm(&newDst, 0, new_row0);
-  wcn_mat4_set_row_wasm(&newDst, 1, row1);
-  wcn_mat4_set_row_wasm(&newDst, 2, new_row2);
+  wcn_mat4_set_row(&newDst, 0, new_row0);
+  wcn_mat4_set_row(&newDst, 1, row1);
+  wcn_mat4_set_row(&newDst, 2, new_row2);
 
   // Copy the fourth row unchanged if matrices are different
   if (!WMATH_EQUALS(Mat4)(newDst, m)) {
-    wcn_mat4_set_row_wasm(&newDst, 3, row3);
+    wcn_mat4_set_row(&newDst, 3, row3);
   }
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
@@ -6406,10 +6406,10 @@ WMATH_ROTATE_Z(Mat4)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation - optimized Z-axis rotation
-  v128_t row0 = wcn_mat4_get_row_wasm(&m, 0);
-  v128_t row1 = wcn_mat4_get_row_wasm(&m, 1);
-  v128_t row2 = wcn_mat4_get_row_wasm(&m, 2);
-  v128_t row3 = wcn_mat4_get_row_wasm(&m, 3);
+  v128_t row0 = wcn_mat4_get_row(&m, 0);
+  v128_t row1 = wcn_mat4_get_row(&m, 1);
+  v128_t row2 = wcn_mat4_get_row(&m, 2);
+  v128_t row3 = wcn_mat4_get_row(&m, 3);
 
   // Precompute sine and cosine
   float c = cosf(angleInRadians);
@@ -6423,13 +6423,13 @@ WMATH_ROTATE_Z(Mat4)
   v128_t new_row1 = wasm_f32x4_add(wasm_f32x4_mul(vec_c, row1), wasm_f32x4_mul(vec_neg_s, row0));
 
   // Store results
-  wcn_mat4_set_row_wasm(&newDst, 0, new_row0);
-  wcn_mat4_set_row_wasm(&newDst, 1, new_row1);
-  wcn_mat4_set_row_wasm(&newDst, 2, row2);
+  wcn_mat4_set_row(&newDst, 0, new_row0);
+  wcn_mat4_set_row(&newDst, 1, new_row1);
+  wcn_mat4_set_row(&newDst, 2, row2);
 
   // Copy the fourth row unchanged if matrices are different
   if (!WMATH_EQUALS(Mat4)(newDst, m)) {
-    wcn_mat4_set_row_wasm(&newDst, 3, row3);
+    wcn_mat4_set_row(&newDst, 3, row3);
   }
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
@@ -6634,10 +6634,10 @@ WMATH_SCALE(Vec2)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation
-  v128_t vec_v = wcn_load_vec2_partial_wasm(v.v);
+  v128_t vec_v = wcn_load_vec2_partial(v.v);
   v128_t vec_scale = wasm_f32x4_splat(scale);
   v128_t vec_res = wasm_f32x4_mul(vec_v, vec_scale);
-  wcn_store_vec2_partial_wasm(result.v, vec_res);
+  wcn_store_vec2_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector implementation
@@ -7791,17 +7791,17 @@ WMATH_CALL(Mat4, get_scaling)(WMATH_TYPE(Mat4) m) {
   // WebAssembly SIMD implementation
   v128_t col0 = wasm_v128_load(&m.m[0]);  // Load 4 floats starting from m[0]
   // Create [m.m[0], m.m[1], m.m[2], 0.0f] using splat and replace
-  v128_t col0_vals = wasm_v128_const_f32(m.m[0], m.m[1], m.m[2], 0.0f);
+  v128_t col0_vals = wasm_f32x4_make(m.m[0], m.m[1], m.m[2], 0.0f);
   v128_t sq0 = wasm_f32x4_mul(col0_vals, col0_vals);
   float x_sum = sqrtf(wasm_f32x4_extract_lane(sq0, 0) + wasm_f32x4_extract_lane(sq0, 1) + wasm_f32x4_extract_lane(sq0, 2));
   result.v[0] = x_sum;
 
-  v128_t col1_vals = wasm_v128_const_f32(m.m[4], m.m[5], m.m[6], 0.0f);
+  v128_t col1_vals = wasm_f32x4_make(m.m[4], m.m[5], m.m[6], 0.0f);
   v128_t sq1 = wasm_f32x4_mul(col1_vals, col1_vals);
   float y_sum = sqrtf(wasm_f32x4_extract_lane(sq1, 0) + wasm_f32x4_extract_lane(sq1, 1) + wasm_f32x4_extract_lane(sq1, 2));
   result.v[1] = y_sum;
 
-  v128_t col2_vals = wasm_v128_const_f32(m.m[8], m.m[9], m.m[10], 0.0f);
+  v128_t col2_vals = wasm_f32x4_make(m.m[8], m.m[9], m.m[10], 0.0f);
   v128_t sq2 = wasm_f32x4_mul(col2_vals, col2_vals);
   float z_sum = sqrtf(wasm_f32x4_extract_lane(sq2, 0) + wasm_f32x4_extract_lane(sq2, 1) + wasm_f32x4_extract_lane(sq2, 2));
   result.v[2] = z_sum;
@@ -7908,10 +7908,10 @@ WMATH_CALL(Mat4, scaling)(WMATH_TYPE(Vec3) v) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD implementation - column-major scaling matrix
-  v128_t col0 = wasm_v128_const_f32(v.v[0], 0.0f, 0.0f, 0.0f);
-  v128_t col1 = wasm_v128_const_f32(0.0f, v.v[1], 0.0f, 0.0f);
-  v128_t col2 = wasm_v128_const_f32(0.0f, 0.0f, v.v[2], 0.0f);
-  v128_t col3 = wasm_v128_const_f32(0.0f, 0.0f, 0.0f, 1.0f);
+  v128_t col0 = wasm_f32x4_make(v.v[0], 0.0f, 0.0f, 0.0f);
+  v128_t col1 = wasm_f32x4_make(0.0f, v.v[1], 0.0f, 0.0f);
+  v128_t col2 = wasm_f32x4_make(0.0f, 0.0f, v.v[2], 0.0f);
+  v128_t col3 = wasm_f32x4_make(0.0f, 0.0f, 0.0f, 1.0f);
 
   wasm_v128_store(&newDst.m[0], col0);
   wasm_v128_store(&newDst.m[4], col1);
@@ -8174,10 +8174,10 @@ WMATH_CALL(Mat4, uniform_scaling)
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD implementation - create uniform scaling matrix efficiently
-  v128_t col0 = wasm_v128_const_f32(s, 0.0f, 0.0f, 0.0f);
-  v128_t col1 = wasm_v128_const_f32(0.0f, s, 0.0f, 0.0f);
-  v128_t col2 = wasm_v128_const_f32(0.0f, 0.0f, s, 0.0f);
-  v128_t col3 = wasm_v128_const_f32(0.0f, 0.0f, 0.0f, 1.0f);
+  v128_t col0 = wasm_f32x4_make(s, 0.0f, 0.0f, 0.0f);
+  v128_t col1 = wasm_f32x4_make(0.0f, s, 0.0f, 0.0f);
+  v128_t col2 = wasm_f32x4_make(0.0f, 0.0f, s, 0.0f);
+  v128_t col3 = wasm_f32x4_make(0.0f, 0.0f, 0.0f, 1.0f);
 
   // Store results
   wasm_v128_store(&newDst.m[0], col0);

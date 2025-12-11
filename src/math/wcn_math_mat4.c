@@ -734,26 +734,26 @@ WMATH_MULTIPLY(Mat4)(WMATH_TYPE(Mat4) a, WMATH_TYPE(Mat4) b) {
 
     // Calculate result.m[i][0] = dot(a_row, b_col0)
     v128_t temp = wasm_f32x4_mul(a_row, b_col0);
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 1, 1, 1, 1));
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 2, 2, 2, 2));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 1, 1, 1, 1));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 2, 2, 2, 2));
     result.m[i * 4 + 0] = wasm_f32x4_extract_lane(temp, 0);
 
     // Calculate result.m[i][1] = dot(a_row, b_col1)
     temp = wasm_f32x4_mul(a_row, b_col1);
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 1, 1, 1, 1));
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 2, 2, 2, 2));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 1, 1, 1, 1));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 2, 2, 2, 2));
     result.m[i * 4 + 1] = wasm_f32x4_extract_lane(temp, 0);
 
     // Calculate result.m[i][2] = dot(a_row, b_col2)
     temp = wasm_f32x4_mul(a_row, b_col2);
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 1, 1, 1, 1));
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 2, 2, 2, 2));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 1, 1, 1, 1));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 2, 2, 2, 2));
     result.m[i * 4 + 2] = wasm_f32x4_extract_lane(temp, 0);
 
     // Calculate result.m[i][3] = dot(a_row, b_col3)
     temp = wasm_f32x4_mul(a_row, b_col3);
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 1, 1, 1, 1));
-    temp = wasm_f32x4_add(temp, wasm_f32x4_shuffle(temp, temp, 2, 2, 2, 2));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 1, 1, 1, 1));
+    temp = wasm_f32x4_add(temp, wasm_i32x4_shuffle(temp, temp, 2, 2, 2, 2));
     result.m[i * 4 + 3] = wasm_f32x4_extract_lane(temp, 0);
   }
 
@@ -1539,16 +1539,16 @@ WMATH_TRANSPOSE(Mat4)(WMATH_TYPE(Mat4) a) {
 
   // Transpose using shuffle operations
   // First shuffle to get diagonal elements
-  v128_t tmp0 = wasm_f32x4_shuffle(row0, row1, 0, 1, 0, 1); // a00 a01 a10 a11
-  v128_t tmp1 = wasm_f32x4_shuffle(row2, row3, 0, 1, 0, 1); // a20 a21 a30 a31
-  v128_t tmp2 = wasm_f32x4_shuffle(row0, row1, 2, 3, 2, 3); // a02 a03 a12 a13
-  v128_t tmp3 = wasm_f32x4_shuffle(row2, row3, 2, 3, 2, 3); // a22 a23 a32 a33
+  v128_t tmp0 = wasm_i32x4_shuffle(row0, row1, 0, 1, 0, 1); // a00 a01 a10 a11
+  v128_t tmp1 = wasm_i32x4_shuffle(row2, row3, 0, 1, 0, 1); // a20 a21 a30 a31
+  v128_t tmp2 = wasm_i32x4_shuffle(row0, row1, 2, 3, 2, 3); // a02 a03 a12 a13
+  v128_t tmp3 = wasm_i32x4_shuffle(row2, row3, 2, 3, 2, 3); // a22 a23 a32 a33
 
   // Final shuffles to get columns
-  v128_t col0 = wasm_f32x4_shuffle(tmp0, tmp1, 0, 2, 0, 2); // a00 a10 a20 a30
-  v128_t col1 = wasm_f32x4_shuffle(tmp0, tmp1, 1, 3, 1, 3); // a01 a11 a21 a31
-  v128_t col2 = wasm_f32x4_shuffle(tmp2, tmp3, 0, 2, 0, 2); // a02 a12 a22 a32
-  v128_t col3 = wasm_f32x4_shuffle(tmp2, tmp3, 1, 3, 1, 3); // a03 a13 a23 a33
+  v128_t col0 = wasm_i32x4_shuffle(tmp0, tmp1, 0, 2, 0, 2); // a00 a10 a20 a30
+  v128_t col1 = wasm_i32x4_shuffle(tmp0, tmp1, 1, 3, 1, 3); // a01 a11 a21 a31
+  v128_t col2 = wasm_i32x4_shuffle(tmp2, tmp3, 0, 2, 0, 2); // a02 a12 a22 a32
+  v128_t col3 = wasm_i32x4_shuffle(tmp2, tmp3, 1, 3, 1, 3); // a03 a13 a23 a33
 
   wasm_v128_store(&result.m[0], col0);
   wasm_v128_store(&result.m[4], col1);
@@ -2243,9 +2243,9 @@ WMATH_CALL(Mat4, aim)
   v128_t z_axis_sq = wasm_f32x4_mul(z_axis_unnorm, z_axis_unnorm);
 
   // Horizontal add to get sum of squares
-  v128_t shuf = wasm_v32x4_shuffle(z_axis_sq, z_axis_sq, 2, 3, 0, 1);
+  v128_t shuf = wasm_i32x4_shuffle(z_axis_sq, z_axis_sq, 2, 3, 0, 1);
   v128_t sums = wasm_f32x4_add(z_axis_sq, shuf);
-  shuf = wasm_v32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   float z_axis_len_sq = wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
 
   v128_t z_axis;
@@ -2253,7 +2253,7 @@ WMATH_CALL(Mat4, aim)
     v128_t z_axis_inv_len = wcn_fast_inv_sqrt_platform(wasm_f32x4_splat(z_axis_len_sq));
     z_axis = wasm_f32x4_mul(z_axis_unnorm, z_axis_inv_len);
   } else {
-    z_axis = wasm_f32x4_const(0.0f, 0.0f, 1.0f, 0.0f); // Default forward vector
+    z_axis = wasm_f32x4_make(0.0f, 0.0f, 1.0f, 0.0f); // Default forward vector
   }
 
   // Calculate x_axis = normalize(cross(up, z_axis))
@@ -2261,9 +2261,9 @@ WMATH_CALL(Mat4, aim)
   v128_t x_axis_sq = wasm_f32x4_mul(x_axis_unnorm, x_axis_unnorm);
 
   // Horizontal add to get sum of squares
-  shuf = wasm_v32x4_shuffle(x_axis_sq, x_axis_sq, 2, 3, 0, 1);
+  shuf = wasm_i32x4_shuffle(x_axis_sq, x_axis_sq, 2, 3, 0, 1);
   sums = wasm_f32x4_add(x_axis_sq, shuf);
-  shuf = wasm_v32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   float x_axis_len_sq = wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
 
   v128_t x_axis;
@@ -2271,7 +2271,7 @@ WMATH_CALL(Mat4, aim)
     v128_t x_axis_inv_len = wcn_fast_inv_sqrt_platform(wasm_f32x4_splat(x_axis_len_sq));
     x_axis = wasm_f32x4_mul(x_axis_unnorm, x_axis_inv_len);
   } else {
-    x_axis = wasm_f32x4_const(0.0f, 1.0f, 0.0f, 0.0f); // Default right vector
+    x_axis = wasm_f32x4_make(0.0f, 1.0f, 0.0f, 0.0f); // Default right vector
   }
 
   // Calculate y_axis = normalize(cross(z_axis, x_axis))
@@ -2279,9 +2279,9 @@ WMATH_CALL(Mat4, aim)
   v128_t y_axis_sq = wasm_f32x4_mul(y_axis_unnorm, y_axis_unnorm);
 
   // Horizontal add to get sum of squares
-  shuf = wasm_v32x4_shuffle(y_axis_sq, y_axis_sq, 2, 3, 0, 1);
+  shuf = wasm_i32x4_shuffle(y_axis_sq, y_axis_sq, 2, 3, 0, 1);
   sums = wasm_f32x4_add(y_axis_sq, shuf);
-  shuf = wasm_v32x4_shuffle(sums, sums, 1, 0, 0, 0);
+  shuf = wasm_i32x4_shuffle(sums, sums, 1, 0, 0, 0);
   float y_axis_len_sq = wasm_f32x4_extract_lane(wasm_f32x4_add(sums, shuf), 0);
 
   v128_t y_axis;
@@ -2289,7 +2289,7 @@ WMATH_CALL(Mat4, aim)
     v128_t y_axis_inv_len = wcn_fast_inv_sqrt_platform(wasm_f32x4_splat(y_axis_len_sq));
     y_axis = wasm_f32x4_mul(y_axis_unnorm, y_axis_inv_len);
   } else {
-    y_axis = wasm_f32x4_const(1.0f, 0.0f, 0.0f, 0.0f); // Default up vector
+    y_axis = wasm_f32x4_make(1.0f, 0.0f, 0.0f, 0.0f); // Default up vector
   }
 
   // Create camera aim matrix rows
