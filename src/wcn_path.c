@@ -471,10 +471,8 @@ void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
 
     float angle_diff = end_angle - start_angle;
     if (anticlockwise) {
-        // 确保逆时针角度差是负的，且绝对值在 (0, 2*PI] 之间
         while (angle_diff >= 0.0f) angle_diff -= 2.0f * M_PI;
     } else {
-        // 确保顺时针角度差是正的，且绝对值在 (0, 2*PI] 之间
         while (angle_diff <= 0.0f) angle_diff += 2.0f * M_PI;
     }
 
@@ -484,7 +482,6 @@ void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
     if (segments < 4) segments = 4;
     if (segments > 256) segments = 256;
 
-    // 如果角度差很小，segments 可能为 0，防止除以 0
     if (segments == 0) return;
 
     // --- 优化核心：增量旋转 ---

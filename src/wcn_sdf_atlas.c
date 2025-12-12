@@ -319,11 +319,13 @@ WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
     unsigned char* msdf_bitmap;
     int width, height;
     float offset_x, offset_y, advance;
+    bool is_color = false;
 
     if (!ctx->font_decoder->get_glyph_sdf(
             face, codepoint, font_size,
             &msdf_bitmap, &width, &height,
-            &offset_x, &offset_y, &advance)) {
+            &offset_x, &offset_y, &advance,
+            &is_color)) {
         if (codepoint == 0x0020) {
             WCN_Glyph* glyph_info = NULL;
             if (ctx->font_decoder->get_glyph(face, codepoint, &glyph_info)) {
@@ -404,6 +406,7 @@ WCN_AtlasGlyph* wcn_get_or_create_glyph(WCN_Context* ctx,
 
     ctx->font_decoder->free_glyph_sdf(msdf_bitmap);
     glyph->font_face = face;
+    glyph->is_color = is_color;
     ctx->sdf_atlas->glyph_count++;
 
     return glyph;

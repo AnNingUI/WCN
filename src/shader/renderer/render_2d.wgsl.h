@@ -148,7 +148,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             return color;
         }
         case INSTANCE_TYPE_TEXT: {
-            // ... (existing text code)
+            // Check flags for rendering mode
+            // Bit 0: TEXT_FLAG_IS_COLOR
+            let is_color_bitmap = (input.flags & 1u) != 0u;
+
+            if (is_color_bitmap) {
+                // True Color Rendering (bypass SDF)
+                // Use the pre-sampled texture color directly (sdf_sample is RGBA).
+                // Apply instance opacity (alpha from input.color) but ignore instance RGB tint.
+                return vec4<f32>(sdf_sample.rgb, sdf_sample.a * color.a);
+            }
+
             // New "Alpha + Offsets" SDF Rendering
             // Texture Format:
             // R: Signed Distance (Normalized, 0.5 = Edge)
@@ -162,15 +172,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             // outside this non-uniform control flow block for portability.
             
             // AA Width Calculation
-            // The SDF spread is approx 3 pixels in the atlas.
-            // adaptive_width determines the smoothness of the edge.
-            // Lower 'sharpness' constant allows for crisper edges on high-DPI screens.
-            let sharpness = 0.1; 
-            let adaptive_width = max(sharpness, dist_grad * 0.7);
+            // The SDF spread is approx 3-4 pixels in the atlas.
+            // dist_grad is the change in distance field per screen pixel.
+            // We use a factor of 0.65 for a balance between sharpness and continuity.
+            let adaptive_width = dist_grad * 0.65;
             
             // Apply Smoothstep
-            // Maps the distance field to opacity with an anti-aliased edge
-            let alpha = smoothstep(0.5 - adaptive_width, 0.5 + adaptive_width, distance);
+            // We enforce a minimum width (0.05) to prevent thin strokes from disappearing 
+            // (broken paths) when the SDF resolution is limited or the stroke is very thin.
+            // 0.05 is small enough to look sharp but large enough to catch sub-pixel details.
+            let w = max(adaptive_width, 0.05);
+            let alpha = smoothstep(0.5 - w, 0.5 + w, distance);
             
             // Gamma / Perceptual Correction
             // Slight sharpening curve to enhance readability

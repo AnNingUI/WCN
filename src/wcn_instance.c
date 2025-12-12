@@ -1211,6 +1211,10 @@ void wcn_renderer_add_text(
         
         // Flags and params for SDF rendering
         instance.flags = 0;
+        if (glyph->is_color) {
+            instance.flags |= 1; // Bit 0: TEXT_FLAG_IS_COLOR
+        }
+        
         instance.param0 = 0.0f;  // Can be used for SDF width parameter if needed
         
         // Add instance to CPU buffer

@@ -200,11 +200,14 @@ typedef struct WCN_FontDecoder {
     
     // 获取字符 SDF 位图（新增，用于 SDF 渲染）
     // 如果解码器不支持 SDF，可以设置为 NULL，WCN 将使用三角化渲染
+    // out_is_color: 输出参数，指示返回的位图是否为真彩色位图（非SDF）。
+    //               如果是真彩色位图，渲染器将直接采样而不进行 SDF 计算。
     bool (*get_glyph_sdf)(WCN_FontFace* face, uint32_t codepoint, float font_size,
                           unsigned char** out_bitmap,
                           int* out_width, int* out_height,
                           float* out_offset_x, float* out_offset_y,
-                          float* out_advance);
+                          float* out_advance,
+                          bool* out_is_color);
     
     // 释放 SDF 位图（新增）
     void (*free_glyph_sdf)(unsigned char* bitmap);

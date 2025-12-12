@@ -326,10 +326,14 @@ static bool wcn_stb_get_glyph_sdf(WCN_FontFace* face, uint32_t codepoint, float 
                                   unsigned char** out_bitmap,
                                   int* out_width, int* out_height,
                                   float* out_offset_x, float* out_offset_y,
-                                  float* out_advance) {
+                                  float* out_advance,
+                                  bool* out_is_color) {
     if (!face || !out_bitmap || !out_width || !out_height) {
         return false;
     }
+
+    // Default to SDF mode (monochrome)
+    if (out_is_color) *out_is_color = false;
     
     WCN_STB_FontData* font_data = (WCN_STB_FontData*)face->user_data;
     

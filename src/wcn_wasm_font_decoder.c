@@ -113,22 +113,26 @@ EM_JS(bool, js_get_glyph_metrics, (int font_id, uint32_t codepoint,
 // 生成位图 (核心：模拟 STB 的伪 MSDF 输出格式)
 EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
                                 unsigned char** out_ptr, int* out_w, int* out_h,
-                                float* out_off_x, float* out_off_y, float* out_adv), {
+                                float* out_off_x, float* out_off_y, float* out_adv,
+                                bool* out_is_color_ptr), {
     try {
         const font = window.WCNJS.fonts[font_id];
         if (!font) return false;
 
         const canvas = window.WCNJS.canvas;
-        const ctx = window.WCNJS.ctx;
+        // Reset context with willReadFrequently to ensure optimized readback
+        // window.WCNJS.ctx = canvas.getContext('2d', { willReadFrequently: true });
+        // (Assuming context is valid or reset elsewhere if needed)
+        
         const charStr = String.fromCodePoint(codepoint);
 
         // 调整 Canvas 大小以适应大字体
-        const padding = 4; // 类似于 STB 的 padding
+        const padding = 4;
         const neededSize = Math.ceil(size + padding * 2);
         if (canvas.width < neededSize || canvas.height < neededSize) {
             canvas.width = neededSize;
             canvas.height = neededSize;
-            window.WCNJS.ctx = canvas.getContext('2d', { willReadFrequently: true }); // Reset context
+            window.WCNJS.ctx = canvas.getContext('2d', { willReadFrequently: true });
         }
 
         // 设置渲染状态
@@ -136,7 +140,9 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
         window.WCNJS.ctx.textBaseline = 'alphabetic';
         window.WCNJS.ctx.textAlign = 'left';
         window.WCNJS.ctx.clearRect(0, 0, canvas.width, canvas.height);
-        window.WCNJS.ctx.fillStyle = '#FFFFFF'; // 白色文字
+        
+        // 使用白色绘制。如果是标准字体，将得到白色。如果是彩色Emoji，将得到原始颜色。
+        window.WCNJS.ctx.fillStyle = '#FFFFFF'; 
 
         // 绘制位置 (带 Padding)
         const drawX = padding;
@@ -154,17 +160,33 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
 
         let minX = scanW, maxX = 0, minY = scanH, maxY = 0;
         let hasPixels = false;
+        let isColor = false;
 
-        // 寻找非透明像素
+        // 寻找非透明像素并检测颜色
         for (let y = 0; y < scanH; y++) {
             for (let x = 0; x < scanW; x++) {
-                const alpha = data[(y * scanW + x) * 4 + 3];
+                const idx = (y * scanW + x) * 4;
+                const alpha = data[idx + 3];
+                
                 if (alpha > 0) {
                     if (x < minX) minX = x;
                     if (x > maxX) maxX = x;
                     if (y < minY) minY = y;
                     if (y > maxY) maxY = y;
                     hasPixels = true;
+                    
+                    // 检测是否为彩色 (R != G or G != B)
+                    // 注意：由于我们用白色绘制，标准抗锯齿边缘应该是灰色 (R=G=B)
+                    // 如果像素有色相，说明是 Emoji
+                    if (!isColor) {
+                        const r = data[idx];
+                        const g = data[idx + 1];
+                        const b = data[idx + 2];
+                        // 容差检测 (避免压缩伪影)
+                        if (Math.abs(r - g) > 2 || Math.abs(g - b) > 2) {
+                            isColor = true;
+                        }
+                    }
                 }
             }
         }
@@ -191,27 +213,38 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
 
         const heap = Module.HEAPU8;
 
-        // 填充内存：将 Canvas Alpha 转换为 STB 伪 MSDF 格式 (R=A, G=A, B=A, A=255)
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                const srcIdx = ((minY + y) * scanW + (minX + x)) * 4;
-                const dstIdx = ptr + (y * w + x) * 4;
+        if (isColor) {
+            // 彩色模式：直接复制 RGBA
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const srcIdx = ((minY + y) * scanW + (minX + x)) * 4;
+                    const dstIdx = ptr + (y * w + x) * 4;
+                    
+                    heap[dstIdx + 0] = data[srcIdx + 0]; // R
+                    heap[dstIdx + 1] = data[srcIdx + 1]; // G
+                    heap[dstIdx + 2] = data[srcIdx + 2]; // B
+                    heap[dstIdx + 3] = data[srcIdx + 3]; // A
+                }
+            }
+        } else {
+            // 单色模式 (伪 MSDF)：R=G=B=Alpha, A=255
+            // 这样 Shader 读取 R 通道作为覆盖率/距离
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const srcIdx = ((minY + y) * scanW + (minX + x)) * 4;
+                    const dstIdx = ptr + (y * w + x) * 4;
 
-                // Canvas: R, G, B, A (White text = 255, 255, 255, A)
-                // STB Logic we need to match: R=Val, G=Val, B=Val, A=255
-                // 由于我们画的是白色，data[srcIdx+3] 就是 Alpha 值
-                const val = hasPixels ? data[srcIdx + 3] : 0;
+                    const alpha = hasPixels ? data[srcIdx + 3] : 0;
 
-                heap[dstIdx + 0] = val; // R
-                heap[dstIdx + 1] = val; // G
-                heap[dstIdx + 2] = val; // B
-                heap[dstIdx + 3] = 255; // A (Opaque box)
+                    heap[dstIdx + 0] = alpha; // R
+                    heap[dstIdx + 1] = alpha; // G
+                    heap[dstIdx + 2] = alpha; // B
+                    heap[dstIdx + 3] = 255;   // A (Opaque box)
+                }
             }
         }
 
         // 计算偏移量
-        // Offset X: 裁剪框左边相对于绘制原点(光标)的距离
-        // Offset Y: 裁剪框上边相对于基线的距离
         const offX = minX - drawX;
         const offY = minY - drawY;
 
@@ -221,6 +254,10 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
         setValue(out_off_x, offX, 'float');
         setValue(out_off_y, offY, 'float');
         setValue(out_adv, metrics.width, 'float');
+        
+        if (out_is_color_ptr) {
+            setValue(out_is_color_ptr, isColor, 'i8'); // bool is 1 byte
+        }
 
         return true;
     } catch (e) {
@@ -322,29 +359,34 @@ static bool wcn_wasm_get_glyph(WCN_FontFace* face, uint32_t codepoint, WCN_Glyph
     return true;
 }
 
+// 获取字形 SDF 位图
 static bool wcn_wasm_get_glyph_sdf(WCN_FontFace* face, uint32_t codepoint, float font_size,
                                   unsigned char** out_bitmap,
                                   int* out_width, int* out_height,
                                   float* out_offset_x, float* out_offset_y,
-                                  float* out_advance) {
-    if (!face || !out_bitmap) return false;
+                                  float* out_advance,
+                                  bool* out_is_color) {
+    if (!face || !out_bitmap || !out_width || !out_height) {
+        return false;
+    }
+    
+    // Default to SDF/Monochrome for now
+    if (out_is_color) *out_is_color = false;
 
-    WCN_WASM_FontData* data = (WCN_WASM_FontData*)face->user_data;
+    WCN_WASM_FontData* font_data = (WCN_WASM_FontData*)face->user_data;
 
 #ifdef __EMSCRIPTEN__
-    unsigned char* ptr = NULL;
-    // 直接生成请求大小的位图
-    bool success = js_generate_bitmap(data->js_id, codepoint, font_size,
-                                      &ptr, out_width, out_height,
-                                      out_offset_x, out_offset_y, out_advance);
+    // 调用 JS 生成位图 (返回 malloc 的指针)
+    // 注意: JS 端负责分配内存，C 端负责释放
+    bool success = js_generate_bitmap(font_data->js_id, codepoint, font_size,
+                                    out_bitmap, out_width, out_height,
+                                    out_offset_x, out_offset_y, out_advance,
+                                    out_is_color);
 
-    if (success && ptr) {
-        *out_bitmap = ptr; // 指针已由 JS 端 malloc，C 端负责 free
-        return true;
-    }
-#endif
-
+    return success;
+#else
     return false;
+#endif
 }
 
 static void wcn_wasm_free_glyph_sdf(unsigned char* bitmap) {

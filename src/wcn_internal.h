@@ -110,6 +110,7 @@ typedef struct {
     float offset_x, offset_y; // 字形偏移
     float advance_width;     // 字形前进宽度
     bool is_valid;           // 是否有效
+    bool is_color;           // 是否为真彩色位图
 } WCN_AtlasGlyph;
 
 // MSDF 纹理图集（Multi-channel Signed Distance Field）
