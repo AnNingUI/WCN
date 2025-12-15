@@ -3,6 +3,7 @@ build-wasm
 .cache
 .codebuddy
 .claude
+.letta
 .qoder
 .kiro
 .vscode
