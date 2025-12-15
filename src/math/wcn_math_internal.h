@@ -315,9 +315,8 @@ static inline vfloat32m1_t wcn_mat4_get_col(const WMATH_TYPE(Mat4) * mat, int co
 
 // Helper functions for WebAssembly SIMD
 static inline v128_t wcn_load_vec2_partial(const float *v) {
-  return wasm_f32x4_make(wasm_f32x4_extract_lane(wasm_v128_load(v), 0),
-                         wasm_f32x4_extract_lane(wasm_v128_load(v), 1),
-                         0.0f, 0.0f);
+  // Vec2 只有 8 字节 (2 floats)，直接读取避免越界
+  return wasm_f32x4_make(v[0], v[1], 0.0f, 0.0f);
 }
 
 static inline void wcn_store_vec2_partial(float *v, v128_t vec) {

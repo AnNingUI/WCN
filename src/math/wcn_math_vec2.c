@@ -285,21 +285,16 @@ float WMATH_DOT(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   return __riscv_vfredusum_vs_f32m1_f32(mul, __riscv_vfmv_v_f_f32m1(0.0f, 2), 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  // WebAssembly SIMD implementation - multiply and horizontal add
-  v128_t va = wasm_v128_load(a.v);
-  v128_t vb = wasm_v128_load(b.v);
+  // WebAssembly SIMD implementation
+  v128_t va = wcn_load_vec2_partial(a.v);
+  v128_t vb = wcn_load_vec2_partial(b.v);
   v128_t mul = wasm_f32x4_mul(va, vb);
-
-  // Extract and add each component to get dot product
-  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
-  return wasm_f32x4_extract_lane(sum, 0);
+  return wasm_f32x4_extract_lane(mul, 0) + wasm_f32x4_extract_lane(mul, 1);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation - multiply and horizontal add
-  __m128 va = __lsx_vld(a.v, 0);
-  __m128 vb = __lsx_vld(b.v, 0);
+  __m128 va = wcn_load_vec2_partial(a.v);
+  __m128 vb = wcn_load_vec2_partial(b.v);
   __m128 mul = __lsx_vfmul_s(va, vb);
 
   // Horizontally add to get dot product
@@ -1225,20 +1220,15 @@ float WMATH_LENGTH(Vec2)(WMATH_TYPE(Vec2) v) {
   return sqrtf(len_sq);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  // WebAssembly SIMD implementation - multiply and horizontal add
-  v128_t vec_v = wasm_v128_load(v.v);
+  // WebAssembly SIMD implementation
+  v128_t vec_v = wcn_load_vec2_partial(v.v);
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
-
-  // Extract and add each component to get sum of squares
-  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
-  float len_sq = wasm_f32x4_extract_lane(sum, 0);
+  float len_sq = wasm_f32x4_extract_lane(vec_squared, 0) + wasm_f32x4_extract_lane(vec_squared, 1);
   return sqrtf(len_sq);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation - multiply and horizontal add
-  __m128 vec_v = __lsx_vld(v.v, 0);
+  __m128 vec_v = wcn_load_vec2_partial(v.v);
   __m128 vec_squared = __lsx_vfmul_s(vec_v, vec_v);
 
   // Horizontally add to get sum of squares
@@ -1273,19 +1263,14 @@ float WMATH_LENGTH_SQ(Vec2)(WMATH_TYPE(Vec2) v) {
   return __riscv_vfredusum_vs_f32m1_f32(vec_squared, __riscv_vfmv_v_f_f32m1(0.0f, 2), 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  // WebAssembly SIMD implementation - multiply and horizontal add
-  v128_t vec_v = wasm_v128_load(v.v);
+  // WebAssembly SIMD implementation
+  v128_t vec_v = wcn_load_vec2_partial(v.v);
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
-
-  // Extract and add each component to get sum of squares
-  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
-  return wasm_f32x4_extract_lane(sum, 0);
+  return wasm_f32x4_extract_lane(vec_squared, 0) + wasm_f32x4_extract_lane(vec_squared, 1);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation - multiply and horizontal add
-  __m128 vec_v = __lsx_vld(v.v, 0);
+  __m128 vec_v = wcn_load_vec2_partial(v.v);
   __m128 vec_squared = __lsx_vfmul_s(vec_v, vec_v);
 
   // Horizontally add to get sum of squares
@@ -1325,20 +1310,17 @@ float WMATH_DISTANCE(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   return sqrtf(sum);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  v128_t va = wasm_v128_load(a.v);
-  v128_t vb = wasm_v128_load(b.v);
+  // WebAssembly SIMD implementation
+  v128_t va = wcn_load_vec2_partial(a.v);
+  v128_t vb = wcn_load_vec2_partial(b.v);
   v128_t diff = wasm_f32x4_sub(va, vb);
   v128_t mul = wasm_f32x4_mul(diff, diff);
-
-  // Extract and add each component to get sum of squares
-  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
-  return sqrtf(wasm_f32x4_extract_lane(sum, 0));
+  float sum = wasm_f32x4_extract_lane(mul, 0) + wasm_f32x4_extract_lane(mul, 1);
+  return sqrtf(sum);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
-  __m128 va = __lsx_vld(a.v, 0);
-  __m128 vb = __lsx_vld(b.v, 0);
+  __m128 va = wcn_load_vec2_partial(a.v);
+  __m128 vb = wcn_load_vec2_partial(b.v);
   __m128 diff = __lsx_vfsub_s(va, vb);
   __m128 mul = __lsx_vfmul_s(diff, diff);
 
@@ -1378,20 +1360,16 @@ float WMATH_DISTANCE_SQ(Vec2)(WMATH_TYPE(Vec2) a, WMATH_TYPE(Vec2) b) {
   return __riscv_vfredusum_vs_f32m1_f32(mul, __riscv_vfmv_v_f_f32m1(0.0f, 2), 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  v128_t va = wasm_v128_load(a.v);
-  v128_t vb = wasm_v128_load(b.v);
+  // WebAssembly SIMD implementation
+  v128_t va = wcn_load_vec2_partial(a.v);
+  v128_t vb = wcn_load_vec2_partial(b.v);
   v128_t diff = wasm_f32x4_sub(va, vb);
   v128_t mul = wasm_f32x4_mul(diff, diff);
-
-  // Extract and add each component to get sum of squares
-  v128_t v = wasm_i32x4_shuffle(mul, mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_i32x4_shuffle(mul, mul, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
-  return wasm_f32x4_extract_lane(sum, 0);
+  return wasm_f32x4_extract_lane(mul, 0) + wasm_f32x4_extract_lane(mul, 1);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
-  __m128 va = __lsx_vld(a.v, 0);
-  __m128 vb = __lsx_vld(b.v, 0);
+  __m128 va = wcn_load_vec2_partial(a.v);
+  __m128 vb = wcn_load_vec2_partial(b.v);
   __m128 diff = __lsx_vfsub_s(va, vb);
   __m128 mul = __lsx_vfmul_s(diff, diff);
 
@@ -1433,18 +1411,17 @@ WMATH_NEGATE(Vec2)(WMATH_TYPE(Vec2) a) {
   __riscv_vse32_v_f32m1(result.v, vec_res, 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  // WebAssembly SIMD implementation - negate using multiply with -1.0f
-  v128_t vec_a = wasm_v128_load(a.v);
-  v128_t neg_one = wasm_f32x4_splat(-1.0f);
-  v128_t vec_res = wasm_f32x4_mul(vec_a, neg_one);
-  wasm_v128_store(result.v, vec_res);
+  // WebAssembly SIMD implementation
+  v128_t vec_a = wcn_load_vec2_partial(a.v);
+  v128_t vec_res = wasm_f32x4_neg(vec_a);
+  wcn_store_vec2_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation - negate using XOR with sign bit mask
-  __m128 vec_a = __lsx_vld(a.v, 0);
+  __m128 vec_a = wcn_load_vec2_partial(a.v);
   __m128 sign_mask = __lsx_vldrepl_w(&(-0.0f), 0); // Load -0.0f into all lanes
   __m128 vec_res = __lsx_vxor_v(vec_a, sign_mask);
-  __lsx_vst(vec_res, result.v, 0);
+  wcn_store_vec2_partial(result.v, vec_res);
 
 #else
   // Scalar fallback
@@ -1528,21 +1505,15 @@ WMATH_NORMALIZE(Vec2)(WMATH_TYPE(Vec2) v) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD implementation
-  v128_t vec_v = wasm_v128_load(v.v);
+  v128_t vec_v = wcn_load_vec2_partial(v.v);
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
-
-  // Extract and add each component to get sum of squares
-  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
-  float len_sq = wasm_f32x4_extract_lane(sum, 0);
+  float len_sq = wasm_f32x4_extract_lane(vec_squared, 0) + wasm_f32x4_extract_lane(vec_squared, 1);
 
   if (len_sq > epsilon * epsilon) {
-    // Calculate inverse square root and multiply
     float inv_len = wcn_fast_inv_sqrt(len_sq);
     v128_t inv_len_vec = wasm_f32x4_splat(inv_len);
     v128_t vec_res = wasm_f32x4_mul(vec_v, inv_len_vec);
-    wasm_v128_store(vec2.v, vec_res);
+    wcn_store_vec2_partial(vec2.v, vec_res);
   } else {
     vec2.v[0] = 0.0f;
     vec2.v[1] = 0.0f;
@@ -1550,7 +1521,7 @@ WMATH_NORMALIZE(Vec2)(WMATH_TYPE(Vec2) v) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation
-  __m128 vec_v = __lsx_vld(v.v, 0);
+  __m128 vec_v = wcn_load_vec2_partial(v.v);
   __m128 vec_squared = __lsx_vfmul_s(vec_v, vec_v);
 
   // Horizontally add to get length squared
@@ -1563,7 +1534,7 @@ WMATH_NORMALIZE(Vec2)(WMATH_TYPE(Vec2) v) {
     float inv_len = wcn_fast_inv_sqrt(len_sq);
     __m128 inv_len_vec = __lsx_vldrepl_w(&inv_len, 0);
     __m128 vec_res = __lsx_vfmul_s(vec_v, inv_len_vec);
-    __lsx_vst(vec_res, vec2.v, 0);
+    wcn_store_vec2_partial(vec2.v, vec_res);
   } else {
     vec2.v[0] = 0.0f;
     vec2.v[1] = 0.0f;
