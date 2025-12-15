@@ -23,13 +23,13 @@ echo [OK] Python found
 python --version
 echo.
 
-echo Starting HTTP server on port 8080...
+echo Starting HTTP server on port 9000...
 echo.
 echo Test page will be available at:
-echo   http://localhost:8080/examples/wasm/test.html
+echo   http://localhost:9000/examples/wasm/test.html
 echo.
 echo Press Ctrl+C to stop the server
 echo.
 
 REM Start Python HTTP server
-python -m http.server 8080
+python -m http.server 9000

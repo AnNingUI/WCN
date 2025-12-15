@@ -69,7 +69,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSE)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_SSE2)
         check_c_compiler_flag(-msse2 SUPPORTS_SSE2)
         if(SUPPORTS_SSE2)
@@ -77,7 +77,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSE2)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_SSE3)
         check_c_compiler_flag(-msse3 SUPPORTS_SSE3)
         if(SUPPORTS_SSE3)
@@ -85,7 +85,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSE3)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_SSSE3)
         check_c_compiler_flag(-mssse3 SUPPORTS_SSSE3)
         if(SUPPORTS_SSSE3)
@@ -93,7 +93,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSSE3)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_SSE41)
         check_c_compiler_flag(-msse4.1 SUPPORTS_SSE41)
         if(SUPPORTS_SSE41)
@@ -101,7 +101,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSE41)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_SSE42)
         check_c_compiler_flag(-msse4.2 SUPPORTS_SSE42)
         if(SUPPORTS_SSE42)
@@ -109,7 +109,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_SSE42)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_AVX)
         check_c_compiler_flag(-mavx SUPPORTS_AVX)
         if(SUPPORTS_AVX)
@@ -117,7 +117,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_AVX)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_AVX2)
         check_c_compiler_flag(-mavx2 SUPPORTS_AVX2)
         if(SUPPORTS_AVX2)
@@ -125,7 +125,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_AVX2)
         endif()
     endif()
-    
+
     if(WCN_ENABLE_FMA)
         check_c_compiler_flag(-mfma SUPPORTS_FMA)
         if(SUPPORTS_FMA)
@@ -141,7 +141,7 @@ if(WCN_ENABLE_SIMD)
             target_compile_definitions(wcn PRIVATE WCN_ENABLE_NEON)
         endif()
     endif()
-    
+
     # 添加通用 SIMD 定义
     target_compile_definitions(wcn PRIVATE WCN_ENABLE_SIMD)
 else()
@@ -169,7 +169,7 @@ option(WCN_BUILD_WASM "Build WebAssembly version" OFF)
 if(EMSCRIPTEN OR WCN_BUILD_WASM)
     message(STATUS "Building WCN for WebAssembly")
     message(STATUS "WASM build will use Emscripten's Dawn WebGPU implementation")
-    
+
     # 为 WASM 构建收集源文件
     file(GLOB WASM_SOURCES
         "src/math/wcn_math_base.c"
@@ -181,7 +181,8 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         "src/math/wcn_math_quat.c"
         "src/math/wcn_math_vec2.c"
         "src/math/wcn_math_vec3.c"
-        "src/math/wcn_math_vec4.c" 
+        "src/math/wcn_math_vec4.c"
+        "src/math/wcn_math_wasm.c"
 
         "src/wcn_context.c"
         "src/wcn_instance.c"
@@ -277,271 +278,282 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         # Math Functions
         "_wcn_math_set_epsilon"
         "_wcn_math_get_epsilon"
-        # Vec2 functions
-        "_wcn_math_Vec2_create"
-        "_wcn_math_Vec2_set"
-        "_wcn_math_Vec2_copy"
-        "_wcn_math_Vec2_zero"
-        "_wcn_math_Vec2_identity"
-        "_wcn_math_Vec2_ceil"
-        "_wcn_math_Vec2_floor"
-        "_wcn_math_Vec2_round"
-        "_wcn_math_Vec2_clamp"
-        "_wcn_math_Vec2_dot"
-        "_wcn_math_Vec2_add"
-        "_wcn_math_Vec2_add_scaled"
-        "_wcn_math_Vec2_sub"
-        "_wcn_math_Vec2_angle"
-        "_wcn_math_Vec2_equals_approximately"
-        "_wcn_math_Vec2_equals"
-        "_wcn_math_Vec2_lerp"
-        "_wcn_math_Vec2_lerp_v"
-        "_wcn_math_Vec2_fmax"
-        "_wcn_math_Vec2_fmin"
-        "_wcn_math_Vec2_multiply_scalar"
-        "_wcn_math_Vec2_multiply"
-        "_wcn_math_Vec2_div_scalar"
-        "_wcn_math_Vec2_div"
-        "_wcn_math_Vec2_inverse"
-        "_wcn_math_Vec2_cross"
-        "_wcn_math_Vec2_length"
-        "_wcn_math_Vec2_length_squared"
-        "_wcn_math_Vec2_distance"
-        "_wcn_math_Vec2_distance_squared"  
-        "_wcn_math_Vec2_negate"
-        "_wcn_math_Vec2_random"
-        "_wcn_math_Vec2_normalize"
-        "_wcn_math_Vec2_rotate"
-        "_wcn_math_Vec2_set_length"
-        "_wcn_math_Vec2_truncate"
-        "_wcn_math_Vec2_midpoint"
-        # Vec3 functions
-        "_wcn_math_Vec3_create"
-        "_wcn_math_Vec3_copy"
-        "_wcn_math_Vec3_set"
-        "_wcn_math_Vec3_zero"
-        "_wcn_math_Vec3_ceil"
-        "_wcn_math_Vec3_floor"
-        "_wcn_math_Vec3_round"
-        "_wcn_math_Vec3_dot"
-        "_wcn_math_Vec3_cross"
-        "_wcn_math_Vec3_length"
-        "_wcn_math_Vec3_length_squared"
-        "_wcn_math_Vec3_normalize"
-        "_wcn_math_Vec3_clamp"
-        "_wcn_math_Vec3_add"
-        "_wcn_math_Vec3_add_scaled"
-        "_wcn_math_Vec3_sub"
-        "_wcn_math_Vec3_angle"
-        "_wcn_math_Vec3_equals_approximately"
-        "_wcn_math_Vec3_equals"
-        "_wcn_math_Vec3_lerp"
-        "_wcn_math_Vec3_lerp_v"
-        "_wcn_math_Vec3_fmax"
-        "_wcn_math_Vec3_fmin"
-        "_wcn_math_Vec3_multiply"
-        "_wcn_math_Vec3_multiply_scalar"
-        "_wcn_math_Vec3_div"
-        "_wcn_math_Vec3_div_scalar"
-        "_wcn_math_Vec3_inverse"
-        "_wcn_math_Vec3_distance"
-        "_wcn_math_Vec3_distance_squared"
-        "_wcn_math_Vec3_negate"
-        "_wcn_math_Vec3_random"
-        "_wcn_math_Vec3_set_length"
-        "_wcn_math_Vec3_truncate"
-        "_wcn_math_Vec3_midpoint"
-        # Vec4 functions
-        "_wcn_math_Vec4_create"
-        "_wcn_math_Vec4_set"
-        "_wcn_math_Vec4_copy"
-        "_wcn_math_Vec4_zero"
-        "_wcn_math_Vec4_identity"
-        "_wcn_math_Vec4_ceil"
-        "_wcn_math_Vec4_floor"
-        "_wcn_math_Vec4_round"
-        "_wcn_math_Vec4_clamp"
-        "_wcn_math_Vec4_add"
-        "_wcn_math_Vec4_add_scaled"
-        "_wcn_math_Vec4_sub"
-        "_wcn_math_Vec4_equals_approximately"
-        "_wcn_math_Vec4_equals"
-        "_wcn_math_Vec4_lerp"
-        "_wcn_math_Vec4_lerp_v"
-        "_wcn_math_Vec4_fmax"
-        "_wcn_math_Vec4_fmin"
-        "_wcn_math_Vec4_multiply"
-        "_wcn_math_Vec4_multiply_scalar"
-        "_wcn_math_Vec4_div"
-        "_wcn_math_Vec4_div_scalar"
-        "_wcn_math_Vec4_inverse"
-        "_wcn_math_Vec4_dot"
-        "_wcn_math_Vec4_length_squared"
-        "_wcn_math_Vec4_length"
-        "_wcn_math_Vec4_distance_squared"
-        "_wcn_math_Vec4_distance" 
-        "_wcn_math_Vec4_normalize"
-        "_wcn_math_Vec4_negate"
-        "_wcn_math_Vec4_set_length"
-        "_wcn_math_Vec4_truncate"
-        "_wcn_math_Vec4_midpoint"
-        # Mat3 functions
-        "_wcn_math_Mat3_identity"
-        "_wcn_math_Mat3_zero"
-        "_wcn_math_Mat3_create"
-        "_wcn_math_Mat3_copy"
-        "_wcn_math_Mat3_equals"
-        "_wcn_math_Mat3_equals_approximately"
-        "_wcn_math_Mat3_set"
-        "_wcn_math_Mat3_negate"
-        "_wcn_math_Mat3_transpose"
-        "_wcn_math_Mat3_add"
-        "_wcn_math_Mat3_sub"
-        "_wcn_math_Mat3_multiply_scalar"
-        "_wcn_math_Mat3_inverse"
-        "_wcn_math_Mat3_multiply"
-        "_wcn_math_Mat3_determinant"
-        # Mat4 functions
-        "_wcn_math_Mat4_identity"
-        "_wcn_math_Mat4_zero"
-        "_wcn_math_Mat4_create"
-        "_wcn_math_Mat4_copy"
-        "_wcn_math_Mat4_set"
-        "_wcn_math_Mat4_negate"
-        "_wcn_math_Mat4_equals"
-        "_wcn_math_Mat4_equals_approximately"
-        "_wcn_math_Mat4_add"
-        "_wcn_math_Mat4_sub"
-        "_wcn_math_Mat4_multiply_scalar"
-        "_wcn_math_Mat4_multiply"
-        "_wcn_math_Mat4_inverse"
-        "_wcn_math_Mat4_transpose"
-        "_wcn_math_Mat4_determinant"
-        "_wcn_math_Mat4_aim"
-        "_wcn_math_Mat4_look_at"
-        "_wcn_math_Mat4_ortho"
-        # Quat functions
-        "_wcn_math_Quat_zero"
-        "_wcn_math_Quat_identity"
-        "_wcn_math_Quat_create"
-        "_wcn_math_Quat_set"
-        "_wcn_math_Quat_copy"
-        "_wcn_math_Quat_dot"
-        "_wcn_math_Quat_lerp"
-        "_wcn_math_Quat_slerp"
-        "_wcn_math_Quat_sqlerp"
-        "_wcn_math_Quat_length"
-        "_wcn_math_Quat_length_squared"
-        "_wcn_math_Quat_normalize"
-        "_wcn_math_Quat_equals_approximately"
-        "_wcn_math_Quat_equals"
-        "_wcn_math_Quat_angle"
-        "_wcn_math_Quat_rotation_to"
-        "_wcn_math_Quat_multiply"
-        "_wcn_math_Quat_multiply_scalar"
-        "_wcn_math_Quat_sub"
-        "_wcn_math_Quat_add"
-        "_wcn_math_Quat_inverse"
-        "_wcn_math_Quat_conjugate"
-        "_wcn_math_Quat_div_scalar"
-        # From functions
-        "_wcn_math_Mat3_from_mat4"
-        "_wcn_math_Mat3_from_quat"
-        "_wcn_math_Mat4_from_mat3"
-        "_wcn_math_Mat4_from_quat"
-        "_wcn_math_Quat_from_axis_angle"
-        "_wcn_math_Quat_to_axis_angle"
-        "_wcn_math_Vec2_transform_mat4"
-        "_wcn_math_Vec2_transform_mat3"
-        "_wcn_math_Vec3_transform_mat4"
-        "_wcn_math_Vec3_transform_mat4_upper3x3"
-        "_wcn_math_Vec3_transform_mat3"
-        "_wcn_math_Vec3_transform_quat"
-        "_wcn_math_Quat_from_mat4"
-        "_wcn_math_Quat_from_mat3"
-        "_wcn_math_Quat_from_euler"
-        # 3D functions
-        "_wcn_math_Vec3_get_translation"
-        "_wcn_math_Vec3_get_axis"
-        "_wcn_math_Vec3_get_scale"
-        "_wcn_math_Vec3_rotate_x"
-        "_wcn_math_Vec3_rotate_y"
-        "_wcn_math_Vec3_rotate_z"
-        "_wcn_math_Vec4_transform_mat4"
-        "_wcn_math_Quat_rotate_x"
-        "_wcn_math_Quat_rotate_y"
-        "_wcn_math_Quat_rotate_z"
-        "_wcn_math_Mat3_rotate"
-        "_wcn_math_Mat3_rotate_x"
-        "_wcn_math_Mat3_rotate_y"
-        "_wcn_math_Mat3_rotate_z"
-        "_wcn_math_Mat3_rotation"
-        "_wcn_math_Mat3_rotation_x"
-        "_wcn_math_Mat3_rotation_y"
-        "_wcn_math_Mat3_rotation_z"
-        "_wcn_math_Mat3_get_axis"
-        "_wcn_math_Mat3_set_axis"
-        "_wcn_math_Mat3_get_scaling"
-        "_wcn_math_Mat3_get_3D_scaling"
-        "_wcn_math_Mat3_get_translation"
-        "_wcn_math_Mat3_set_translation"
-        "_wcn_math_Mat3_translation"
-        "_wcn_math_Mat3_translate"
-        "_wcn_math_Mat4_axis_rotate"
-        "_wcn_math_Mat4_axis_rotation"
-        "_wcn_math_Mat4_camera_aim"
-        "_wcn_math_Mat4_frustum"
-        "_wcn_math_Mat4_frustum_reverse_z"
-        "_wcn_math_Mat4_get_axis"
-        "_wcn_math_Mat4_set_axis"
-        "_wcn_math_Mat4_get_translation"
-        "_wcn_math_Mat4_set_translation"
-        "_wcn_math_Mat4_translation"
-        "_wcn_math_Mat4_perspective"
-        "_wcn_math_Mat4_perspective_reverse_z"
-        "_wcn_math_Mat4_translate"
-        "_wcn_math_Mat4_rotate"
-        "_wcn_math_Mat4_rotate_x"
-        "_wcn_math_Mat4_rotate_y"
-        "_wcn_math_Mat4_rotate_z"
-        "_wcn_math_Mat4_rotation"
-        "_wcn_math_Mat4_rotation_x"
-        "_wcn_math_Mat4_rotation_y"
-        "_wcn_math_Mat4_rotation_z"
-        # Scale functions
-        "_wcn_math_Vec2_scale"
-        "_wcn_math_Vec3_scale"
-        "_wcn_math_Quat_scale"
-        "_wcn_math_Mat3_scale"
-        "_wcn_math_Mat4_scale"
-        "_wcn_math_Mat3_scale3D"
-        "_wcn_math_Mat3_scaling"
-        "_wcn_math_Mat3_scaling3D"
-        "_wcn_math_Mat3_uniform_scale"
-        "_wcn_math_Mat3_uniform_scale_3D"
-        "_wcn_math_Mat3_uniform_scaling"
-        "_wcn_math_Mat3_uniform_scaling_3D"
-        "_wcn_math_Mat4_get_scaling"
-        "_wcn_math_Mat4_scaling"
-        "_wcn_math_Mat4_uniform_scale"
-        "_wcn_math_Mat4_uniform_scaling"
+        "_wcn_math_Vec2_create_wasm"
+        "_wcn_math_Vec3_create_wasm"
+        "_wcn_math_Vec4_create_wasm"
+        "_wcn_math_Quat_create_wasm"
+        "_wcn_math_Mat3_create_wasm"
+        "_wcn_math_Mat4_create_wasm"
+        "_wcn_math_Vec3_WithAngleAxis_get_vec3_wasm"
+        "_wcn_math_Vec3_WithAngleAxis_get_angle"
+        "_wcn_math_Vec2_set_wasm"
+        "_wcn_math_Vec2_set_x_wasm"
+        "_wcn_math_Vec2_set_y_wasm"
+        "_wcn_math_Vec2_copy_wasm"
+        "_wcn_math_Vec2_zero_wasm"
+        "_wcn_math_Vec2_identity_wasm"
+        "_wcn_math_Vec2_ceil_wasm"
+        "_wcn_math_Vec2_floor_wasm"
+        "_wcn_math_Vec2_round_wasm"
+        "_wcn_math_Vec2_clamp_wasm"
+        "_wcn_math_Vec2_dot_wasm"
+        "_wcn_math_Vec2_add_wasm"
+        "_wcn_math_Vec2_add_scaled_wasm"
+        "_wcn_math_Vec2_sub_wasm"
+        "_wcn_math_Vec2_angle_wasm"
+        "_wcn_math_Vec2_equals_approximately_wasm"
+        "_wcn_math_Vec2_equals_wasm"
+        "_wcn_math_Vec2_lerp_wasm"
+        "_wcn_math_Vec2_lerp_v_wasm"
+        "_wcn_math_Vec2_fmax_wasm"
+        "_wcn_math_Vec2_fmin_wasm"
+        "_wcn_math_Vec2_multiply_scalar_wasm"
+        "_wcn_math_Vec2_multiply_wasm"
+        "_wcn_math_Vec2_div_scalar_wasm"
+        "_wcn_math_Vec2_div_wasm"
+        "_wcn_math_Vec2_inverse_wasm"
+        "_wcn_math_Vec2_cross_wasm"
+        "_wcn_math_Vec2_length_wasm"
+        "_wcn_math_Vec2_length_squared_wasm"
+        "_wcn_math_Vec2_distance_wasm"
+        "_wcn_math_Vec2_distance_squared_wasm"
+        "_wcn_math_Vec2_negate_wasm"
+        "_wcn_math_Vec2_random_wasm"
+        "_wcn_math_Vec2_normalize_wasm"
+        "_wcn_math_Vec2_rotate_wasm"
+        "_wcn_math_Vec2_set_length_wasm"
+        "_wcn_math_Vec2_truncate_wasm"
+        "_wcn_math_Vec2_midpoint_wasm"
+        "_wcn_math_Vec3_set_wasm"
+        "_wcn_math_Vec3_set_x_wasm"
+        "_wcn_math_Vec3_set_y_wasm"
+        "_wcn_math_Vec3_set_z_wasm"
+        "_wcn_math_Vec3_copy_wasm"
+        "_wcn_math_Vec3_zero_wasm"
+        "_wcn_math_Vec3_identity_wasm"
+        "_wcn_math_Vec3_ceil_wasm"
+        "_wcn_math_Vec3_floor_wasm"
+        "_wcn_math_Vec3_round_wasm"
+        "_wcn_math_Vec3_dot_wasm"
+        "_wcn_math_Vec3_cross_wasm"
+        "_wcn_math_Vec3_length_wasm"
+        "_wcn_math_Vec3_length_squared_wasm"
+        "_wcn_math_Vec3_normalize_wasm"
+        "_wcn_math_Vec3_clamp_wasm"
+        "_wcn_math_Vec3_add_wasm"
+        "_wcn_math_Vec3_add_scaled_wasm"
+        "_wcn_math_Vec3_sub_wasm"
+        "_wcn_math_Vec3_angle_wasm"
+        "_wcn_math_Vec3_equals_approximately_wasm"
+        "_wcn_math_Vec3_equals_wasm"
+        "_wcn_math_Vec3_lerp_wasm"
+        "_wcn_math_Vec3_lerp_v_wasm"
+        "_wcn_math_Vec3_fmax_wasm"
+        "_wcn_math_Vec3_fmin_wasm"
+        "_wcn_math_Vec3_multiply_scalar_wasm"
+        "_wcn_math_Vec3_multiply_wasm"
+        "_wcn_math_Vec3_div_scalar_wasm"
+        "_wcn_math_Vec3_div_wasm"
+        "_wcn_math_Vec3_inverse_wasm"
+        "_wcn_math_Vec3_distance_wasm"
+        "_wcn_math_Vec3_distance_squared_wasm"
+        "_wcn_math_Vec3_negate_wasm"
+        "_wcn_math_Vec3_random_wasm"
+        "_wcn_math_Vec3_set_length_wasm"
+        "_wcn_math_Vec3_truncate_wasm"
+        "_wcn_math_Vec3_midpoint_wasm"
+        "_wcn_math_Vec4_set_wasm"
+        "_wcn_math_Vec4_set_x_wasm"
+        "_wcn_math_Vec4_set_y_wasm"
+        "_wcn_math_Vec4_set_z_wasm"
+        "_wcn_math_Vec4_set_w_wasm"
+        "_wcn_math_Vec4_copy_wasm"
+        "_wcn_math_Vec4_zero_wasm"
+        "_wcn_math_Vec4_identity_wasm"
+        "_wcn_math_Vec4_ceil_wasm"
+        "_wcn_math_Vec4_floor_wasm"
+        "_wcn_math_Vec4_round_wasm"
+        "_wcn_math_Vec4_clamp_wasm"
+        "_wcn_math_Vec4_add_wasm"
+        "_wcn_math_Vec4_add_scaled_wasm"
+        "_wcn_math_Vec4_sub_wasm"
+        "_wcn_math_Vec4_equals_approximately_wasm"
+        "_wcn_math_Vec4_equals_wasm"
+        "_wcn_math_Vec4_lerp_wasm"
+        "_wcn_math_Vec4_lerp_v_wasm"
+        "_wcn_math_Vec4_fmax_wasm"
+        "_wcn_math_Vec4_fmin_wasm"
+        "_wcn_math_Vec4_multiply_wasm"
+        "_wcn_math_Vec4_multiply_scalar_wasm"
+        "_wcn_math_Vec4_div_wasm"
+        "_wcn_math_Vec4_div_scalar_wasm"
+        "_wcn_math_Vec4_inverse_wasm"
+        "_wcn_math_Vec4_dot_wasm"
+        "_wcn_math_Vec4_length_squared_wasm"
+        "_wcn_math_Vec4_length_wasm"
+        "_wcn_math_Vec4_distance_wasm"
+        "_wcn_math_Vec4_distance_squared_wasm"
+        "_wcn_math_Vec4_normalize_wasm"
+        "_wcn_math_Vec4_negate_wasm"
+        "_wcn_math_Vec4_set_length_wasm"
+        "_wcn_math_Vec4_truncate_wasm"
+        "_wcn_math_Vec4_midpoint_wasm"
+        "_wcn_math_Mat3_set_wasm"
+        "_wcn_math_Mat3_set_with_index_wasm"
+        "_wcn_math_Mat3_copy_wasm"
+        "_wcn_math_Mat3_zero_wasm"
+        "_wcn_math_Mat3_identity_wasm"
+        "_wcn_math_Mat3_equals_wasm"
+        "_wcn_math_Mat3_equals_approximately_wasm"
+        "_wcn_math_Mat3_negate_wasm"
+        "_wcn_math_Mat3_transpose_wasm"
+        "_wcn_math_Mat3_add_wasm"
+        "_wcn_math_Mat3_sub_wasm"
+        "_wcn_math_Mat3_multiply_wasm"
+        "_wcn_math_Mat3_multiply_scalar_wasm"
+        "_wcn_math_Mat3_inverse_wasm"
+        "_wcn_math_Mat3_determinant_wasm"
+        "_wcn_math_Mat4_set_wasm"
+        "_wcn_math_Mat4_set_with_index_wasm"
+        "_wcn_math_Mat4_copy_wasm"
+        "_wcn_math_Mat4_zero_wasm"
+        "_wcn_math_Mat4_identity_wasm"
+        "_wcn_math_Mat4_negate_wasm"
+        "_wcn_math_Mat4_equals_wasm"
+        "_wcn_math_Mat4_equals_approximately_wasm"
+        "_wcn_math_Mat4_add_wasm"
+        "_wcn_math_Mat4_sub_wasm"
+        "_wcn_math_Mat4_multiply_wasm"
+        "_wcn_math_Mat4_multiply_scalar_wasm"
+        "_wcn_math_Mat4_inverse_wasm"
+        "_wcn_math_Mat4_transpose_wasm"
+        "_wcn_math_Mat4_determinant_wasm"
+        "_wcn_math_Mat4_aim_wasm"
+        "_wcn_math_Mat4_look_at_wasm"
+        "_wcn_math_Mat4_ortho_wasm"
+        "_wcn_math_Quat_set_wasm"
+        "_wcn_math_Quat_set_x_wasm"
+        "_wcn_math_Quat_set_y_wasm"
+        "_wcn_math_Quat_set_z_wasm"
+        "_wcn_math_Quat_set_w_wasm"
+        "_wcn_math_Quat_zero_wasm"
+        "_wcn_math_Quat_identity_wasm"
+        "_wcn_math_Quat_copy_wasm"
+        "_wcn_math_Quat_dot_wasm"
+        "_wcn_math_Quat_lerp_wasm"
+        "_wcn_math_Quat_slerp_wasm"
+        "_wcn_math_Quat_sqlerp_wasm"
+        "_wcn_math_Quat_length_wasm"
+        "_wcn_math_Quat_length_squared_wasm"
+        "_wcn_math_Quat_normalize_wasm"
+        "_wcn_math_Quat_equals_approximately_wasm"
+        "_wcn_math_Quat_equals_wasm"
+        "_wcn_math_Quat_angle_wasm"
+        "_wcn_math_Quat_rotation_to_wasm"
+        "_wcn_math_Quat_multiply_wasm"
+        "_wcn_math_Quat_multiply_scalar_wasm"
+        "_wcn_math_Quat_sub_wasm"
+        "_wcn_math_Quat_add_wasm"
+        "_wcn_math_Quat_inverse_wasm"
+        "_wcn_math_Quat_conjugate_wasm"
+        "_wcn_math_Quat_div_scalar_wasm"
+        "_wcn_math_Mat3_from_mat4_wasm"
+        "_wcn_math_Mat3_from_quat_wasm"
+        "_wcn_math_Mat4_from_mat3_wasm"
+        "_wcn_math_Mat4_from_quat_wasm"
+        "_wcn_math_Quat_from_axis_angle_wasm"
+        "_wcn_math_Quat_to_axis_angle_wasm"
+        "_wcn_math_Vec2_transform_mat4_wasm"
+        "_wcn_math_Vec2_transform_mat3_wasm"
+        "_wcn_math_Vec3_transform_mat4_wasm"
+        "_wcn_math_Vec3_transform_mat4_upper3x3_wasm"
+        "_wcn_math_Vec3_transform_mat3_wasm"
+        "_wcn_math_Vec3_transform_quat_wasm"
+        "_wcn_math_Quat_from_mat4_wasm"
+        "_wcn_math_Quat_from_mat3_wasm"
+        "_wcn_math_Quat_from_euler_wasm"
+        "_wcn_math_Vec3_get_translation_wasm"
+        "_wcn_math_Vec3_get_axis_wasm"
+        "_wcn_math_Vec3_get_scale_wasm"
+        "_wcn_math_Vec3_rotate_x_wasm"
+        "_wcn_math_Vec3_rotate_y_wasm"
+        "_wcn_math_Vec3_rotate_z_wasm"
+        "_wcn_math_Vec4_transform_mat4_wasm"
+        "_wcn_math_Quat_rotate_x_wasm"
+        "_wcn_math_Quat_rotate_y_wasm"
+        "_wcn_math_Quat_rotate_z_wasm"
+        "_wcn_math_Mat3_rotate_wasm"
+        "_wcn_math_Mat3_rotate_x_wasm"
+        "_wcn_math_Mat3_rotate_y_wasm"
+        "_wcn_math_Mat3_rotate_z_wasm"
+        "_wcn_math_Mat3_rotation_wasm"
+        "_wcn_math_Mat3_rotation_x_wasm"
+        "_wcn_math_Mat3_rotation_y_wasm"
+        "_wcn_math_Mat3_rotation_z_wasm"
+        "_wcn_math_Mat3_get_axis_wasm"
+        "_wcn_math_Mat3_set_axis_wasm"
+        "_wcn_math_Mat3_get_scaling_wasm"
+        "_wcn_math_Mat3_get_3D_scaling_wasm"
+        "_wcn_math_Mat3_get_translation_wasm"
+        "_wcn_math_Mat3_set_translation_wasm"
+        "_wcn_math_Mat3_translation_wasm"
+        "_wcn_math_Mat3_translate_wasm"
+        "_wcn_math_Mat4_axis_rotate_wasm"
+        "_wcn_math_Mat4_axis_rotation_wasm"
+        "_wcn_math_Mat4_camera_aim_wasm"
+        "_wcn_math_Mat4_frustum_wasm"
+        "_wcn_math_Mat4_frustum_reverse_z_wasm"
+        "_wcn_math_Mat4_get_axis_wasm"
+        "_wcn_math_Mat4_set_axis_wasm"
+        "_wcn_math_Mat4_get_translation_wasm"
+        "_wcn_math_Mat4_set_translation_wasm"
+        "_wcn_math_Mat4_translation_wasm"
+        "_wcn_math_Mat4_perspective_wasm"
+        "_wcn_math_Mat4_perspective_reverse_z_wasm"
+        "_wcn_math_Mat4_translate_wasm"
+        "_wcn_math_Mat4_rotate_wasm"
+        "_wcn_math_Mat4_rotate_x_wasm"
+        "_wcn_math_Mat4_rotate_y_wasm"
+        "_wcn_math_Mat4_rotate_z_wasm"
+        "_wcn_math_Mat4_rotation_wasm"
+        "_wcn_math_Mat4_rotation_x_wasm"
+        "_wcn_math_Mat4_rotation_y_wasm"
+        "_wcn_math_Mat4_rotation_z_wasm"
+        "_wcn_math_Vec2_scale_wasm"
+        "_wcn_math_Vec3_scale_wasm"
+        "_wcn_math_Quat_scale_wasm"
+        "_wcn_math_Mat3_scale_wasm"
+        "_wcn_math_Mat4_scale_wasm"
+        "_wcn_math_Mat3_scale3D_wasm"
+        "_wcn_math_Mat3_scaling_wasm"
+        "_wcn_math_Mat3_scaling3D_wasm"
+        "_wcn_math_Mat3_uniform_scale_wasm"
+        "_wcn_math_Mat3_uniform_scale_3D_wasm"
+        "_wcn_math_Mat3_uniform_scaling_wasm"
+        "_wcn_math_Mat3_uniform_scaling_3D_wasm"
+        "_wcn_math_Mat4_get_scaling_wasm"
+        "_wcn_math_Mat4_scaling_wasm"
+        "_wcn_math_Mat4_uniform_scale_wasm"
+        "_wcn_math_Mat4_uniform_scaling_wasm"
 
         "_malloc"
         "_free"
     )
     # 将列表转换为逗号分隔的字符串
     string(REPLACE ";" "," EXPORTED_FUNCTIONS "${EXPORTED_FUNCTIONS}")
-    message(STATUS "WASM exports: ${EXPORTED_FUNCTIONS}")
+    set(WCN_WASM_RSP "${CMAKE_CURRENT_BINARY_DIR}/wcn_wasm_exports.rsp")
+    file(WRITE "${WCN_WASM_RSP}" "-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS}")
+    message(STATUS "WASM exports: ${WCN_WASM_RSP}")
 
     # =========================================================================
     # WASM 编译和链接选项分离配置
     # =========================================================================
-    
+
     # 1. 纯编译选项 (仅传给 C 编译器)
     set(WASM_ONLY_COMPILE_FLAGS
         -O3                              # 优化级别
     )
-    
+
     # 2. 纯链接选项 (仅传给 Linker)
     # 所有 -s 开头的 Emscripten 特定参数都在这里
     set(WASM_ONLY_LINK_FLAGS
@@ -552,10 +564,10 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         -sMODULARIZE=1                   # 模块化输出
         -sEXPORT_NAME=createWCNModule    # 模块名称
         -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString,stringToUTF8,lengthBytesUTF8,getValue,setValue
-        -sEXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS}  # 导出函数列表
         -sENVIRONMENT=web                # 目标环境：浏览器
         -sMAXIMUM_MEMORY=2147483648      # 最大内存 (2GB)
         -sINITIAL_MEMORY=67108864        # 初始内存 (64MB)
+        "@${WCN_WASM_RSP}"
     )
 
     # 3. 处理 SIMD (根据 CMake 选项动态添加)
@@ -565,53 +577,53 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
         list(APPEND WASM_ONLY_COMPILE_FLAGS -msimd128)
         list(APPEND WASM_ONLY_LINK_FLAGS -msimd128)
     endif()
-    
+
     # 4. Debug/Release 构建选项区分
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         # 编译时增加调试信息
         list(APPEND WASM_ONLY_COMPILE_FLAGS -g)
-        
+
         # 链接时增加调试支持、断言和安全检查
-        list(APPEND WASM_ONLY_LINK_FLAGS 
+        list(APPEND WASM_ONLY_LINK_FLAGS
             -g
-            -sASSERTIONS=1              
-            -sSAFE_HEAP=1               
-            -sSTACK_OVERFLOW_CHECK=2    
-            -sDEMANGLE_SUPPORT=1        
+            -sASSERTIONS=1
+            -sSAFE_HEAP=1
+            -sSTACK_OVERFLOW_CHECK=2
+            -sDEMANGLE_SUPPORT=1
         )
     else()
         # Release 版本保留基本检查以获得更好的错误信息
-        list(APPEND WASM_ONLY_LINK_FLAGS 
-            -sASSERTIONS=1              
-            -sSAFE_HEAP=1               
+        list(APPEND WASM_ONLY_LINK_FLAGS
+            -sASSERTIONS=1
+            -sSAFE_HEAP=1
         )
     endif()
-    
+
     # 5. 分别应用编译和链接选项
     target_compile_options(wcn_wasm PRIVATE ${WASM_ONLY_COMPILE_FLAGS})
     target_link_options(wcn_wasm PRIVATE ${WASM_ONLY_LINK_FLAGS})
-    
+
     # 设置输出文件名
     set_target_properties(wcn_wasm PROPERTIES
         OUTPUT_NAME "wcn"
         SUFFIX ".js"
     )
-    
+
     # 安装 WASM 文件
-    install(FILES 
+    install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/wcn.js
         ${CMAKE_CURRENT_BINARY_DIR}/wcn.wasm
         DESTINATION lib/wasm
         OPTIONAL
     )
-    
+
     # 创建一个自定义目标来显示构建信息
     add_custom_command(TARGET wcn_wasm POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "WebAssembly build complete:"
         COMMAND ${CMAKE_COMMAND} -E echo "  Output: ${CMAKE_CURRENT_BINARY_DIR}/wcn.js"
         COMMAND ${CMAKE_COMMAND} -E echo "  WASM:   ${CMAKE_CURRENT_BINARY_DIR}/wcn.wasm"
     )
-    
+
     message(STATUS "WASM build configured. Use 'make wcn_wasm' to build.")
 else()
     # 只在非 WASM 构建时添加 examples（examples 依赖 GLFW 等本地库）
@@ -626,7 +638,7 @@ install(TARGETS wcn
 )
 
 # 安装头文件到 include/WCN 目录
-install(DIRECTORY include/ 
+install(DIRECTORY include/
     DESTINATION include/WCN
     FILES_MATCHING PATTERN "*.h"
 )

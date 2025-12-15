@@ -35,7 +35,7 @@ namespace WCN
     static constexpr                   float TWO_PI               =                                                                                                            WMATH_2PI;
     static constexpr                   float PI_OVER_2            =                                                                                                            WMATH_PI_2;
     /**
-    inline WCN_Math_Vec3_WithAngleAxis transform_vector_upper_3x3 (const float left, const float right, const float bottom, const float top, const float near, const float far {}
+    inline WCN_Math_Vec3_WithAngleAxis transform_vector_upper_3x3 (const float left, const float right, const float bottom, const float top, const float near, const float far) {}
      */
     inline float                       get_epsilon                ()                                                                                                           { return wcn_math_get_epsilon(); }
     inline float                       set_epsilon                (const float eps)                                                                                            { return wcn_math_set_epsilon(eps); }
@@ -255,7 +255,7 @@ namespace WCN
     inline Mat3                        make_mat3_scaling           (const Vec3 v)                                                                                              { return WMATH_CALL(Mat3, scaling3D)(v); } // 3D scaling in 3x3
     inline Mat3                        make_mat3_rotation          (const float rad)                                                                                           { return WMATH_ROTATION(Mat3)(rad); }
     inline Mat3                        make_mat3_rotation_x        (const float rad)                                                                                           { return WMATH_ROTATION_X(Mat3)(rad); }
-    inline Mat3                        make_mat3_rotation_y        (const float rad)                                                                                           { return WMATH_ROTATION_Y(Mat3)(Mat3(), rad); } // Note: C API signature quirk? Header says (Mat3 m, float)
+    inline Mat3                        make_mat3_rotation_y        (const float rad)                                                                                           { return WMATH_ROTATION_Y(Mat3)(rad); }
     inline Mat3                        make_mat3_rotation_z        (const float rad)                                                                                           { return WMATH_ROTATION_Z(Mat3)(rad); }
                   
     // 运算符                  

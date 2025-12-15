@@ -1222,16 +1222,16 @@ WMATH_MULTIPLY(Mat3)(WMATH_TYPE(Mat3) a, WMATH_TYPE(Mat3) b) {
   return result;
 }
 
-float WMATH_DETERMINANT(Mat3)(WMATH_TYPE(Mat3) m) {
-  float m00 = m.m[0 * 4 + 0];
-  float m01 = m.m[0 * 4 + 1];
-  float m02 = m.m[0 * 4 + 2];
-  float m10 = m.m[1 * 4 + 0];
-  float m11 = m.m[1 * 4 + 1];
-  float m12 = m.m[1 * 4 + 2];
-  float m20 = m.m[2 * 4 + 0];
-  float m21 = m.m[2 * 4 + 1];
-  float m22 = m.m[2 * 4 + 2];
+float WMATH_DETERMINANT(Mat3)(const WMATH_TYPE(Mat3) m) {
+  const float m00 = m.m[0 * 4 + 0];
+  const float m01 = m.m[0 * 4 + 1];
+  const float m02 = m.m[0 * 4 + 2];
+  const float m10 = m.m[1 * 4 + 0];
+  const float m11 = m.m[1 * 4 + 1];
+  const float m12 = m.m[1 * 4 + 2];
+  const float m20 = m.m[2 * 4 + 0];
+  const float m21 = m.m[2 * 4 + 1];
+  const float m22 = m.m[2 * 4 + 2];
 
   return m00 * (m11 * m22 - m21 * m12) - m10 * (m01 * m22 - m21 * m02) +
          m20 * (m01 * m12 - m11 * m02);

@@ -4234,7 +4234,7 @@ WMATH_ROTATION_X(Mat3)(float angleInRadians) {
 
 // Mat3 rotation y
 WMATH_TYPE(Mat3)
-WMATH_ROTATION_Y(Mat3)(WMATH_TYPE(Mat3) m, float angleInRadians) {
+WMATH_ROTATION_Y(Mat3)(float angleInRadians) {
   WMATH_TYPE(Mat3) newDst = WMATH_ZERO(Mat3)();
 
   float c = cosf(angleInRadians);

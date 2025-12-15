@@ -173,7 +173,31 @@
 
                 // Create WCN module
                 WCNModule = await createWCNModule();
-
+                console.log('WCN Module:', Object.keys(WCNModule));
+                // const outPtr = WCNModule._malloc(8); // Allocate space for Vec2 (2 floats)
+                // // console.log("_wcn_init_vec2", WCNModule._wcn_init_vec2)
+                // WCNModule._wcn_math_Vec2_create_wasm(outPtr, 1, 2)
+                // const f32 = WCNModule.HEAPF32;
+                // console.log(f32[outPtr >> 2], f32[(outPtr >> 2) + 1]);
+                // const outPtr2 = WCNModule._malloc(8); // Allocate space for Vec2 (2 floats)
+                // // console.log("_wcn_init_vec2", WCNModule._wcn_init_vec2)
+                // WCNModule._wcn_math_Vec2_create_wasm(outPtr2, 3, 4)
+                // console.log(f32[outPtr2 >> 2], f32[(outPtr2 >> 2) + 1]);
+                // const addPtr = WCNModule._malloc(8);
+                // WCNModule._wcn_math_Vec2_add_wasm(addPtr, outPtr, outPtr2);
+                // console.log('_wcn_add', f32[addPtr >> 2], f32[(addPtr >> 2) + 1]);
+                // console.log(`ptr(a, b, c): ${outPtr} ${outPtr2} ${addPtr}`);
+                Vec2.init(WCNModule);
+                const v_1 = Vec2.makeXY(1, 2);
+                const v_2 = Vec2.makeXY(3, 4);
+                const v_3 = v_1.add(v_2);
+                console.log('_wcn_add', v_3.x, v_3.y);
+                v_3.x = 7;
+                v_3.y = 8;
+                console.log('_wcn_add', v_3.x, v_3.y);
+                console.log('toF32Array', v_1.toF32Array());
+                // v_1.free();
+                // v_2.free();
                 updateStatus('WCN module loaded successfully!', 'success');
                 document.getElementById('startBtn').disabled = false;
 
@@ -307,8 +331,8 @@
         }
 
         // Initialize when page loads
-        window.addEventListener('load', () => {
-            loadWCN();
+        window.addEventListener('load', async () => {
+            await loadWCN();
         });
     </script>
 </body>

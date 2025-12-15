@@ -834,6 +834,84 @@ class WCNImage {
         }
     }
 }
+const Size = {
+    f32: 4,
+    vec2: 8
+}
+class Vec2 {
+    static wcnModule = (/** @type {WCNModule} */(null));
+    /**
+     * @param {WCNModule} wcnModule
+     */
+    static init(wcnModule) {
+        Vec2.wcnModule = wcnModule;
+    }
+    // ptr -> [f32, f32]
+    ptr
+    /**
+     * @param {number} x
+     * @param {number} y
+     * */
+    static makeXY(x, y) {
+        const ptr = Vec2.wcnModule._malloc(Size.vec2);
+        Vec2.wcnModule._wcn_math_Vec2_create_wasm(ptr, x, y);
+        const vec = new Vec2();
+        vec.ptr = ptr;
+        return vec;
+    }
+    /**
+     * @param {Vec2} v
+     * */
+    static copy(v) {
+        const ptr = Vec2.wcnModule._malloc(Size.vec2);
+        Vec2.wcnModule._wcn_math_Vec2_copy_wasm(ptr, v.ptr);
+        const vec = new Vec2();
+        vec.ptr = ptr;
+        return vec;
+    }
+    free() {
+        Vec2.wcnModule._free(this.ptr);
+    }
+    /**
+     * @param {Vec2} other
+     * */
+    add(other) {
+        const ptr = Vec2.wcnModule._malloc(Size.vec2);
+        Vec2.wcnModule._wcn_math_Vec2_add_wasm(ptr, this.ptr, other.ptr)
+        const vec = new Vec2();
+        vec.ptr = ptr;
+        return vec;
+    }
+    toString() {
+        return `[${Vec2.wcnModule.getValue(this.ptr, 'float')}, ${Vec2.wcnModule.getValue(this.ptr + Size.f32, 'float')}]`;
+    }
+
+    toF32Array() {
+        return new Float32Array(Vec2.wcnModule.HEAPF32.buffer, Vec2.wcnModule.HEAPF32.byteOffset + this.ptr, 2);
+    }
+
+    /**
+     * @returns {[number, number]}
+     * */
+    toArray() {
+        return [Vec2.wcnModule.getValue(this.ptr, 'float'), Vec2.wcnModule.getValue(this.ptr + Size.f32, 'float')];
+    }
+
+    get x() {
+        return Vec2.wcnModule.getValue(this.ptr, 'float');
+    }
+
+    get y() {
+        return Vec2.wcnModule.getValue(this.ptr + Size.f32, 'float');
+    }
+
+    set x(value) {
+        Vec2.wcnModule._wcn_math_Vec2_set_x_wasm(this.ptr, value);
+    }
+    set y(value) {
+        Vec2.wcnModule._wcn_math_Vec2_set_y_wasm(this.ptr, value);
+    }
+}
 
 // Export the createWCNCanvas function
 if (typeof module !== 'undefined' && module.exports) {
@@ -841,4 +919,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else if (typeof window !== 'undefined') {
     window.createWCNCanvas = createWCNCanvas;
     window.WCNImage = WCNImage;
+    window.Vec2 = Vec2;
 }

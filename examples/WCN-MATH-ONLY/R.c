@@ -1363,7 +1363,7 @@ bool TestMat3() {
     // Test rotation functions
     WMATH_TYPE(Mat3) m16 = WMATH_ROTATION(Mat3)(WMATH_PI_2);
     WMATH_TYPE(Mat3) m17 = WMATH_ROTATION_X(Mat3)(WMATH_PI_2);
-    WMATH_TYPE(Mat3) m18 = WMATH_ROTATION_Y(Mat3)(m1, WMATH_PI_2);
+    WMATH_TYPE(Mat3) m18 = WMATH_ROTATION_Y(Mat3)(WMATH_PI_2);
     WMATH_TYPE(Mat3) m19 = WMATH_ROTATION_Z(Mat3)(WMATH_PI_2);
 
     // Test rotate functions
