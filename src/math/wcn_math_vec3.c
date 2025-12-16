@@ -73,9 +73,9 @@ WMATH_CEIL(Vec3)(WMATH_TYPE(Vec3) a) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation using wasm_f32x4_ceil
-  v128_t vec_a = wasm_v128_load(a.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
   v128_t vec_res = wasm_f32x4_ceil(vec_a);
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation
@@ -137,9 +137,9 @@ WMATH_FLOOR(Vec3)(WMATH_TYPE(Vec3) a) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation using wasm_f32x4_floor
-  v128_t vec_a = wasm_v128_load(a.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
   v128_t vec_res = wasm_f32x4_floor(vec_a);
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation
@@ -194,9 +194,9 @@ WMATH_ROUND(Vec3)(WMATH_TYPE(Vec3) a) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation using wasm_f32x4_nearest (round to nearest, ties to even)
-  v128_t vec_a = wasm_v128_load(a.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
   v128_t vec_res = wasm_f32x4_nearest(vec_a);
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation
@@ -245,15 +245,12 @@ float WMATH_DOT(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation - multiply and horizontal add
-  v128_t vec_a = wasm_v128_load(a.v);
-  v128_t vec_b = wasm_v128_load(b.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
+  v128_t vec_b = wcn_load_vec3_partial(b.v);
   v128_t vec_mul = wasm_f32x4_mul(vec_a, vec_b);
-
-  // Extract and add each component to get sum of products
-  v128_t v = wasm_i32x4_shuffle(vec_mul, vec_mul, 0, 1, 0, 1);
-  v128_t v2 = wasm_i32x4_shuffle(vec_mul, vec_mul, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v, v2);
-  return wasm_f32x4_extract_lane(sum, 0);
+  // Vec3 只有 3 个 float，只加前 3 个 lane
+  return wasm_f32x4_extract_lane(vec_mul, 0) + wasm_f32x4_extract_lane(vec_mul, 1) +
+         wasm_f32x4_extract_lane(vec_mul, 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation - multiply and reduce add for 3 elements
@@ -313,8 +310,8 @@ WMATH_CROSS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation for cross product
   // Cross product: (a1, a2, a3) × (b1, b2, b3) = (a2*b3 - a3*b2, a3*b1 - a1*b3, a1*b2 - a2*b1)
-  v128_t vec_a = wasm_v128_load(a.v);
-  v128_t vec_b = wasm_v128_load(b.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
+  v128_t vec_b = wcn_load_vec3_partial(b.v);
 
   // Create shuffled vectors: (a2, a3, a1) and (b3, b1, b2)
   v128_t a2_a3_a1_ = wasm_i32x4_shuffle(vec_a, vec_a, 1, 2, 0, 3);
@@ -329,7 +326,7 @@ WMATH_CROSS(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
   v128_t prod2 = wasm_f32x4_mul(a3_a1_a2_, b2_b3_b1_);
   v128_t vec_res = wasm_f32x4_sub(prod1, prod2);
 
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation
@@ -425,20 +422,17 @@ WMATH_NORMALIZE(Vec3)(WMATH_TYPE(Vec3) v) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD implementation
-  v128_t vec_v = wasm_v128_load(v.v);
+  v128_t vec_v = wcn_load_vec3_partial(v.v);
   v128_t vec_squared = wasm_f32x4_mul(vec_v, vec_v);
-
-  // Extract and add each component to get sum of squares
-  v128_t v_shuffle1 = wasm_i32x4_shuffle(vec_squared, vec_squared, 0, 1, 0, 1);
-  v128_t v_shuffle2 = wasm_i32x4_shuffle(vec_squared, vec_squared, 2, 3, 2, 3);
-  v128_t sum = wasm_f32x4_add(v_shuffle1, v_shuffle2);
-  float len_sq = wasm_f32x4_extract_lane(sum, 0);
+  // Vec3 只有 3 个 float
+  float len_sq = wasm_f32x4_extract_lane(vec_squared, 0) + wasm_f32x4_extract_lane(vec_squared, 1) +
+                 wasm_f32x4_extract_lane(vec_squared, 2);
 
   if (len_sq > epsilon * epsilon) {
     float inv_len = 1.0f / sqrtf(len_sq);
     v128_t vec_inv_len = wasm_f32x4_splat(inv_len);
     v128_t vec_res = wasm_f32x4_mul(vec_v, vec_inv_len);
-    wasm_v128_store(result.v, vec_res);
+    wcn_store_vec3_partial(result.v, vec_res);
   } else {
     result = WMATH_ZERO(Vec3)();
   }
@@ -523,14 +517,14 @@ WMATH_CLAMP(Vec3)(WMATH_TYPE(Vec3) a, float min_val, float max_val) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WASM SIMD implementation
-  v128_t vec_a = wasm_v128_load(a.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
   v128_t vec_min = wasm_f32x4_splat(min_val);
   v128_t vec_max = wasm_f32x4_splat(max_val);
 
   // Branchless clamp: min(max(a, min_val), max_val)
   v128_t vec_temp = wasm_f32x4_max(vec_a, vec_min);
   v128_t vec_res = wasm_f32x4_min(vec_temp, vec_max);
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation
@@ -584,10 +578,10 @@ WMATH_TYPE(Vec3) WMATH_ADD(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
   // WebAssembly SIMD implementation
-  v128_t vec_a = wasm_v128_load(a.v);
-  v128_t vec_b = wasm_v128_load(b.v);
+  v128_t vec_a = wcn_load_vec3_partial(a.v);
+  v128_t vec_b = wcn_load_vec3_partial(b.v);
   v128_t vec_res = wasm_f32x4_add(vec_a, vec_b);
-  wasm_v128_store(result.v, vec_res);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_RISCV_VECTOR
   // RISC-V Vector Extension implementation - using helper functions
@@ -598,10 +592,10 @@ WMATH_TYPE(Vec3) WMATH_ADD(Vec3)(WMATH_TYPE(Vec3) a, WMATH_TYPE(Vec3) b) {
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX implementation
-  __m128 vec_a = __lsx_vld(a.v, 0);
-  __m128 vec_b = __lsx_vld(b.v, 0);
+  __m128 vec_a = wcn_load_vec3_partial(a.v);
+  __m128 vec_b = wcn_load_vec3_partial(b.v);
   __m128 vec_res = __lsx_vfadd_s(vec_a, vec_b);
-  __lsx_vst(vec_res, result.v, 0);
+  wcn_store_vec3_partial(result.v, vec_res);
 
 #else
   // Scalar fallback
