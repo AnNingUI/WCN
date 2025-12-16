@@ -26,7 +26,7 @@ echo.
 echo Starting HTTP server on port 9000...
 echo.
 echo Test page will be available at:
-echo   http://localhost:9000/examples/wasm/test.html
+echo   http://localhost:9000/examples/wasm/simple_test.html
 echo.
 echo Press Ctrl+C to stop the server
 echo.

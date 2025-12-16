@@ -8,8 +8,13 @@
 // Usage: Include this file and use WCN_WASM_EXPORT_ALL() in your implementation.
 // ============================================================================
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "webgpu/webgpu.h"
 #include "WCN/WCN_PLATFORM_MACROS.h"
+
+// Forward declarations
+typedef struct WCN_FontFace WCN_FontFace;
 // ============================================================================
 // Export Macro Definitions
 // ============================================================================
@@ -94,11 +99,41 @@
     WCN_WASM_EXPORT void wcn_destroy_image_data(WCN_ImageData* image_data);
 
 typedef WGPUTextureView (*GetWGPUTextureViewCallback)();
+
 // Helper Functions
 #define WCN_WASM_EXPORT_HELPERS() \
     WCN_WASM_EXPORT WGPUTextureFormat wcn_get_surface_format(WCN_Context* ctx); \
     WCN_WASM_EXPORT void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format); \
-    WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face); \
+    WCN_WASM_EXPORT bool wcn_wasm_load_font(const void* font_data, size_t data_size, WCN_FontFace** out_face);
+
+// ============================================================================
+// Font Decoder Async/Batch API (Worker + OffscreenCanvas)
+// ============================================================================
+
+// 异步单字形渲染
+WCN_WASM_EXPORT int wcn_wasm_get_glyph_sdf_async(WCN_FontFace* face, uint32_t codepoint, float font_size);
+WCN_WASM_EXPORT bool wcn_wasm_check_glyph_sdf_ready(int request_id);
+WCN_WASM_EXPORT bool wcn_wasm_get_glyph_sdf_result(int request_id,
+                                                   unsigned char** out_bitmap,
+                                                   int* out_width, int* out_height,
+                                                   float* out_offset_x, float* out_offset_y,
+                                                   float* out_advance,
+                                                   bool* out_is_color);
+
+// 批量异步渲染
+WCN_WASM_EXPORT int wcn_wasm_get_glyph_sdf_batch_async(WCN_FontFace* face, const uint32_t* codepoints, int count, float font_size);
+WCN_WASM_EXPORT int wcn_wasm_get_batch_result_count(int request_id);
+WCN_WASM_EXPORT bool wcn_wasm_get_batch_result_item(int request_id, int index,
+                                                    unsigned char** out_bitmap,
+                                                    int* out_width, int* out_height,
+                                                    float* out_offset_x, float* out_offset_y,
+                                                    float* out_advance,
+                                                    bool* out_is_color);
+WCN_WASM_EXPORT void wcn_wasm_free_batch_result(int request_id);
+
+// 预加载 & 缓存管理
+WCN_WASM_EXPORT void wcn_wasm_preload_common_glyphs(WCN_FontFace* face, float font_size);
+WCN_WASM_EXPORT void wcn_wasm_clear_glyph_cache(void);
 
 // ============================================================================
 // Export All Functions
