@@ -13,8 +13,46 @@ typedef enum {
     WCN_INSTANCE_TYPE_TEXT = 1,
     WCN_INSTANCE_TYPE_PATH = 2,
     WCN_INSTANCE_TYPE_LINE = 3,
-    WCN_INSTANCE_TYPE_IMAGE = 4
+    WCN_INSTANCE_TYPE_IMAGE = 4,
+    WCN_INSTANCE_TYPE_ARC = 5,           // GPU SDF 圆弧 (stroke)
+    WCN_INSTANCE_TYPE_BEZIER = 6,        // GPU SDF 二次贝塞尔曲线
+    WCN_INSTANCE_TYPE_CIRCLE_FILL = 7    // GPU SDF 圆形/扇形填充
 } WCN_InstanceType;
+
+// ============================================================================
+// GPU Native 路径命令系统 (内部使用)
+// ============================================================================
+
+// 路径命令类型
+typedef enum {
+    WCN_CMD_MOVE_TO = 0,
+    WCN_CMD_LINE_TO = 1,
+    WCN_CMD_ARC = 2,           // 圆弧 (cx, cy, radius, start_angle, end_angle, anticlockwise)
+    WCN_CMD_QUAD_TO = 3,       // 二次贝塞尔 (cpx, cpy, x, y)
+    WCN_CMD_CUBIC_TO = 4,      // 三次贝塞尔 (cp1x, cp1y, cp2x, cp2y, x, y)
+    WCN_CMD_CLOSE = 5
+} WCN_PathCmdType;
+
+// 路径命令结构 (最多存储 6 个参数)
+typedef struct {
+    uint8_t type;              // WCN_PathCmdType
+    float params[6];           // 参数 (根据类型使用不同数量)
+} WCN_PathCmd;
+
+// GPU Native 路径结构 (内部使用，替代原有的 WCN_Path 点数组)
+typedef struct {
+    WCN_PathCmd* commands;     // 命令数组
+    size_t command_count;
+    size_t command_capacity;
+    
+    // 当前点 (用于相对命令)
+    float current_x;
+    float current_y;
+    float start_x;             // 子路径起点 (用于 close)
+    float start_y;
+    
+    bool is_closed;
+} WCN_GPUNativePath;
 
 // 统一实例结构 (64 字节，用于 GPU 实例化渲染)
 // 字段排列以达到精确 64 字节，无额外填充
@@ -172,8 +210,11 @@ struct WCN_Context {
     WCN_FontDecoder* font_decoder;
     WCN_ImageDecoder* image_decoder;
 
-    // 当前路径
+    // 当前路径 (保留用于 fill 的点数组)
     WCN_Path* current_path;
+    
+    // GPU Native 路径 (保留原始命令用于 stroke)
+    WCN_GPUNativePath* gpu_path;
     
     // 文本渲染状态
     WCN_FontFace* current_font_face;
@@ -369,6 +410,55 @@ void wcn_renderer_add_line(
     uint32_t color,
     const float transform[4],
     uint32_t line_cap  // Line cap style (WCN_LineCap)
+);
+
+// 添加圆弧实例 (GPU SDF 渲染)
+void wcn_renderer_add_arc(
+    WCN_Renderer* renderer,
+    float cx, float cy,           // 圆心
+    float radius,                 // 半径
+    float start_angle,            // 起始角度 (弧度)
+    float end_angle,              // 结束角度 (弧度)
+    float stroke_width,           // 描边宽度
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags                // bit 0: is_fill
+);
+
+// 添加圆形/扇形填充实例 (GPU SDF 渲染)
+void wcn_renderer_add_circle_fill(
+    WCN_Renderer* renderer,
+    float cx, float cy,           // 圆心
+    float radius,                 // 半径
+    float start_angle,            // 起始角度 (弧度)
+    float end_angle,              // 结束角度 (弧度)
+    uint32_t color,
+    const float transform[4]
+);
+
+// 添加二次贝塞尔曲线实例 (GPU SDF 渲染)
+void wcn_renderer_add_quadratic_bezier(
+    WCN_Renderer* renderer,
+    float x0, float y0,           // 起点
+    float cpx, float cpy,         // 控制点
+    float x1, float y1,           // 终点
+    float stroke_width,           // 描边宽度
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags
+);
+
+// 添加三次贝塞尔曲线 (分解为两个二次贝塞尔)
+void wcn_renderer_add_cubic_bezier(
+    WCN_Renderer* renderer,
+    float x0, float y0,           // 起点
+    float cp1x, float cp1y,       // 控制点1
+    float cp2x, float cp2y,       // 控制点2
+    float x1, float y1,           // 终点
+    float stroke_width,           // 描边宽度
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags
 );
 
 // 渲染

@@ -11,6 +11,9 @@ const INSTANCE_TYPE_TEXT: u32 = 1u;
 const INSTANCE_TYPE_PATH: u32 = 2u;
 const INSTANCE_TYPE_LINE: u32 = 3u;
 const INSTANCE_TYPE_IMAGE: u32 = 4u;
+const INSTANCE_TYPE_ARC: u32 = 5u;
+const INSTANCE_TYPE_BEZIER: u32 = 6u;
+const INSTANCE_TYPE_CIRCLE_FILL: u32 = 7u;
 
 const LINE_CAP_BUTT: u32 = 0u;
 const LINE_CAP_ROUND: u32 = 1u;
@@ -110,11 +113,14 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var color = input.color;
     
-    // 预计算导数（WebGPU 必须）
+    // 预计算导数（WebGPU 必须在统一控制流中调用）
+    // Chrome 要求 fwidth/dpdx/dpdy 不能在 switch/if 分支中调用
     let uv_ddx = dpdx(input.uv);
     let uv_ddy = dpdy(input.uv);
     let dx = dpdx(input.local_pos.x);
     let dy = dpdy(input.local_pos.y);
+    let local_pos_fwidth = fwidth(input.local_pos);
+    let params_x_fwidth = fwidth(input.params_x);
 
     // SDF 采样保持不变 (Bilinear)，因为 SDF 需要平滑的梯度
     let sdf_sample = textureSample(sdf_atlas, sdf_sampler, input.uv);
@@ -156,6 +162,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         case INSTANCE_TYPE_PATH: {
+            // 简单的三角形内部测试，不做抗锯齿
             let v0 = input.tri_v0;
             let v1 = input.tri_v1;
             let v2 = input.tri_v2;
@@ -254,9 +261,202 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         case INSTANCE_TYPE_IMAGE: {
-            // 【升级点】 图片也使用 Bicubic 采样
             let sampled_color = sample_bicubic(image_atlas, image_sampler, input.uv, uv_ddx, uv_ddy);
             return sampled_color * color;
+        }
+        
+        case INSTANCE_TYPE_ARC: {
+            // GPU SDF 圆弧渲染
+            let radius = input.size.x;
+            let stroke_width = input.size.y;
+            let start_angle = input.uv.x;
+            let end_angle = input.uv.y;
+            let half_stroke = stroke_width * 0.5;
+            
+            let PI = 3.14159265;
+            let TWO_PI = 6.283185307;
+            
+            // 计算像素相对于圆心的位置
+            let p = (input.local_pos - 0.5) * 2.0 * (radius + half_stroke);
+            let dist_to_center = length(p);
+            
+            // 计算当前像素的角度 [-PI, PI]
+            let angle = atan2(p.y, p.x);
+            
+            // 计算角度跨度
+            let angle_span = end_angle - start_angle;
+            
+            // 判断是否为完整圆 (角度跨度接近或超过 2PI)
+            let is_full_circle = abs(angle_span) >= TWO_PI - 0.01;
+            
+            // 判断当前角度是否在圆弧范围内
+            var in_arc = is_full_circle;
+            if (!is_full_circle) {
+                // 使用向量叉积方法判断角度是否在范围内
+                // 这种方法更稳定，不需要复杂的角度规范化
+                let v_start = vec2<f32>(cos(start_angle), sin(start_angle));
+                let v_end = vec2<f32>(cos(end_angle), sin(end_angle));
+                let v_p = normalize(p);
+                
+                // 计算叉积 (2D 叉积返回标量)
+                let cross_start_p = v_start.x * v_p.y - v_start.y * v_p.x;
+                let cross_start_end = v_start.x * v_end.y - v_start.y * v_end.x;
+                let cross_p_end = v_p.x * v_end.y - v_p.y * v_end.x;
+                
+                // 判断 p 是否在 start 到 end 的扇形区域内
+                if (angle_span >= 0.0) {
+                    // 逆时针方向 (从 start 到 end 角度增加)
+                    if (angle_span <= PI) {
+                        // 小于等于 180 度：p 必须在 start 的逆时针方向且在 end 的顺时针方向
+                        in_arc = cross_start_p >= -0.001 && cross_p_end >= -0.001;
+                    } else {
+                        // 大于 180 度：p 不能同时在 start 的顺时针方向且在 end 的逆时针方向
+                        in_arc = !(cross_start_p < -0.001 && cross_p_end < -0.001);
+                    }
+                } else {
+                    // 顺时针方向 (从 start 到 end 角度减少)
+                    let abs_span = -angle_span;
+                    if (abs_span <= PI) {
+                        // 小于等于 180 度
+                        in_arc = cross_start_p <= 0.001 && cross_p_end <= 0.001;
+                    } else {
+                        // 大于 180 度
+                        in_arc = !(cross_start_p > 0.001 && cross_p_end > 0.001);
+                    }
+                }
+            }
+            
+            var sdf_distance: f32;
+            if (is_full_circle) {
+                // 完整圆环
+                sdf_distance = half_stroke - abs(dist_to_center - radius);
+            } else {
+                if (in_arc) {
+                    // 在圆弧范围内
+                    sdf_distance = half_stroke - abs(dist_to_center - radius);
+                } else {
+                    // 在圆弧范围外，计算到端点的距离
+                    let p_start = vec2<f32>(cos(start_angle), sin(start_angle)) * radius;
+                    let p_end = vec2<f32>(cos(end_angle), sin(end_angle)) * radius;
+                    let dist_to_start = length(p - p_start);
+                    let dist_to_end = length(p - p_end);
+                    sdf_distance = half_stroke - min(dist_to_start, dist_to_end);
+                }
+            }
+            
+            // 使用预计算的 fwidth 近似值（基于 local_pos 的变化率）
+            let arc_aa_width = length(local_pos_fwidth) * (radius + half_stroke) + 0.5;
+            let alpha = smoothstep(-arc_aa_width, arc_aa_width, sdf_distance);
+            color.a *= alpha;
+        }
+        
+        case INSTANCE_TYPE_BEZIER: {
+            // GPU SDF 二次贝塞尔曲线渲染
+            let stroke_width = input.params_x;
+            let half_stroke = stroke_width * 0.5;
+            
+            // 数据编码:
+            // tri_v1 = 起点归一化坐标
+            // uv = 控制点归一化坐标 (注意: uv 在 vertex shader 中被插值了)
+            // tri_v2 = 终点归一化坐标
+            let p0 = input.tri_v1 * input.size;
+            let p1 = input.tri_v0 * input.size;  // 控制点从 tri_v0 读取 (未插值)
+            let p2 = input.tri_v2 * input.size;
+            
+            let pixel_pos = input.local_pos * input.size;
+            
+            // 采样曲线找最近距离
+            var min_dist = 1e10;
+            for (var i = 0; i <= 20; i = i + 1) {
+                let t = f32(i) / 20.0;
+                let mt = 1.0 - t;
+                let curve_pt = mt * mt * p0 + 2.0 * mt * t * p1 + t * t * p2;
+                let d = length(pixel_pos - curve_pt);
+                min_dist = min(min_dist, d);
+            }
+            
+            let bezier_sdf_distance = half_stroke - min_dist;
+            // 使用预计算的 fwidth 近似值
+            let bezier_aa_width = length(local_pos_fwidth) * max(input.size.x, input.size.y) + 0.5;
+            let alpha = smoothstep(-bezier_aa_width, bezier_aa_width, bezier_sdf_distance);
+            color.a *= alpha;
+        }
+        
+        case INSTANCE_TYPE_CIRCLE_FILL: {
+            // GPU SDF 圆形/扇形填充渲染
+            let radius = input.size.x;
+            let start_angle = input.uv.x;
+            let end_angle = input.uv.y;
+            
+            let PI = 3.14159265;
+            let TWO_PI = 6.283185307;
+            
+            // 计算像素相对于圆心的位置
+            let p = (input.local_pos - 0.5) * 2.0 * radius;
+            let dist_to_center = length(p);
+            
+            // 计算角度跨度
+            let angle_span = end_angle - start_angle;
+            
+            // 判断是否为完整圆 (角度跨度接近或超过 2PI)
+            let is_full_circle = abs(angle_span) >= TWO_PI - 0.01;
+            
+            // 判断当前角度是否在扇形范围内
+            var in_arc = is_full_circle;
+            if (!is_full_circle) {
+                let v_start = vec2<f32>(cos(start_angle), sin(start_angle));
+                let v_end = vec2<f32>(cos(end_angle), sin(end_angle));
+                let v_p = normalize(p);
+                
+                let cross_start_p = v_start.x * v_p.y - v_start.y * v_p.x;
+                let cross_p_end = v_p.x * v_end.y - v_p.y * v_end.x;
+                
+                if (angle_span >= 0.0) {
+                    if (angle_span <= PI) {
+                        in_arc = cross_start_p >= -0.001 && cross_p_end >= -0.001;
+                    } else {
+                        in_arc = !(cross_start_p < -0.001 && cross_p_end < -0.001);
+                    }
+                } else {
+                    let abs_span = -angle_span;
+                    if (abs_span <= PI) {
+                        in_arc = cross_start_p <= 0.001 && cross_p_end <= 0.001;
+                    } else {
+                        in_arc = !(cross_start_p > 0.001 && cross_p_end > 0.001);
+                    }
+                }
+            }
+            
+            var sdf_distance: f32;
+            if (is_full_circle) {
+                // 完整圆：SDF = radius - dist_to_center
+                sdf_distance = radius - dist_to_center;
+            } else {
+                if (in_arc) {
+                    // 在扇形范围内：SDF = radius - dist_to_center
+                    sdf_distance = radius - dist_to_center;
+                } else {
+                    // 在扇形范围外：计算到两条边的距离
+                    let p_start = vec2<f32>(cos(start_angle), sin(start_angle)) * radius;
+                    let p_end = vec2<f32>(cos(end_angle), sin(end_angle)) * radius;
+                    
+                    // 到起始边的距离 (从圆心到 p_start 的线段)
+                    let t_start = clamp(dot(p, normalize(p_start)), 0.0, radius);
+                    let closest_start = normalize(p_start) * t_start;
+                    let dist_to_start_edge = length(p - closest_start);
+                    
+                    // 到结束边的距离 (从圆心到 p_end 的线段)
+                    let t_end = clamp(dot(p, normalize(p_end)), 0.0, radius);
+                    let closest_end = normalize(p_end) * t_end;
+                    let dist_to_end_edge = length(p - closest_end);
+                    
+                    sdf_distance = -min(dist_to_start_edge, dist_to_end_edge);
+                }
+            }
+            
+            let fill_aa_width = length(local_pos_fwidth) * radius + 0.5;
+            let alpha = smoothstep(-fill_aa_width, fill_aa_width, sdf_distance);
+            color.a *= alpha;
         }
         
         default: { return vec4<f32>(1.0, 0.0, 1.0, 1.0); }

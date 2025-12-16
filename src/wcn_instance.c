@@ -1406,6 +1406,194 @@ void wcn_renderer_add_line(
 }
 
 // ============================================================================
+// GPU SDF 渲染函数 (Arc, Bezier)
+// ============================================================================
+
+// 添加圆弧实例 (GPU SDF 渲染)
+void wcn_renderer_add_arc(
+    WCN_Renderer* renderer,
+    float cx, float cy,
+    float radius,
+    float start_angle,
+    float end_angle,
+    float stroke_width,
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags
+) {
+    if (!renderer || radius <= 0.0f) return;
+    
+    float half_stroke = stroke_width * 0.5f;
+    float bbox_size = (radius + half_stroke) * 2.0f;
+    
+    WCN_Instance instance = {0};
+    
+    instance.position[0] = cx;
+    instance.position[1] = cy;
+    instance.size[0] = radius;
+    instance.size[1] = stroke_width;
+    instance.uv[0] = start_angle;
+    instance.uv[1] = end_angle;
+    instance.uvSize[0] = bbox_size;
+    instance.uvSize[1] = bbox_size;
+    instance.color = color;
+    
+    if (transform) {
+        instance.transform[0] = transform[0];
+        instance.transform[1] = transform[1];
+        instance.transform[2] = transform[2];
+        instance.transform[3] = transform[3];
+    } else {
+        instance.transform[0] = 1.0f;
+        instance.transform[1] = 0.0f;
+        instance.transform[2] = 0.0f;
+        instance.transform[3] = 1.0f;
+    }
+    
+    instance.type = WCN_INSTANCE_TYPE_ARC;
+    instance.flags = flags;
+    instance.param0 = 0.0f;
+    
+    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
+}
+
+// 添加圆形/扇形填充实例 (GPU SDF 渲染)
+void wcn_renderer_add_circle_fill(
+    WCN_Renderer* renderer,
+    float cx, float cy,
+    float radius,
+    float start_angle,
+    float end_angle,
+    uint32_t color,
+    const float transform[4]
+) {
+    if (!renderer || radius <= 0.0f) return;
+    
+    float bbox_size = radius * 2.0f;
+    
+    WCN_Instance instance = {0};
+    
+    instance.position[0] = cx;
+    instance.position[1] = cy;
+    instance.size[0] = radius;
+    instance.size[1] = 0.0f;  // 填充不需要 stroke_width
+    instance.uv[0] = start_angle;
+    instance.uv[1] = end_angle;
+    instance.uvSize[0] = bbox_size;
+    instance.uvSize[1] = bbox_size;
+    instance.color = color;
+    
+    if (transform) {
+        instance.transform[0] = transform[0];
+        instance.transform[1] = transform[1];
+        instance.transform[2] = transform[2];
+        instance.transform[3] = transform[3];
+    } else {
+        instance.transform[0] = 1.0f;
+        instance.transform[1] = 0.0f;
+        instance.transform[2] = 0.0f;
+        instance.transform[3] = 1.0f;
+    }
+    
+    instance.type = WCN_INSTANCE_TYPE_CIRCLE_FILL;
+    instance.flags = 0;
+    instance.param0 = 0.0f;
+    
+    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
+}
+
+// 添加二次贝塞尔曲线实例 (GPU SDF 渲染)
+void wcn_renderer_add_quadratic_bezier(
+    WCN_Renderer* renderer,
+    float x0, float y0,
+    float cpx, float cpy,
+    float x1, float y1,
+    float stroke_width,
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags
+) {
+    if (!renderer) return;
+    
+    // 计算边界框
+    float min_x = fminf(fminf(x0, cpx), x1);
+    float max_x = fmaxf(fmaxf(x0, cpx), x1);
+    float min_y = fminf(fminf(y0, cpy), y1);
+    float max_y = fmaxf(fmaxf(y0, cpy), y1);
+    
+    float half_stroke = stroke_width * 0.5f;
+    min_x -= half_stroke;
+    min_y -= half_stroke;
+    max_x += half_stroke;
+    max_y += half_stroke;
+    
+    float width = max_x - min_x;
+    float height = max_y - min_y;
+    
+    if (width < 0.001f || height < 0.001f) return;
+    
+    WCN_Instance instance = {0};
+    
+    instance.position[0] = min_x;
+    instance.position[1] = min_y;
+    instance.size[0] = width;
+    instance.size[1] = height;
+    
+    // 归一化坐标
+    instance.uv[0] = (cpx - min_x) / width;
+    instance.uv[1] = (cpy - min_y) / height;
+    instance.uvSize[0] = (x1 - min_x) / width;
+    instance.uvSize[1] = (y1 - min_y) / height;
+    
+    float norm_x0 = (x0 - min_x) / width;
+    float norm_y0 = (y0 - min_y) / height;
+    
+    if (transform) {
+        instance.transform[0] = transform[0];
+        instance.transform[1] = transform[1];
+    } else {
+        instance.transform[0] = 1.0f;
+        instance.transform[1] = 0.0f;
+    }
+    instance.transform[2] = norm_x0;
+    instance.transform[3] = norm_y0;
+    
+    instance.type = WCN_INSTANCE_TYPE_BEZIER;
+    instance.flags = flags;
+    instance.color = color;
+    instance.param0 = stroke_width;
+    
+    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
+}
+
+// 添加三次贝塞尔曲线 (分解为两个二次贝塞尔)
+void wcn_renderer_add_cubic_bezier(
+    WCN_Renderer* renderer,
+    float x0, float y0,
+    float cp1x, float cp1y,
+    float cp2x, float cp2y,
+    float x1, float y1,
+    float stroke_width,
+    uint32_t color,
+    const float transform[4],
+    uint32_t flags
+) {
+    if (!renderer) return;
+    
+    // 将三次贝塞尔分解为两个二次贝塞尔
+    float mid_x = (x0 + 3.0f * cp1x + 3.0f * cp2x + x1) / 8.0f;
+    float mid_y = (y0 + 3.0f * cp1y + 3.0f * cp2y + y1) / 8.0f;
+    
+    float q0_cp_x = (x0 + cp1x) * 0.5f;
+    float q0_cp_y = (y0 + cp1y) * 0.5f;
+    float q1_cp_x = (cp2x + x1) * 0.5f;
+    float q1_cp_y = (cp2y + y1) * 0.5f;
+    
+    wcn_renderer_add_quadratic_bezier(renderer, x0, y0, q0_cp_x, q0_cp_y, mid_x, mid_y, stroke_width, color, transform, flags);
+    wcn_renderer_add_quadratic_bezier(renderer, mid_x, mid_y, q1_cp_x, q1_cp_y, x1, y1, stroke_width, color, transform, flags);
+}
+
+// ============================================================================
 // 渲染函数 (Rendering Functions)
 // ============================================================================
 

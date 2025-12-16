@@ -11,6 +11,9 @@ const INSTANCE_TYPE_TEXT: u32 = 1u;
 const INSTANCE_TYPE_PATH: u32 = 2u;
 const INSTANCE_TYPE_LINE: u32 = 3u;
 const INSTANCE_TYPE_IMAGE: u32 = 4u;
+const INSTANCE_TYPE_ARC: u32 = 5u;
+const INSTANCE_TYPE_BEZIER: u32 = 6u;
+const INSTANCE_TYPE_CIRCLE_FILL: u32 = 7u;
 
 const LINE_CAP_START_ENABLED: u32 = 0x100u;
 const LINE_CAP_END_ENABLED: u32 = 0x200u;
@@ -80,6 +83,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var sized_pos = local_pos * instance.size;
 
+    // Arc Logic - 圆弧使用 uvSize 作为边界框大小
+    if (instance.instance_type == INSTANCE_TYPE_ARC) {
+        sized_pos = (local_pos - 0.5) * instance.uvSize;
+    }
+
+    // Circle Fill Logic - 圆形填充使用 uvSize 作为边界框大小
+    if (instance.instance_type == INSTANCE_TYPE_CIRCLE_FILL) {
+        sized_pos = (local_pos - 0.5) * instance.uvSize;
+    }
+
     // Line Logic
     if (instance.instance_type == INSTANCE_TYPE_LINE) {
         let dir = instance.uv;
@@ -127,7 +140,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Optimization: Use built-in intrinsic for color unpacking
     vertex.color = unpack4x8unorm(instance.color);
 
-    vertex.uv = instance.uv + local_pos * instance.uvSize;
+    // ARC 和 CIRCLE_FILL 类型需要保持 uv 不变（存储角度数据，不能插值）
+    if (instance.instance_type == INSTANCE_TYPE_ARC || instance.instance_type == INSTANCE_TYPE_CIRCLE_FILL) {
+        vertex.uv = instance.uv;  // 直接传递 start_angle, end_angle
+    } else {
+        vertex.uv = instance.uv + local_pos * instance.uvSize;
+    }
     vertex.instance_type = instance.instance_type;
     vertex.flags = instance.flags;
     vertex.local_pos = local_pos;
@@ -143,12 +161,20 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Path Logic
     if (instance.instance_type == INSTANCE_TYPE_PATH) {
         let safe_size = max(instance.size, vec2<f32>(1e-4));
-        let inv_safe_size = 1.0 / safe_size; // Compute division once
-
-        // Vectorize operations
+        let inv_safe_size = 1.0 / safe_size;
         vertex.tri_v0 = (instance.uv - instance.position) * inv_safe_size;
         vertex.tri_v1 = (instance.uvSize - instance.position) * inv_safe_size;
         vertex.tri_v2 = (vec2<f32>(instance.params_x, bitcast<f32>(instance.flags)) - instance.position) * inv_safe_size;
+    }
+
+    // Bezier Logic - 传递贝塞尔曲线数据
+    if (instance.instance_type == INSTANCE_TYPE_BEZIER) {
+        // tri_v0 = 控制点归一化坐标 (从 uv)
+        vertex.tri_v0 = instance.uv;
+        // tri_v1 = 起点归一化坐标 (从 transform[2,3])
+        vertex.tri_v1 = vec2<f32>(instance.transform.z, instance.transform.w);
+        // tri_v2 = 终点归一化坐标 (从 uvSize)
+        vertex.tri_v2 = instance.uvSize;
     }
 
     // Optimization: Coalesced Global Memory Write

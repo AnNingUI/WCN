@@ -27,37 +27,35 @@ typedef struct {
 
 #ifdef __EMSCRIPTEN__
 
-// 初始化 Worker + OffscreenCanvas 系统 (二进制通信协议)
+// 初始化 Worker + OffscreenCanvas 系统
+// Worker 用于后台预渲染，主线程用于同步渲染（带缓存）
 EM_JS(void, js_ensure_context, (), {
     if (typeof window.WCNJS === 'undefined') {
         window.WCNJS = {};
     }
+    if (window.WCNJS.initialized) return;
     
-    if (window.WCNJS.fontWorker) return;
+    // 主线程 Canvas (同步渲染回退)
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    window.WCNJS.canvas = canvas;
+    window.WCNJS.ctx = canvas.getContext('2d', { willReadFrequently: true });
+    window.WCNJS.fonts = {};
+    window.WCNJS.nextFontId = 1;
     
-    // Worker 代码 - 二进制通信协议
-    // 请求格式: ArrayBuffer [cmd:u8, id:u32, ...params]
-    // 响应格式: ArrayBuffer [id:u32, status:u8, ...data]
-    // CMD: 1=loadFont, 2=genBitmap, 3=genBatch, 4=preload, 5=clearCache
+    // LRU 缓存 (主线程和Worker共享结果)
+    window.WCNJS.cache = new Map();
+    window.WCNJS.CACHE_MAX = 1024;
+    
+    // Worker 用于后台预渲染 (二进制通信协议)
+    // 请求: ArrayBuffer [cmd:u8, fontId:u32, size:f32, count:u16, cps:u32[]]
+    // 响应: ArrayBuffer [fontId:u32, size:u32, count:u16, items:{cp:u32,w:u16,h:u16,offX:f32,offY:f32,adv:f32,isColor:u8,pixels}]
     const workerCode = `
         let canvas = null;
         let ctx = null;
         let fonts = {};
         let nextFontId = 1;
-        
-        const CACHE_MAX = 512;
-        let cache = new Map();
-        
-        function cacheKey(fontId, cp, size) { return fontId + '_' + cp + '_' + (size|0); }
-        function cacheGet(key) {
-            const v = cache.get(key);
-            if (v) { cache.delete(key); cache.set(key, v); }
-            return v;
-        }
-        function cacheSet(key, val) {
-            if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
-            cache.set(key, val);
-        }
         
         function initCanvas(sz) {
             if (!canvas) {
@@ -69,7 +67,7 @@ EM_JS(void, js_ensure_context, (), {
             }
         }
         
-        function genBitmapCore(fontId, cp, size) {
+        function genBitmap(fontId, cp, size) {
             const f = fonts[fontId];
             if (!f) return null;
             
@@ -130,84 +128,6 @@ EM_JS(void, js_ensure_context, (), {
             return { w, h, offX: minX - dx, offY: minY - dy, adv: m.width, isColor: isColor ? 1 : 0, buf };
         }
         
-        function genBitmap(fontId, cp, size) {
-            const key = cacheKey(fontId, cp, size);
-            let c = cacheGet(key);
-            if (c) return { ...c, buf: new Uint8Array(c.buf) };
-            const r = genBitmapCore(fontId, cp, size);
-            if (r) cacheSet(key, { ...r, buf: new Uint8Array(r.buf) });
-            return r;
-        }
-        
-        // 打包单个位图结果为二进制: [id:u32, status:u8, w:u16, h:u16, offX:f32, offY:f32, adv:f32, isColor:u8, pixels...]
-        // Header: 4 + 1 + 2 + 2 + 4 + 4 + 4 + 1 = 22 bytes
-        function packBitmapResult(id, r) {
-            if (!r) {
-                const buf = new ArrayBuffer(5);
-                const dv = new DataView(buf);
-                dv.setUint32(0, id, true);
-                dv.setUint8(4, 0); // status=fail
-                return buf;
-            }
-            const hdrSize = 22;
-            const pixelSize = r.buf.length;
-            const buf = new ArrayBuffer(hdrSize + pixelSize);
-            const dv = new DataView(buf);
-            const u8 = new Uint8Array(buf);
-            
-            dv.setUint32(0, id, true);
-            dv.setUint8(4, 1); // status=ok
-            dv.setUint16(5, r.w, true);
-            dv.setUint16(7, r.h, true);
-            dv.setFloat32(9, r.offX, true);
-            dv.setFloat32(13, r.offY, true);
-            dv.setFloat32(17, r.adv, true);
-            dv.setUint8(21, r.isColor);
-            u8.set(r.buf, hdrSize);
-            return buf;
-        }
-        
-        // 批量打包: [id:u32, count:u16, {w:u16, h:u16, offX:f32, offY:f32, adv:f32, isColor:u8, pixelLen:u32, pixels...}...]
-        function packBatchResult(id, results) {
-            let totalSize = 6; // id + count
-            const itemHeaders = 19; // w+h+offX+offY+adv+isColor+pixelLen = 2+2+4+4+4+1+4
-            for (const r of results) {
-                totalSize += itemHeaders + (r ? r.buf.length : 0);
-            }
-            
-            const buf = new ArrayBuffer(totalSize);
-            const dv = new DataView(buf);
-            const u8 = new Uint8Array(buf);
-            
-            dv.setUint32(0, id, true);
-            dv.setUint16(4, results.length, true);
-            
-            let offset = 6;
-            for (const r of results) {
-                if (r) {
-                    dv.setUint16(offset, r.w, true);
-                    dv.setUint16(offset + 2, r.h, true);
-                    dv.setFloat32(offset + 4, r.offX, true);
-                    dv.setFloat32(offset + 8, r.offY, true);
-                    dv.setFloat32(offset + 12, r.adv, true);
-                    dv.setUint8(offset + 16, r.isColor);
-                    dv.setUint32(offset + 17, r.buf.length, true);
-                    u8.set(r.buf, offset + 21);
-                    offset += itemHeaders + r.buf.length;
-                } else {
-                    dv.setUint16(offset, 0, true);
-                    dv.setUint16(offset + 2, 0, true);
-                    dv.setFloat32(offset + 4, 0, true);
-                    dv.setFloat32(offset + 8, 0, true);
-                    dv.setFloat32(offset + 12, 0, true);
-                    dv.setUint8(offset + 16, 0);
-                    dv.setUint32(offset + 17, 0, true);
-                    offset += itemHeaders;
-                }
-            }
-            return buf;
-        }
-        
         self.onmessage = function(e) {
             const data = e.data;
             
@@ -215,140 +135,129 @@ EM_JS(void, js_ensure_context, (), {
             if (data instanceof ArrayBuffer) {
                 const dv = new DataView(data);
                 const cmd = dv.getUint8(0);
-                const id = dv.getUint32(1, true);
                 
-                if (cmd === 1) { // loadFont: [cmd, id, nameLen:u16, name..., size:f32]
-                    const nameLen = dv.getUint16(5, true);
-                    const nameBytes = new Uint8Array(data, 7, nameLen);
-                    const name = new TextDecoder().decode(nameBytes);
-                    const size = dv.getFloat32(7 + nameLen, true);
-                    
+                if (cmd === 1) { // loadFont: [cmd:1, nameLen:u16, name..., size:f32]
+                    const nameLen = dv.getUint16(1, true);
+                    const name = new TextDecoder().decode(new Uint8Array(data, 3, nameLen));
+                    const size = dv.getFloat32(3 + nameLen, true);
                     initCanvas(512);
-                    const fontId = nextFontId++;
-                    fonts[fontId] = { name, size };
+                    const id = nextFontId++;
+                    fonts[id] = { name, size };
+                    // 响应: [cmd:1, fontId:u32]
+                    const resp = new ArrayBuffer(5);
+                    new DataView(resp).setUint8(0, 1);
+                    new DataView(resp).setUint32(1, id, true);
+                    self.postMessage(resp, [resp]);
+                }
+                else if (cmd === 2) { // prerender: [cmd:2, fontId:u32, size:f32, count:u16, cps:u32[]]
+                    const fontId = dv.getUint32(1, true);
+                    const size = dv.getFloat32(5, true);
+                    const count = dv.getUint16(9, true);
                     
-                    const resp = new ArrayBuffer(9);
-                    const rdv = new DataView(resp);
-                    rdv.setUint32(0, id, true);
-                    rdv.setUint8(4, 1);
-                    rdv.setUint32(5, fontId, true);
-                    self.postMessage(resp, [resp]);
-                }
-                else if (cmd === 2) { // genBitmap: [cmd, id, fontId:u32, cp:u32, size:f32]
-                    const fontId = dv.getUint32(5, true);
-                    const cp = dv.getUint32(9, true);
-                    const size = dv.getFloat32(13, true);
-                    const r = genBitmap(fontId, cp, size);
-                    const resp = packBitmapResult(id, r);
-                    self.postMessage(resp, [resp]);
-                }
-                else if (cmd === 3) { // genBatch: [cmd, id, fontId:u32, size:f32, count:u16, cps:u32[]]
-                    const fontId = dv.getUint32(5, true);
-                    const size = dv.getFloat32(9, true);
-                    const count = dv.getUint16(13, true);
-                    const results = [];
+                    // 渲染所有字形
+                    const items = [];
+                    let totalPixels = 0;
                     for (let i = 0; i < count; i++) {
-                        const cp = dv.getUint32(15 + i * 4, true);
-                        results.push(genBitmap(fontId, cp, size));
+                        const cp = dv.getUint32(11 + i * 4, true);
+                        const r = genBitmap(fontId, cp, size);
+                        if (r) {
+                            items.push({ cp, ...r });
+                            totalPixels += r.buf.length;
+                        }
                     }
-                    const resp = packBatchResult(id, results);
-                    self.postMessage(resp, [resp]);
-                }
-                else if (cmd === 4) { // preload: [cmd, id, fontId:u32, size:f32]
-                    const fontId = dv.getUint32(5, true);
-                    const size = dv.getFloat32(9, true);
-                    for (let cp = 32; cp < 127; cp++) genBitmap(fontId, cp, size);
-                    const common = '，。！？、；：""''（）【】《》—…';
-                    for (const ch of common) genBitmap(fontId, ch.codePointAt(0), size);
-                    const resp = new ArrayBuffer(5);
-                    new DataView(resp).setUint32(0, id, true);
-                    new DataView(resp).setUint8(4, 1);
-                    self.postMessage(resp, [resp]);
-                }
-                else if (cmd === 5) { // clearCache
-                    cache.clear();
-                    const resp = new ArrayBuffer(5);
-                    new DataView(resp).setUint32(0, id, true);
-                    new DataView(resp).setUint8(4, 1);
+                    
+                    // 打包二进制响应: [cmd:2, fontId:u32, size:u32, count:u16, items...]
+                    // item: [cp:u32, w:u16, h:u16, offX:f32, offY:f32, adv:f32, isColor:u8, pixels...]
+                    const headerSize = 12; // cmd + fontId + size + count
+                    const itemHeaderSize = 21; // cp + w + h + offX + offY + adv + isColor
+                    let respSize = headerSize;
+                    for (const it of items) respSize += itemHeaderSize + it.buf.length;
+                    
+                    const resp = new ArrayBuffer(respSize);
+                    const rdv = new DataView(resp);
+                    const ru8 = new Uint8Array(resp);
+                    
+                    rdv.setUint8(0, 2);
+                    rdv.setUint32(1, fontId, true);
+                    rdv.setUint32(5, size, true);
+                    rdv.setUint16(9, items.length, true);
+                    
+                    let offset = headerSize;
+                    for (const it of items) {
+                        rdv.setUint32(offset, it.cp, true);
+                        rdv.setUint16(offset + 4, it.w, true);
+                        rdv.setUint16(offset + 6, it.h, true);
+                        rdv.setFloat32(offset + 8, it.offX, true);
+                        rdv.setFloat32(offset + 12, it.offY, true);
+                        rdv.setFloat32(offset + 16, it.adv, true);
+                        rdv.setUint8(offset + 20, it.isColor);
+                        ru8.set(it.buf, offset + 21);
+                        offset += itemHeaderSize + it.buf.length;
+                    }
+                    
                     self.postMessage(resp, [resp]);
                 }
                 return;
             }
-            
-            // 兼容旧的 JSON 格式 (loadFont 字符串传递)
-            const { id, cmd, args } = data;
-            if (cmd === 'loadFont') {
-                initCanvas(512);
-                const fontId = nextFontId++;
-                fonts[fontId] = { name: args.name, size: args.size };
-                self.postMessage({ id, result: fontId });
-            }
         };
     `;
     
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const worker = new Worker(URL.createObjectURL(blob));
-    
-    window.WCNJS.fontWorker = worker;
-    window.WCNJS.pendingCalls = {};
-    window.WCNJS.callId = 0;
-    window.WCNJS.fonts = {};
-    window.WCNJS.nextFontId = 1;
-    
-    window.WCNJS.mainCache = new Map();
-    window.WCNJS.MAIN_CACHE_MAX = 256;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 512;
-    window.WCNJS.canvas = canvas;
-    window.WCNJS.ctx = canvas.getContext('2d', { willReadFrequently: true });
-    
-    worker.onmessage = function(e) {
-        const data = e.data;
+    try {
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const worker = new Worker(URL.createObjectURL(blob));
+        window.WCNJS.worker = worker;
         
-        // 二进制响应
-        if (data instanceof ArrayBuffer) {
+        worker.onmessage = function(e) {
+            const data = e.data;
+            if (!(data instanceof ArrayBuffer)) return;
+            
             const dv = new DataView(data);
-            const id = dv.getUint32(0, true);
-            const cb = window.WCNJS.pendingCalls[id];
-            if (cb) {
-                delete window.WCNJS.pendingCalls[id];
-                cb(data);
+            const cmd = dv.getUint8(0);
+            
+            if (cmd === 2) { // prerendered 响应
+                const fontId = dv.getUint32(1, true);
+                const size = dv.getUint32(5, true);
+                const count = dv.getUint16(9, true);
+                
+                let offset = 12;
+                for (let i = 0; i < count; i++) {
+                    const cp = dv.getUint32(offset, true);
+                    const w = dv.getUint16(offset + 4, true);
+                    const h = dv.getUint16(offset + 6, true);
+                    const offX = dv.getFloat32(offset + 8, true);
+                    const offY = dv.getFloat32(offset + 12, true);
+                    const adv = dv.getFloat32(offset + 16, true);
+                    const isColor = dv.getUint8(offset + 20);
+                    const pixelLen = w * h * 4;
+                    
+                    const key = fontId + '_' + cp + '_' + size;
+                    
+                    // LRU 缓存
+                    if (window.WCNJS.cache.size >= window.WCNJS.CACHE_MAX) {
+                        const oldest = window.WCNJS.cache.keys().next().value;
+                        const old = window.WCNJS.cache.get(oldest);
+                        if (old && old.ptr) Module._free(old.ptr);
+                        window.WCNJS.cache.delete(oldest);
+                    }
+                    
+                    const ptr = Module._malloc(pixelLen);
+                    if (ptr) {
+                        Module.HEAPU8.set(new Uint8Array(data, offset + 21, pixelLen), ptr);
+                        window.WCNJS.cache.set(key, { ptr, w, h, offX, offY, adv, isColor });
+                    }
+                    
+                    offset += 21 + pixelLen;
+                }
             }
-            return;
-        }
-        
-        // JSON 响应
-        const { id, result } = data;
-        const cb = window.WCNJS.pendingCalls[id];
-        if (cb) {
-            delete window.WCNJS.pendingCalls[id];
-            cb(result);
-        }
-    };
-});
-
-// 异步调用 Worker
-EM_JS(void, js_worker_call_async, (const char* cmd, const char* argsJson, int callbackId), {
-    const cmdStr = UTF8ToString(cmd);
-    const args = JSON.parse(UTF8ToString(argsJson));
-    const id = window.WCNJS.callId++;
+        };
+    } catch (e) {
+        console.warn('[WCN] Worker creation failed, using main thread only');
+    }
     
-    window.WCNJS.pendingCalls[id] = function(result) {
-        // 存储结果供 C 端轮询
-        if (!window.WCNJS.results) window.WCNJS.results = {};
-        window.WCNJS.results[callbackId] = result;
-    };
-    
-    window.WCNJS.fontWorker.postMessage({ id, cmd: cmdStr, args });
+    window.WCNJS.initialized = true;
 });
 
-// 检查异步结果是否就绪
-EM_JS(bool, js_check_async_result, (int callbackId), {
-    return window.WCNJS.results && window.WCNJS.results[callbackId] !== undefined;
-});
-
-// 同步加载字体 (主线程回退)
+// 同步加载字体
 EM_JS(bool, js_load_font, (const char* font_name, float font_size, int* out_id), {
     try {
         js_ensure_context();
@@ -357,18 +266,87 @@ EM_JS(bool, js_load_font, (const char* font_name, float font_size, int* out_id),
         window.WCNJS.fonts[id] = { name: nameStr, size: font_size };
         setValue(out_id, id, 'i32');
         
-        // 同时通知 Worker
-        const callId = window.WCNJS.callId++;
-        window.WCNJS.fontWorker.postMessage({
-            id: callId,
-            cmd: 'loadFont',
-            args: { name: nameStr, size: font_size }
-        });
+        // 通知 Worker 加载字体 (二进制协议)
+        if (window.WCNJS.worker) {
+            const nameBytes = new TextEncoder().encode(nameStr);
+            const buf = new ArrayBuffer(3 + nameBytes.length + 4);
+            const dv = new DataView(buf);
+            dv.setUint8(0, 1); // cmd=loadFont
+            dv.setUint16(1, nameBytes.length, true);
+            new Uint8Array(buf, 3, nameBytes.length).set(nameBytes);
+            dv.setFloat32(3 + nameBytes.length, font_size, true);
+            window.WCNJS.worker.postMessage(buf, [buf]);
+        }
         
         return true;
     } catch (e) {
         console.error("[WCN] Load font failed:", e);
         return false;
+    }
+});
+
+// 预渲染字符串中的所有字形 (后台Worker执行，二进制协议)
+EM_JS(void, js_prerender_text, (int font_id, const char* text, float size), {
+    if (!window.WCNJS.worker) return;
+    
+    const str = UTF8ToString(text);
+    const codepoints = [];
+    for (const ch of str) {
+        const cp = ch.codePointAt(0);
+        const key = font_id + '_' + cp + '_' + (size|0);
+        if (!window.WCNJS.cache.has(key)) {
+            codepoints.push(cp);
+        }
+    }
+    
+    if (codepoints.length > 0) {
+        // 二进制请求: [cmd:2, fontId:u32, size:f32, count:u16, cps:u32[]]
+        const buf = new ArrayBuffer(11 + codepoints.length * 4);
+        const dv = new DataView(buf);
+        dv.setUint8(0, 2);
+        dv.setUint32(1, font_id, true);
+        dv.setFloat32(5, size, true);
+        dv.setUint16(9, codepoints.length, true);
+        for (let i = 0; i < codepoints.length; i++) {
+            dv.setUint32(11 + i * 4, codepoints[i], true);
+        }
+        window.WCNJS.worker.postMessage(buf, [buf]);
+    }
+});
+
+// 预渲染常用字符 (ASCII + 中文标点，二进制协议)
+EM_JS(void, js_prerender_common, (int font_id, float size), {
+    if (!window.WCNJS.worker) return;
+    
+    const codepoints = [];
+    // ASCII 可打印字符
+    for (let cp = 32; cp < 127; cp++) {
+        const key = font_id + '_' + cp + '_' + (size|0);
+        if (!window.WCNJS.cache.has(key)) codepoints.push(cp);
+    }
+    // 常用中文标点 (使用 Unicode 码点避免编码问题)
+    // ，。！？、；：""''（）【】《》—…
+    const commonCps = [0xFF0C, 0x3002, 0xFF01, 0xFF1F, 0x3001, 0xFF1B, 0xFF1A,
+                       0x201C, 0x201D, 0x2018, 0x2019, 0xFF08, 0xFF09,
+                       0x3010, 0x3011, 0x300A, 0x300B, 0x2014, 0x2026];
+    for (let i = 0; i < commonCps.length; i++) {
+        const cp = commonCps[i];
+        const key = font_id + '_' + cp + '_' + (size|0);
+        if (!window.WCNJS.cache.has(key)) codepoints.push(cp);
+    }
+    
+    if (codepoints.length > 0) {
+        // 二进制请求: [cmd:2, fontId:u32, size:f32, count:u16, cps:u32[]]
+        const buf = new ArrayBuffer(11 + codepoints.length * 4);
+        const dv = new DataView(buf);
+        dv.setUint8(0, 2);
+        dv.setUint32(1, font_id, true);
+        dv.setFloat32(5, size, true);
+        dv.setUint16(9, codepoints.length, true);
+        for (let i = 0; i < codepoints.length; i++) {
+            dv.setUint32(11 + i * 4, codepoints[i], true);
+        }
+        window.WCNJS.worker.postMessage(buf, [buf]);
     }
 });
 
@@ -402,223 +380,7 @@ EM_JS(bool, js_get_glyph_metrics, (int font_id, uint32_t codepoint,
     }
 });
 
-// 异步生成位图 - 二进制协议
-// 请求: [cmd:1, id:4, fontId:4, cp:4, size:4] = 17 bytes
-EM_JS(int, js_generate_bitmap_async, (int font_id, uint32_t codepoint, float size), {
-    const callbackId = window.WCNJS.callId++;
-    
-    window.WCNJS.pendingCalls[callbackId] = function(data) {
-        if (!window.WCNJS.results) window.WCNJS.results = {};
-        window.WCNJS.results[callbackId] = data; // ArrayBuffer
-    };
-    
-    // 构建二进制请求
-    const buf = new ArrayBuffer(17);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 2); // cmd=genBitmap
-    dv.setUint32(1, callbackId, true);
-    dv.setUint32(5, font_id, true);
-    dv.setUint32(9, codepoint, true);
-    dv.setFloat32(13, size, true);
-    
-    window.WCNJS.fontWorker.postMessage(buf, [buf]);
-    return callbackId;
-});
-
-// 批量异步生成位图 - 二进制协议
-// 请求: [cmd:1, id:4, fontId:4, size:4, count:2, cps:4*count]
-EM_JS(int, js_generate_bitmap_batch_async, (int font_id, const uint32_t* codepoints, int count, float size), {
-    const callbackId = window.WCNJS.callId++;
-    
-    window.WCNJS.pendingCalls[callbackId] = function(data) {
-        if (!window.WCNJS.results) window.WCNJS.results = {};
-        window.WCNJS.results[callbackId] = data;
-    };
-    
-    // 构建二进制请求
-    const buf = new ArrayBuffer(15 + count * 4);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 3); // cmd=genBatch
-    dv.setUint32(1, callbackId, true);
-    dv.setUint32(5, font_id, true);
-    dv.setFloat32(9, size, true);
-    dv.setUint16(13, count, true);
-    
-    for (let i = 0; i < count; i++) {
-        dv.setUint32(15 + i * 4, Module.HEAPU32[(codepoints >> 2) + i], true);
-    }
-    
-    window.WCNJS.fontWorker.postMessage(buf, [buf]);
-    return callbackId;
-});
-
-// 获取批量结果数量 - 解析二进制响应
-// 响应格式: [id:4, count:2, items...]
-EM_JS(int, js_get_batch_result_count, (int callbackId), {
-    const data = window.WCNJS.results && window.WCNJS.results[callbackId];
-    if (!data || !(data instanceof ArrayBuffer)) return -1;
-    const dv = new DataView(data);
-    return dv.getUint16(4, true);
-});
-
-// 获取批量结果中的单个位图 - 解析二进制
-// Item格式: [w:2, h:2, offX:4, offY:4, adv:4, isColor:1, pixelLen:4, pixels...]
-EM_JS(bool, js_get_batch_result_item, (int callbackId, int index,
-                                       unsigned char** out_ptr, int* out_w, int* out_h,
-                                       float* out_off_x, float* out_off_y, float* out_adv,
-                                       bool* out_is_color), {
-    const data = window.WCNJS.results && window.WCNJS.results[callbackId];
-    if (!data || !(data instanceof ArrayBuffer)) return false;
-    
-    const dv = new DataView(data);
-    const count = dv.getUint16(4, true);
-    if (index < 0 || index >= count) return false;
-    
-    // 遍历找到第 index 个 item
-    let offset = 6;
-    const itemHdr = 21; // w+h+offX+offY+adv+isColor+pixelLen
-    for (let i = 0; i < index; i++) {
-        const pixelLen = dv.getUint32(offset + 17, true);
-        offset += itemHdr + pixelLen;
-    }
-    
-    const w = dv.getUint16(offset, true);
-    const h = dv.getUint16(offset + 2, true);
-    if (w === 0 && h === 0) return false;
-    
-    const offX = dv.getFloat32(offset + 4, true);
-    const offY = dv.getFloat32(offset + 8, true);
-    const adv = dv.getFloat32(offset + 12, true);
-    const isColor = dv.getUint8(offset + 16);
-    const pixelLen = dv.getUint32(offset + 17, true);
-    
-    const ptr = Module._malloc(pixelLen);
-    if (!ptr) return false;
-    
-    Module.HEAPU8.set(new Uint8Array(data, offset + 21, pixelLen), ptr);
-    
-    setValue(out_ptr, ptr, 'i32');
-    setValue(out_w, w, 'i32');
-    setValue(out_h, h, 'i32');
-    setValue(out_off_x, offX, 'float');
-    setValue(out_off_y, offY, 'float');
-    setValue(out_adv, adv, 'float');
-    if (out_is_color) setValue(out_is_color, isColor, 'i8');
-    
-    return true;
-});
-
-// 释放批量结果
-EM_JS(void, js_free_batch_result, (int callbackId), {
-    if (window.WCNJS.results) {
-        delete window.WCNJS.results[callbackId];
-    }
-});
-
-// 预加载常用字符 - 二进制协议
-// 请求: [cmd:1, id:4, fontId:4, size:4] = 13 bytes
-EM_JS(void, js_preload_common_glyphs, (int font_id, float size), {
-    const callbackId = window.WCNJS.callId++;
-    const buf = new ArrayBuffer(13);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 4); // cmd=preload
-    dv.setUint32(1, callbackId, true);
-    dv.setUint32(5, font_id, true);
-    dv.setFloat32(9, size, true);
-    window.WCNJS.fontWorker.postMessage(buf, [buf]);
-});
-
-// 清除 Worker 缓存 - 二进制协议
-EM_JS(void, js_clear_glyph_cache, (), {
-    const callbackId = window.WCNJS.callId++;
-    const buf = new ArrayBuffer(5);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 5); // cmd=clearCache
-    dv.setUint32(1, callbackId, true);
-    window.WCNJS.fontWorker.postMessage(buf, [buf]);
-});
-
-// 获取异步位图结果 - 解析二进制响应
-// 响应格式: [id:4, status:1, w:2, h:2, offX:4, offY:4, adv:4, isColor:1, pixels...]
-EM_JS(bool, js_get_bitmap_result, (int callbackId,
-                                   unsigned char** out_ptr, int* out_w, int* out_h,
-                                   float* out_off_x, float* out_off_y, float* out_adv,
-                                   bool* out_is_color), {
-    const data = window.WCNJS.results && window.WCNJS.results[callbackId];
-    if (!data) return false;
-    
-    delete window.WCNJS.results[callbackId];
-    
-    if (!(data instanceof ArrayBuffer)) return false;
-    
-    const dv = new DataView(data);
-    const status = dv.getUint8(4);
-    if (status === 0) return false;
-    
-    const w = dv.getUint16(5, true);
-    const h = dv.getUint16(7, true);
-    const offX = dv.getFloat32(9, true);
-    const offY = dv.getFloat32(13, true);
-    const adv = dv.getFloat32(17, true);
-    const isColor = dv.getUint8(21);
-    
-    const pixelSize = w * h * 4;
-    const ptr = Module._malloc(pixelSize);
-    if (!ptr) return false;
-    
-    Module.HEAPU8.set(new Uint8Array(data, 22, pixelSize), ptr);
-    
-    setValue(out_ptr, ptr, 'i32');
-    setValue(out_w, w, 'i32');
-    setValue(out_h, h, 'i32');
-    setValue(out_off_x, offX, 'float');
-    setValue(out_off_y, offY, 'float');
-    setValue(out_adv, adv, 'float');
-    if (out_is_color) setValue(out_is_color, isColor, 'i8');
-    
-    return true;
-});
-
-// 主线程缓存辅助函数
-EM_JS(void*, js_main_cache_get, (int font_id, uint32_t codepoint, float size), {
-    const key = font_id + '_' + codepoint + '_' + Math.round(size);
-    const cached = window.WCNJS.mainCache.get(key);
-    if (cached) {
-        // LRU: 移到末尾
-        window.WCNJS.mainCache.delete(key);
-        window.WCNJS.mainCache.set(key, cached);
-        return cached.ptr;
-    }
-    return 0;
-});
-
-EM_JS(void, js_main_cache_set, (int font_id, uint32_t codepoint, float size, void* ptr, int w, int h, float offX, float offY, float adv, bool isColor), {
-    const key = font_id + '_' + codepoint + '_' + Math.round(size);
-    if (window.WCNJS.mainCache.size >= window.WCNJS.MAIN_CACHE_MAX) {
-        const oldest = window.WCNJS.mainCache.keys().next().value;
-        const oldEntry = window.WCNJS.mainCache.get(oldest);
-        if (oldEntry && oldEntry.ptr) Module._free(oldEntry.ptr);
-        window.WCNJS.mainCache.delete(oldest);
-    }
-    window.WCNJS.mainCache.set(key, { ptr, w, h, offX, offY, adv, isColor });
-});
-
-EM_JS(bool, js_main_cache_get_info, (int font_id, uint32_t codepoint, float size,
-                                     int* out_w, int* out_h, float* out_off_x, float* out_off_y,
-                                     float* out_adv, bool* out_is_color), {
-    const key = font_id + '_' + codepoint + '_' + Math.round(size);
-    const cached = window.WCNJS.mainCache.get(key);
-    if (!cached) return false;
-    setValue(out_w, cached.w, 'i32');
-    setValue(out_h, cached.h, 'i32');
-    setValue(out_off_x, cached.offX, 'float');
-    setValue(out_off_y, cached.offY, 'float');
-    setValue(out_adv, cached.adv, 'float');
-    if (out_is_color) setValue(out_is_color, cached.isColor, 'i8');
-    return true;
-});
-
-// 同步生成位图 (主线程回退，带缓存)
+// 同步生成位图 (带 LRU 缓存)
 EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
                                 unsigned char** out_ptr, int* out_w, int* out_h,
                                 float* out_off_x, float* out_off_y, float* out_adv,
@@ -627,14 +389,13 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
         const font = window.WCNJS.fonts[font_id];
         if (!font) return false;
         
-        // 检查缓存
-        const cacheKey = font_id + '_' + codepoint + '_' + Math.round(size);
-        const cached = window.WCNJS.mainCache.get(cacheKey);
+        // LRU 缓存检查
+        const cacheKey = font_id + '_' + codepoint + '_' + (size|0);
+        const cached = window.WCNJS.cache.get(cacheKey);
         if (cached) {
-            window.WCNJS.mainCache.delete(cacheKey);
-            window.WCNJS.mainCache.set(cacheKey, cached);
+            window.WCNJS.cache.delete(cacheKey);
+            window.WCNJS.cache.set(cacheKey, cached);
             
-            // 复制缓存数据
             const bufSize = cached.w * cached.h * 4;
             const ptr = Module._malloc(bufSize);
             if (!ptr) return false;
@@ -748,17 +509,17 @@ EM_JS(bool, js_generate_bitmap, (int font_id, uint32_t codepoint, float size,
         const offX = minX - drawX;
         const offY = minY - drawY;
 
-        // 存入缓存 (复制一份)
-        if (window.WCNJS.mainCache.size >= window.WCNJS.MAIN_CACHE_MAX) {
-            const oldest = window.WCNJS.mainCache.keys().next().value;
-            const oldEntry = window.WCNJS.mainCache.get(oldest);
+        // LRU 缓存存入
+        if (window.WCNJS.cache.size >= window.WCNJS.CACHE_MAX) {
+            const oldest = window.WCNJS.cache.keys().next().value;
+            const oldEntry = window.WCNJS.cache.get(oldest);
             if (oldEntry && oldEntry.ptr) Module._free(oldEntry.ptr);
-            window.WCNJS.mainCache.delete(oldest);
+            window.WCNJS.cache.delete(oldest);
         }
         const cachePtr = Module._malloc(bufSize);
         if (cachePtr) {
             Module.HEAPU8.copyWithin(cachePtr, ptr, ptr + bufSize);
-            window.WCNJS.mainCache.set(cacheKey, { ptr: cachePtr, w, h, offX, offY, adv: metrics.width, isColor });
+            window.WCNJS.cache.set(cacheKey, { ptr: cachePtr, w, h, offX, offY, adv: metrics.width, isColor });
         }
 
         setValue(out_ptr, ptr, 'i32');
@@ -881,96 +642,6 @@ static bool wcn_wasm_get_glyph_sdf(WCN_FontFace* face, uint32_t codepoint, float
 #endif
 }
 
-// ============================================================================
-// 异步 API
-// ============================================================================
-
-#ifdef __EMSCRIPTEN__
-
-// 异步版本 - 发起单个请求
-int wcn_wasm_get_glyph_sdf_async(WCN_FontFace* face, uint32_t codepoint, float font_size) {
-    if (!face) return -1;
-    
-    WCN_WASM_FontData* font_data = (WCN_WASM_FontData*)face->user_data;
-    return js_generate_bitmap_async(font_data->js_id, codepoint, font_size);
-}
-
-// 异步版本 - 检查结果
-bool wcn_wasm_check_glyph_sdf_ready(int request_id) {
-    return js_check_async_result(request_id);
-}
-
-// 异步版本 - 获取结果
-bool wcn_wasm_get_glyph_sdf_result(int request_id,
-                                   unsigned char** out_bitmap,
-                                   int* out_width, int* out_height,
-                                   float* out_offset_x, float* out_offset_y,
-                                   float* out_advance,
-                                   bool* out_is_color) {
-    if (!out_bitmap || !out_width || !out_height) return false;
-    
-    if (out_is_color) *out_is_color = false;
-    
-    return js_get_bitmap_result(request_id, out_bitmap, out_width, out_height,
-                               out_offset_x, out_offset_y, out_advance, out_is_color);
-}
-
-// ============================================================================
-// 批量 API
-// ============================================================================
-
-// 批量异步 - 发起请求
-int wcn_wasm_get_glyph_sdf_batch_async(WCN_FontFace* face, const uint32_t* codepoints, int count, float font_size) {
-    if (!face || !codepoints || count <= 0) return -1;
-    
-    WCN_WASM_FontData* font_data = (WCN_WASM_FontData*)face->user_data;
-    return js_generate_bitmap_batch_async(font_data->js_id, codepoints, count, font_size);
-}
-
-// 批量异步 - 获取结果数量
-int wcn_wasm_get_batch_result_count(int request_id) {
-    return js_get_batch_result_count(request_id);
-}
-
-// 批量异步 - 获取单个结果
-bool wcn_wasm_get_batch_result_item(int request_id, int index,
-                                    unsigned char** out_bitmap,
-                                    int* out_width, int* out_height,
-                                    float* out_offset_x, float* out_offset_y,
-                                    float* out_advance,
-                                    bool* out_is_color) {
-    if (!out_bitmap || !out_width || !out_height) return false;
-    
-    if (out_is_color) *out_is_color = false;
-    
-    return js_get_batch_result_item(request_id, index, out_bitmap, out_width, out_height,
-                                   out_offset_x, out_offset_y, out_advance, out_is_color);
-}
-
-// 批量异步 - 释放结果
-void wcn_wasm_free_batch_result(int request_id) {
-    js_free_batch_result(request_id);
-}
-
-// ============================================================================
-// 预加载 & 缓存管理
-// ============================================================================
-
-// 预加载常用字符 (ASCII + 常用中文标点)
-void wcn_wasm_preload_common_glyphs(WCN_FontFace* face, float font_size) {
-    if (!face) return;
-    
-    WCN_WASM_FontData* font_data = (WCN_WASM_FontData*)face->user_data;
-    js_preload_common_glyphs(font_data->js_id, font_size);
-}
-
-// 清除字形缓存
-void wcn_wasm_clear_glyph_cache(void) {
-    js_clear_glyph_cache();
-}
-
-#endif
-
 static void wcn_wasm_free_glyph_sdf(unsigned char* bitmap) {
     if (bitmap) {
         free(bitmap);
@@ -1037,5 +708,19 @@ WCN_WASM_EXPORT WCN_FontFace* wcn_wasm_create_default_font_face(void) {
     WCN_FontFace* face = NULL;
     wcn_wasm_load_font("Arial", 5, &face);
     return face;
+}
+
+// 预渲染文本中的字形 (Worker后台执行，不阻塞)
+WCN_WASM_EXPORT void wcn_wasm_prerender_text(WCN_FontFace* face, const char* text, float font_size) {
+    if (!face || !text) return;
+    WCN_WASM_FontData* data = (WCN_WASM_FontData*)face->user_data;
+    js_prerender_text(data->js_id, text, font_size);
+}
+
+// 预渲染常用字符 (Worker后台执行)
+WCN_WASM_EXPORT void wcn_wasm_prerender_common(WCN_FontFace* face, float font_size) {
+    if (!face) return;
+    WCN_WASM_FontData* data = (WCN_WASM_FontData*)face->user_data;
+    js_prerender_common(data->js_id, font_size);
 }
 #endif

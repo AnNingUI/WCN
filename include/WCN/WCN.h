@@ -1,7 +1,6 @@
 #ifndef WCN_H
 #define WCN_H
 
-#include "WCN/WCN_WGSL.h"
 #include "webgpu/webgpu.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -78,6 +77,7 @@ typedef struct WCN_GPUResources {
 } WCN_GPUResources;
 
 // GPU 状态数据结构（Uniform对齐要求：256字节对齐用于动态偏移）
+// 注意：WASM 不支持 256 字节对齐，使用手动填充确保结构体大小为 256 字节
 typedef struct WCN_GPUState {
     float transform_matrix[16];     // 当前变换矩阵 (64 bytes)
     uint32_t fill_color;           // 填充颜色 (RGBA)
@@ -91,7 +91,11 @@ typedef struct WCN_GPUState {
     float miter_limit;             // 斜接限制（默认10.0）
     float reserved0;               // 保留字段
     uint8_t padding[148];          // 填充到256字节（256 - 108 = 148）
-} __attribute__((aligned(256))) WCN_GPUState;
+}
+#if !defined(__EMSCRIPTEN__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((aligned(256)))
+#endif
+WCN_GPUState;
 
 // 状态栈管理
 typedef struct WCN_StateStack {
@@ -282,6 +286,16 @@ void wcn_arc(WCN_Context* ctx, float x, float y, float radius, float start_angle
 void wcn_rect(WCN_Context* ctx, float x, float y, float width, float height);
 void wcn_fill(WCN_Context* ctx);
 void wcn_stroke(WCN_Context* ctx);
+
+// ============================================================================
+// 2D 绘图 API - 贝塞尔曲线 (W3C Canvas API 兼容)
+// ============================================================================
+
+// 二次贝塞尔曲线 - 从当前点到 (x, y)，控制点为 (cpx, cpy)
+void wcn_quadratic_curve_to(WCN_Context* ctx, float cpx, float cpy, float x, float y);
+
+// 三次贝塞尔曲线 - 从当前点到 (x, y)，控制点为 (cp1x, cp1y) 和 (cp2x, cp2y)
+void wcn_bezier_curve_to(WCN_Context* ctx, float cp1x, float cp1y, float cp2x, float cp2y, float x, float y);
 
 // ============================================================================
 // 2D 绘图 API - 样式和颜色

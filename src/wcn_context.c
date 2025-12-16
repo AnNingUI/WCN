@@ -210,7 +210,7 @@ void wcn_destroy_context(WCN_Context* ctx) {
 
     // 鏂囧瓧娓叉煋鍛戒护闃熷垪宸茶绉婚櫎锛屼娇鐢?SDF Atlas 绯荤粺鏇夸唬
     
-    // 閿€姣佸綋鍓嶈矾寰?
+    // 销毁当前路径
     if (ctx->current_path) {
         if (ctx->current_path->points) {
             free(ctx->current_path->points);
@@ -220,6 +220,15 @@ void wcn_destroy_context(WCN_Context* ctx) {
         }
         free(ctx->current_path);
         ctx->current_path = NULL;
+    }
+    
+    // 销毁 GPU Native 路径
+    if (ctx->gpu_path) {
+        if (ctx->gpu_path->commands) {
+            free(ctx->gpu_path->commands);
+        }
+        free(ctx->gpu_path);
+        ctx->gpu_path = NULL;
     }
 
     // 閿€姣佺姸鎬佹爤
