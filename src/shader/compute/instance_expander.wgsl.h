@@ -122,10 +122,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Matrix Transform
     // Expand manually to potentially use fma instructions
-    let world_pos = vec2<f32>(
-        sized_pos.x * instance.transform.x + sized_pos.y * instance.transform.y,
-        sized_pos.x * instance.transform.z + sized_pos.y * instance.transform.w
-    ) + instance.position;
+    // PATH 类型的顶点已经是世界坐标，且 transform[2] 存储边缘标记，跳过变换
+    var world_pos: vec2<f32>;
+    if (instance.instance_type == INSTANCE_TYPE_PATH) {
+        world_pos = sized_pos + instance.position;
+    } else {
+        world_pos = vec2<f32>(
+            sized_pos.x * instance.transform.x + sized_pos.y * instance.transform.y,
+            sized_pos.x * instance.transform.z + sized_pos.y * instance.transform.w
+        ) + instance.position;
+    }
 
     // Coordinate Space Conversion (NDC)
     // Pre-calculate inverse scale to replace division with multiplication
@@ -162,9 +168,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (instance.instance_type == INSTANCE_TYPE_PATH) {
         let safe_size = max(instance.size, vec2<f32>(1e-4));
         let inv_safe_size = 1.0 / safe_size;
+        // 三角形顶点: uv=v0, uvSize=v1, (params_x, flags)=v2
         vertex.tri_v0 = (instance.uv - instance.position) * inv_safe_size;
         vertex.tri_v1 = (instance.uvSize - instance.position) * inv_safe_size;
         vertex.tri_v2 = (vec2<f32>(instance.params_x, bitcast<f32>(instance.flags)) - instance.position) * inv_safe_size;
+        // 边缘标记存储在 transform.z 中
+        vertex.params_x = instance.transform.z;
     }
 
     // Bezier Logic - 传递贝塞尔曲线数据

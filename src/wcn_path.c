@@ -248,8 +248,74 @@ static void wcn_path_close(WCN_Path* path) {
 }
 
 // ============================================================================
-// Fill 渲染 (使用点数组扇形三角化)
+// Fill 渲染 (使用点数组扇形三角化 + 边缘抗锯齿)
 // ============================================================================
+
+// 内部函数：添加带边缘标记的三角形
+static void wcn_add_triangle_with_edges(
+    WCN_Renderer* renderer,
+    float v0_x, float v0_y,
+    float v1_x, float v1_y,
+    float v2_x, float v2_y,
+    uint32_t edge_flags,  // bit 0: v0-v1 是外边缘, bit 1: v1-v2 是外边缘, bit 2: v2-v0 是外边缘
+    uint32_t color
+) {
+    if (!renderer) return;
+    
+    // 计算边界框
+    float min_x = v0_x;
+    float max_x = v0_x;
+    float min_y = v0_y;
+    float max_y = v0_y;
+    
+    if (v1_x < min_x) min_x = v1_x;
+    if (v1_x > max_x) max_x = v1_x;
+    if (v1_y < min_y) min_y = v1_y;
+    if (v1_y > max_y) max_y = v1_y;
+    
+    if (v2_x < min_x) min_x = v2_x;
+    if (v2_x > max_x) max_x = v2_x;
+    if (v2_y < min_y) min_y = v2_y;
+    if (v2_y > max_y) max_y = v2_y;
+    
+    float width = max_x - min_x;
+    float height = max_y - min_y;
+    
+    WCN_Instance instance = {0};
+    
+    instance.position[0] = min_x;
+    instance.position[1] = min_y;
+    instance.size[0] = width;
+    instance.size[1] = height;
+    
+    // 存储三角形顶点 (与 wcn_renderer_add_triangles 相同的编码)
+    // uv: v0
+    // uvSize: v1
+    // param0: v2.x
+    // flags: v2.y (bit-cast)
+    instance.uv[0] = v0_x;
+    instance.uv[1] = v0_y;
+    instance.uvSize[0] = v1_x;
+    instance.uvSize[1] = v1_y;
+    instance.param0 = v2_x;
+    
+    // v2.y 存储在 flags 中 (bit-cast)
+    union { float f; uint32_t u; } converter;
+    converter.f = v2_y;
+    instance.flags = converter.u;
+    
+    instance.color = color;
+    
+    // transform 矩阵：前两个是单位矩阵，transform[2] 存储边缘标记
+    instance.transform[0] = 1.0f;
+    instance.transform[1] = 0.0f;
+    instance.transform[2] = (float)edge_flags;  // 边缘标记
+    instance.transform[3] = 1.0f;
+    
+    instance.type = WCN_INSTANCE_TYPE_PATH;
+    
+    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
+}
 
 static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
     if (!ctx || !path || path->point_count < 6 || !ctx->renderer) return;
@@ -258,35 +324,50 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
     const uint32_t color = state->fill_color;
     const size_t num_points = path->point_count / 2;
 
-    WCN_SimpleVertex* vertices = (WCN_SimpleVertex*)malloc(num_points * sizeof(WCN_SimpleVertex));
-    if (!vertices) return;
+    // 变换所有顶点
+    float* transformed = (float*)malloc(num_points * 2 * sizeof(float));
+    if (!transformed) return;
 
     for (size_t i = 0; i < num_points; i++) {
         float x = path->points[i*2];
         float y = path->points[i*2+1];
-        vertices[i].position[0] = x * state->transform_matrix[0] + y * state->transform_matrix[4] + state->transform_matrix[12];
-        vertices[i].position[1] = x * state->transform_matrix[1] + y * state->transform_matrix[5] + state->transform_matrix[13];
+        transformed[i*2] = x * state->transform_matrix[0] + y * state->transform_matrix[4] + state->transform_matrix[12];
+        transformed[i*2+1] = x * state->transform_matrix[1] + y * state->transform_matrix[5] + state->transform_matrix[13];
     }
 
+    // 扇形三角化：从顶点 0 出发
+    // 三角形 i: (0, i+1, i+2)
+    // 外边缘判断：
+    // - 边 0-(i+1): 只有第一个三角形的这条边是外边缘 (i==0)
+    // - 边 (i+1)-(i+2): 总是外边缘（多边形轮廓）
+    // - 边 (i+2)-0: 只有最后一个三角形的这条边是外边缘 (i==num_points-3)
+    
     const size_t num_triangles = num_points - 2;
-    const size_t num_indices = num_triangles * 3;
-    uint16_t* indices = (uint16_t*)malloc(num_indices * sizeof(uint16_t));
-    if (!indices) { free(vertices); return; }
-
+    
     for (size_t i = 0; i < num_triangles; i++) {
-        indices[i*3] = 0;
-        indices[i*3+1] = i+1;
-        indices[i*3+2] = i+2;
+        float v0_x = transformed[0];
+        float v0_y = transformed[1];
+        float v1_x = transformed[(i+1)*2];
+        float v1_y = transformed[(i+1)*2+1];
+        float v2_x = transformed[(i+2)*2];
+        float v2_y = transformed[(i+2)*2+1];
+        
+        // 计算边缘标记
+        uint32_t edge_flags = 0;
+        
+        // bit 0: v0-v1 是外边缘 (只有第一个三角形)
+        if (i == 0) edge_flags |= 1;
+        
+        // bit 1: v1-v2 总是外边缘（多边形轮廓边）
+        edge_flags |= 2;
+        
+        // bit 2: v2-v0 是外边缘 (只有最后一个三角形)
+        if (i == num_triangles - 1) edge_flags |= 4;
+        
+        wcn_add_triangle_with_edges(ctx->renderer, v0_x, v0_y, v1_x, v1_y, v2_x, v2_y, edge_flags, color);
     }
-
-    const float transform[4] = {
-        state->transform_matrix[0], state->transform_matrix[1],
-        state->transform_matrix[4], state->transform_matrix[5]
-    };
-
-    wcn_renderer_add_triangles(ctx->renderer, vertices, num_points, indices, num_indices, color, transform);
-    free(vertices);
-    free(indices);
+    
+    free(transformed);
 }
 
 // ============================================================================

@@ -1324,9 +1324,10 @@ void wcn_renderer_add_triangles(
         instance.color = color;
         
         // Set transform matrix to identity since we've already applied it
+        // transform[2] stores edge flags (7 = all edges are outer edges)
         instance.transform[0] = 1.0f;
         instance.transform[1] = 0.0f;
-        instance.transform[2] = 0.0f;
+        instance.transform[2] = 7.0f;  // 边缘标记: 所有边都是外边缘
         instance.transform[3] = 1.0f;
         
         // Set instance type

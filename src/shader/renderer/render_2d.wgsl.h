@@ -162,16 +162,61 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         case INSTANCE_TYPE_PATH: {
-            // 简单的三角形内部测试，不做抗锯齿
+            // 三角形内部测试 + 外边缘抗锯齿
             let v0 = input.tri_v0;
             let v1 = input.tri_v1;
             let v2 = input.tri_v2;
             let p = input.local_pos;
+            
+            // 边缘函数判断内部
             let e0 = edge_function(v0, v1, p);
             let e1 = edge_function(v1, v2, p);
             let e2 = edge_function(v2, v0, p);
             let inside = (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0) || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0);
             if (!inside) { return vec4<f32>(0.0); }
+            
+            // 边缘标记 (从 params_x 读取)
+            let edge_flags = u32(input.params_x);
+            
+            // 计算到各外边缘的距离 (只对标记为外边缘的边计算)
+            var min_edge_dist = 1e10;
+            
+            // 点到线段距离函数 (内联)
+            // edge v0-v1 (bit 0)
+            if ((edge_flags & 1u) != 0u) {
+                let pa = p - v0;
+                let ba = v1 - v0;
+                let t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+                let dist = length(pa - ba * t);
+                min_edge_dist = min(min_edge_dist, dist);
+            }
+            
+            // edge v1-v2 (bit 1)
+            if ((edge_flags & 2u) != 0u) {
+                let pa = p - v1;
+                let ba = v2 - v1;
+                let t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+                let dist = length(pa - ba * t);
+                min_edge_dist = min(min_edge_dist, dist);
+            }
+            
+            // edge v2-v0 (bit 2)
+            if ((edge_flags & 4u) != 0u) {
+                let pa = p - v2;
+                let ba = v0 - v2;
+                let t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+                let dist = length(pa - ba * t);
+                min_edge_dist = min(min_edge_dist, dist);
+            }
+            
+            // 抗锯齿：基于到最近外边缘的距离
+            if (min_edge_dist < 1e9) {
+                // 将归一化距离转换为像素距离
+                let pixel_dist = min_edge_dist * max(input.size.x, input.size.y);
+                let aa_width = length(local_pos_fwidth) * max(input.size.x, input.size.y);
+                let alpha = smoothstep(0.0, max(aa_width, 0.5), pixel_dist);
+                color.a *= alpha;
+            }
         }
         
         case INSTANCE_TYPE_LINE: {
