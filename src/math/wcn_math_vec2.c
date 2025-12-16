@@ -74,10 +74,10 @@ WMATH_CEIL(Vec2)(WMATH_TYPE(Vec2) a) {
   __riscv_vse32_v_f32m1(vec2.v, vec_res, 2);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_WASM_SIMD
-  // WASM
-  v128_t vec_a = wasm_v128_load64_zero(a.v);
+  // WASM SIMD implementation
+  v128_t vec_a = wcn_load_vec2_partial(a.v);
   v128_t vec_res = wasm_f32x4_ceil(vec_a);
-  wasm_v128_store64_lane(vec2.v, vec_res, 0);
+  wcn_store_vec2_partial(vec2.v, vec_res);
 
 #elif !defined(WMATH_DISABLE_SIMD) && WCN_HAS_LOONGARCH_LSX
   // LoongArch LSX Round to Plus Infinity
