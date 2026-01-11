@@ -1,5 +1,5 @@
 #include "WCN/WCN_Math.h"
-#include "wcn_math_internal.h"
+#include "common/wcn_math_internal.h"
 #include "WCN/WCN_PLATFORM_MACROS.h"
 
 // BEGIN Quat

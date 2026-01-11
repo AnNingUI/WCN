@@ -1,4 +1,4 @@
-#include "WCN/WCN_Math.h"
+#include "WCN/WCN_MATH_MACROS.h"
 #include <stdlib.h>
 
 #define _LERP (a + ((b) - (a)) * t)

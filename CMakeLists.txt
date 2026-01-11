@@ -172,17 +172,17 @@ if(EMSCRIPTEN OR WCN_BUILD_WASM)
 
     # 为 WASM 构建收集源文件
     file(GLOB WASM_SOURCES
-        "src/math/wcn_math_base.c"
-        "src/math/wcn_math_globals.c"
-        "src/math/wcn_math_internal.h"
-        "src/math/wcn_math_mat3.c"
-        "src/math/wcn_math_mat4.c"
-        "src/math/wcn_math_other.c"
-        "src/math/wcn_math_quat.c"
-        "src/math/wcn_math_vec2.c"
-        "src/math/wcn_math_vec3.c"
-        "src/math/wcn_math_vec4.c"
-        "src/math/wcn_math_wasm.c"
+        "src/math/common/wcn_math_base.c"
+        "src/math/common/wcn_math_globals.c"
+        "src/math/common/wcn_math_internal.h"
+        "src/math/dst/wcn_math_mat3.c"
+        "src/math/dst/wcn_math_mat4.c"
+        "src/math/dst/wcn_math_other.c"
+        "src/math/dst/wcn_math_quat.c"
+        "src/math/dst/wcn_math_vec2.c"
+        "src/math/dst/wcn_math_vec3.c"
+        "src/math/dst/wcn_math_vec4.c"
+        "src/math/dst/wcn_math_wasm.c"
 
         "src/wcn_context.c"
         "src/wcn_instance.c"

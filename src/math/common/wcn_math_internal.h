@@ -8,7 +8,7 @@ extern "C" {
 
 // ========================================================================
 
-#include "WCN/WCN_Math.h"
+#include "WCN/WCN_MATH_TYPES.h"
 #include <stdbool.h>
 
 #if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_X86_64

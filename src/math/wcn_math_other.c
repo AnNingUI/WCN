@@ -1,4 +1,5 @@
-#include "wcn_math_internal.h"
+#include "WCN/WCN_Math.h"
+#include "common/wcn_math_internal.h"
 #include "WCN/WCN_PLATFORM_MACROS.h"
 // FROM
 
@@ -24,83 +25,83 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
 #if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_X86_64
   // Load q = [x, y, z, w]
   __m128 q_vec = _mm_loadu_ps(q.v);
-  
+
   // q2 = q + q = [2x, 2y, 2z, 2w]
   __m128 q2 = _mm_add_ps(q_vec, q_vec);
-  
+
   // 计算所有积的组合: q_vec * q2
   // 我们需要: 2xx, 2yy, 2zz
   // 以及交叉项: 2xy, 2xz, 2yz, 2wx, 2wy, 2wz
-  
+
   // Broadcast components
   __m128 q_x = _mm_shuffle_ps(q_vec, q_vec, 0x00);
   __m128 q_y = _mm_shuffle_ps(q_vec, q_vec, 0x55);
   __m128 q_z = _mm_shuffle_ps(q_vec, q_vec, 0xAA);
-  
+
   // Products
   __m128 qx_q2 = _mm_mul_ps(q_x, q2); // [2xx, 2xy, 2xz, 2xw]
   __m128 qy_q2 = _mm_mul_ps(q_y, q2); // [2yx, 2yy, 2yz, 2yw]
   __m128 qz_q2 = _mm_mul_ps(q_z, q2); // [2zx, 2zy, 2zz, 2zw]
-  
+
   // 准备构建列
   __m128 one = _mm_set1_ps(1.0f);
-  
+
   // Col 0: [1-2yy-2zz, 2xy+2wz, 2xz-2wy]
   // yy + zz
   __m128 yy = _mm_shuffle_ps(qy_q2, qy_q2, 0x55);
   __m128 zz = _mm_shuffle_ps(qz_q2, qz_q2, 0xAA);
   __m128 diag0 = _mm_sub_ps(one, _mm_add_ps(yy, zz));
-  
+
   // xy + wz (2xy is qx_q2[1], 2wz is qz_q2[3])
   __m128 xy = _mm_shuffle_ps(qx_q2, qx_q2, 0x55);
   __m128 wz = _mm_shuffle_ps(qz_q2, qz_q2, 0xFF);
   __m128 m10 = _mm_add_ps(xy, wz);
-  
+
   // xz - wy (2xz is qx_q2[2], 2wy is qy_q2[3])
   __m128 xz = _mm_shuffle_ps(qx_q2, qx_q2, 0xAA);
   __m128 wy = _mm_shuffle_ps(qy_q2, qy_q2, 0xFF);
   __m128 m20 = _mm_sub_ps(xz, wy);
-  
+
   // Col 1: [2xy-2wz, 1-2xx-2zz, 2yz+2wx]
   // xy - wz
   __m128 m01 = _mm_sub_ps(xy, wz);
-  
+
   // 1 - xx - zz
   __m128 xx = _mm_shuffle_ps(qx_q2, qx_q2, 0x00);
   __m128 diag1 = _mm_sub_ps(one, _mm_add_ps(xx, zz));
-  
+
   // yz + wx (2yz is qy_q2[2], 2wx is qx_q2[3])
   __m128 yz = _mm_shuffle_ps(qy_q2, qy_q2, 0xAA);
   __m128 wx = _mm_shuffle_ps(qx_q2, qx_q2, 0xFF);
   __m128 m21 = _mm_add_ps(yz, wx);
-  
+
   // Col 2: [2xz+2wy, 2yz-2wx, 1-2xx-2yy]
   // xz + wy
   __m128 m02 = _mm_add_ps(xz, wy);
-  
+
   // yz - wx
   __m128 m12 = _mm_sub_ps(yz, wx);
-  
+
   // 1 - xx - yy
   __m128 diag2 = _mm_sub_ps(one, _mm_add_ps(xx, yy));
-  
+
   // Pack and Store
   // Row packing is tricky for Mat3 (stride 4), easier to pack columns and store
   // m[0..3] = [diag0, m10, m20, 0]
   __m128 col0 = _mm_unpacklo_ps(diag0, m10); // [d0, m10, d0, m10]
   __m128 col0_hi = _mm_movelh_ps(m20, _mm_setzero_ps()); // [m20, 0, ...]
   col0 = _mm_shuffle_ps(col0, col0_hi, _MM_SHUFFLE(2, 0, 1, 0)); // [d0, m10, m20, 0]
-  
+
   // m[4..7] = [m01, diag1, m21, 0]
   __m128 col1 = _mm_unpacklo_ps(m01, diag1);
   __m128 col1_hi = _mm_movelh_ps(m21, _mm_setzero_ps());
   col1 = _mm_shuffle_ps(col1, col1_hi, _MM_SHUFFLE(2, 0, 1, 0));
-  
+
   // m[8..11] = [m02, m12, diag2, 0]
   __m128 col2 = _mm_unpacklo_ps(m02, m12);
   __m128 col2_hi = _mm_movelh_ps(diag2, _mm_setzero_ps());
   col2 = _mm_shuffle_ps(col2, col2_hi, _MM_SHUFFLE(2, 0, 1, 0));
-  
+
   _mm_storeu_ps(&newDst.m[0], col0);
   _mm_storeu_ps(&newDst.m[4], col1);
   _mm_storeu_ps(&newDst.m[8], col2);
@@ -199,7 +200,7 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
 
   // Col 1
   v128_t m01 = wasm_f32x4_sub(xy, wz);
-  
+
   v128_t xx = wasm_i32x4_shuffle(qx_q2, qx_q2, 0, 0, 0, 0);
   v128_t diag1 = wasm_f32x4_sub(one, wasm_f32x4_add(xx, zz));
 
@@ -219,7 +220,7 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
   // WASM doesn't have an easy "zip", must use specific indices.
   // Assuming inputs are splatted vectors (all lanes same):
   // We want lane 0 from diag0, lane 0 from m10, lane 0 from m20, lane 0 from zero
-  
+
   // Create Col0: 0 from diag0, 4 from m10, 0 from m20, 4 from zero (re-ordered via nested shuffles)
   // Or simpler:
   v128_t col0_lo = wasm_i32x4_shuffle(diag0, m10, 0, 4, 0, 4); // [d0, m10, d0, m10]
@@ -300,12 +301,12 @@ WMATH_CALL(Mat3, from_quat)(WMATH_TYPE(Quat) q) {
   // We can use vslideup / vmerge, or just vrgather again with a composite index vector?
   // Since we are writing to memory, if we can't easily zip, we can construct a "column vector"
   // using sliding.
-  
+
   // Strategy: Start with zero, slide in components.
   // dest = zero
   // dest[0] = diag0[0] -> vmerge (masked) or vslideup
   // Actually, cleanest way in RVV without complex shuffles is usually vslide.
-  
+
   // Col 0
   vfloat32m1_t c0 = zero; // lane 3 is 0
   c0 = __riscv_vslideup_vx_f32m1(c0, m20, 2, vl); // lane 2 = m20[0]
@@ -438,12 +439,12 @@ WMATH_CALL(Mat4, from_mat3)(const WMATH_TYPE(Mat3) a) {
 
 #if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_X86_64
   // 1. Copy Col 0, 1, 2 directly (Assume input stride is 4 floats)
-  // Note: This copies the w-component (padding) from Mat3. 
+  // Note: This copies the w-component (padding) from Mat3.
   // If Mat3 padding is dirty, use _mm_and_ps with a mask to zero it, but usually it's clean or ignored.
   _mm_storeu_ps(&m.m[0], _mm_loadu_ps(&a.m[0]));
   _mm_storeu_ps(&m.m[4], _mm_loadu_ps(&a.m[4]));
   _mm_storeu_ps(&m.m[8], _mm_loadu_ps(&a.m[8]));
-  
+
   // 2. Set Col 3 to [0, 0, 0, 1]
   // _mm_set_ps inputs are in reverse order (w, z, y, x) -> [0, 0, 0, 1] in memory
   _mm_storeu_ps(&m.m[12], _mm_set_ps(1.0f, 0.0f, 0.0f, 0.0f));
@@ -453,7 +454,7 @@ WMATH_CALL(Mat4, from_mat3)(const WMATH_TYPE(Mat3) a) {
   vst1q_f32(&m.m[0], vld1q_f32(&a.m[0]));
   vst1q_f32(&m.m[4], vld1q_f32(&a.m[4]));
   vst1q_f32(&m.m[8], vld1q_f32(&a.m[8]));
-  
+
   // 2. Set Col 3 to [0, 0, 0, 1]
   // Using static const array is often faster/safer than per-element construction
   static const float c3_data[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -521,63 +522,63 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   __m128 q_vec = _mm_loadu_ps(q.v);
   __m128 q2 = _mm_add_ps(q_vec, q_vec); // [2x, 2y, 2z, 2w]
   __m128 one = _mm_set1_ps(1.0f);
-  
+
   // Broadcast components
   __m128 q_x = _mm_shuffle_ps(q_vec, q_vec, 0x00);
   __m128 q_y = _mm_shuffle_ps(q_vec, q_vec, 0x55);
   __m128 q_z = _mm_shuffle_ps(q_vec, q_vec, 0xAA);
-  
+
   // Products [2xx, 2xy, 2xz, 2xw], etc.
-  __m128 qx_q2 = _mm_mul_ps(q_x, q2); 
-  __m128 qy_q2 = _mm_mul_ps(q_y, q2); 
-  __m128 qz_q2 = _mm_mul_ps(q_z, q2); 
-  
+  __m128 qx_q2 = _mm_mul_ps(q_x, q2);
+  __m128 qy_q2 = _mm_mul_ps(q_y, q2);
+  __m128 qz_q2 = _mm_mul_ps(q_z, q2);
+
   // --- Row 0: [1-2yy-2zz, 2xy+2wz, 2xz-2wy, 0] ---
   __m128 yy = _mm_shuffle_ps(qy_q2, qy_q2, 0x55);
   __m128 zz = _mm_shuffle_ps(qz_q2, qz_q2, 0xAA);
   __m128 r0_diag = _mm_sub_ps(one, _mm_add_ps(yy, zz));
-  
+
   __m128 xy = _mm_shuffle_ps(qx_q2, qx_q2, 0x55);
   __m128 wz = _mm_shuffle_ps(qz_q2, qz_q2, 0xFF);
   __m128 r0_x = _mm_add_ps(xy, wz); // yx + wz
-  
+
   __m128 xz = _mm_shuffle_ps(qx_q2, qx_q2, 0xAA);
   __m128 wy = _mm_shuffle_ps(qy_q2, qy_q2, 0xFF);
   __m128 r0_y = _mm_sub_ps(xz, wy); // zx - wy
-  
+
   // Pack Row 0: [r0_diag, r0_x, r0_y, 0]
   __m128 r0_tmp1 = _mm_unpacklo_ps(r0_diag, r0_x);
   __m128 r0_tmp2 = _mm_movelh_ps(r0_y, _mm_setzero_ps());
   __m128 row0 = _mm_shuffle_ps(r0_tmp1, r0_tmp2, _MM_SHUFFLE(2, 0, 1, 0));
   _mm_storeu_ps(&m.m[0], row0);
-  
+
   // --- Row 1: [2xy-2wz, 1-2xx-2zz, 2yz+2wx, 0] ---
   __m128 r1_x = _mm_sub_ps(xy, wz); // yx - wz
-  
+
   __m128 xx = _mm_shuffle_ps(qx_q2, qx_q2, 0x00);
   __m128 r1_diag = _mm_sub_ps(one, _mm_add_ps(xx, zz));
-  
+
   __m128 yz = _mm_shuffle_ps(qy_q2, qy_q2, 0xAA);
   __m128 wx = _mm_shuffle_ps(qx_q2, qx_q2, 0xFF);
   __m128 r1_y = _mm_add_ps(yz, wx); // zy + wx
-  
+
   // Pack Row 1
   __m128 r1_tmp1 = _mm_unpacklo_ps(r1_x, r1_diag);
   __m128 r1_tmp2 = _mm_movelh_ps(r1_y, _mm_setzero_ps());
   __m128 row1 = _mm_shuffle_ps(r1_tmp1, r1_tmp2, _MM_SHUFFLE(2, 0, 1, 0));
   _mm_storeu_ps(&m.m[4], row1);
-  
+
   // --- Row 2: [2xz+2wy, 2yz-2wx, 1-2xx-2yy, 0] ---
   __m128 r2_x = _mm_add_ps(xz, wy); // zx + wy
   __m128 r2_y = _mm_sub_ps(yz, wx); // zy - wx
   __m128 r2_diag = _mm_sub_ps(one, _mm_add_ps(xx, yy));
-  
+
   // Pack Row 2
   __m128 r2_tmp1 = _mm_unpacklo_ps(r2_x, r2_y);
   __m128 r2_tmp2 = _mm_movelh_ps(r2_diag, _mm_setzero_ps());
   __m128 row2 = _mm_shuffle_ps(r2_tmp1, r2_tmp2, _MM_SHUFFLE(2, 0, 1, 0));
   _mm_storeu_ps(&m.m[8], row2);
-  
+
   // --- Row 3: [0, 0, 0, 1] ---
   _mm_storeu_ps(&m.m[12], _mm_set_ps(1.0f, 0.0f, 0.0f, 0.0f));
 
@@ -589,23 +590,23 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   float32x4_t zero  = vdupq_n_f32(0.0f);
 
   // Parallel products using fused scalar-multiply
-  float32x4_t qx_q2 = vmulq_laneq_f32(q2, q_vec, 0); 
-  float32x4_t qy_q2 = vmulq_laneq_f32(q2, q_vec, 1); 
-  float32x4_t qz_q2 = vmulq_laneq_f32(q2, q_vec, 2); 
+  float32x4_t qx_q2 = vmulq_laneq_f32(q2, q_vec, 0);
+  float32x4_t qy_q2 = vmulq_laneq_f32(q2, q_vec, 1);
+  float32x4_t qz_q2 = vmulq_laneq_f32(q2, q_vec, 2);
 
   // --- Row 0 ---
   float32x4_t yy = vdupq_laneq_f32(qy_q2, 1);
   float32x4_t zz = vdupq_laneq_f32(qz_q2, 2);
   float32x4_t r0_diag = vsubq_f32(one, vaddq_f32(yy, zz));
-  
+
   float32x4_t xy = vdupq_laneq_f32(qx_q2, 1);
   float32x4_t wz = vdupq_laneq_f32(qz_q2, 3);
   float32x4_t r0_x = vaddq_f32(xy, wz);
-  
+
   float32x4_t xz = vdupq_laneq_f32(qx_q2, 2);
   float32x4_t wy = vdupq_laneq_f32(qy_q2, 3);
   float32x4_t r0_y = vsubq_f32(xz, wy);
-  
+
   // Pack Row 0: [r0_diag, r0_x, r0_y, 0]
   // Interleave logic: zip1(A,B) -> A0,B0,A1,B1...
   float32x4_t r0_lo = vzip1q_f32(r0_diag, r0_x); // [diag, x, diag, x]
@@ -615,14 +616,14 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
 
   // --- Row 1 ---
   float32x4_t r1_x = vsubq_f32(xy, wz);
-  
+
   float32x4_t xx = vdupq_laneq_f32(qx_q2, 0);
   float32x4_t r1_diag = vsubq_f32(one, vaddq_f32(xx, zz));
-  
+
   float32x4_t yz = vdupq_laneq_f32(qy_q2, 2);
   float32x4_t wx = vdupq_laneq_f32(qx_q2, 3);
   float32x4_t r1_y = vaddq_f32(yz, wx);
-  
+
   float32x4_t r1_lo = vzip1q_f32(r1_x, r1_diag);
   float32x4_t r1_hi = vzip1q_f32(r1_y, zero);
   float32x4_t row1  = vcombine_f32(vget_low_f32(r1_lo), vget_low_f32(r1_hi));
@@ -632,7 +633,7 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   float32x4_t r2_x = vaddq_f32(xz, wy);
   float32x4_t r2_y = vsubq_f32(yz, wx);
   float32x4_t r2_diag = vsubq_f32(one, vaddq_f32(xx, yy));
-  
+
   float32x4_t r2_lo = vzip1q_f32(r2_x, r2_y);
   float32x4_t r2_hi = vzip1q_f32(r2_diag, zero);
   float32x4_t row2  = vcombine_f32(vget_low_f32(r2_lo), vget_low_f32(r2_hi));
@@ -664,7 +665,7 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
 
   v128_t xy = wasm_i32x4_shuffle(qx_q2, qx_q2, 1, 1, 1, 1);
   v128_t wz = wasm_i32x4_shuffle(qz_q2, qz_q2, 3, 3, 3, 3);
-  
+
   v128_t xz = wasm_i32x4_shuffle(qx_q2, qx_q2, 2, 2, 2, 2);
   v128_t wy = wasm_i32x4_shuffle(qy_q2, qy_q2, 3, 3, 3, 3);
 
@@ -676,7 +677,7 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   v128_t r0_x    = wasm_f32x4_add(xy, wz);
   v128_t r0_y    = wasm_f32x4_sub(xz, wy);
   // Construct [diag, x, y, 0]
-  v128_t r0_lo = wasm_i32x4_shuffle(r0_diag, r0_x, 0, 4, 0, 4); 
+  v128_t r0_lo = wasm_i32x4_shuffle(r0_diag, r0_x, 0, 4, 0, 4);
   v128_t r0_hi = wasm_i32x4_shuffle(r0_y, zero, 0, 4, 0, 4);
   v128_t row0  = wasm_i32x4_shuffle(r0_lo, r0_hi, 0, 1, 4, 5);
   wasm_v128_store(&m.m[0], row0);
@@ -727,7 +728,7 @@ WMATH_CALL(Mat4, from_quat)(const WMATH_TYPE(Quat) q) {
   vfloat32m1_t xx = __riscv_vrgather_vv_f32m1(qx_q2, idx_0, vl);
   vfloat32m1_t yy = __riscv_vrgather_vv_f32m1(qy_q2, idx_1, vl);
   vfloat32m1_t zz = __riscv_vrgather_vv_f32m1(qz_q2, idx_2, vl);
-  
+
   vfloat32m1_t xy = __riscv_vrgather_vv_f32m1(qx_q2, idx_1, vl);
   vfloat32m1_t wz = __riscv_vrgather_vv_f32m1(qz_q2, idx_3, vl);
   vfloat32m1_t xz = __riscv_vrgather_vv_f32m1(qx_q2, idx_2, vl);
@@ -975,7 +976,7 @@ WMATH_CALL(Vec2, transform_mat4)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat4) m) {
   // x86_64 SSE/AVX Implementation
   // Strategy: Linear Combination: res = Col3 + (Col0 * x) + (Col1 * y)
   // -----------------------------------------------------------------
-  
+
   // 1. Safe Load Vec2 (8 bytes) into XMM
   // _mm_load_sd loads a double (64 bits), effectively loading 2 floats without over-reading.
   __m128 vec_v = _mm_castpd_ps(_mm_load_sd((const double*)v.v)); // [x, y, 0, 0]
@@ -1012,7 +1013,7 @@ WMATH_CALL(Vec2, transform_mat4)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat4) m) {
 
   // 1. Safe Load Vec2
   float32x2_t v_small = vld1_f32(v.v); // Loads [x, y] strictly
-  
+
   // 2. Load Matrix Columns
   float32x4_t col0 = vld1q_f32(&m.m[0]);
   float32x4_t col1 = vld1q_f32(&m.m[4]);
@@ -1062,7 +1063,7 @@ WMATH_CALL(Vec2, transform_mat4)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat4) m) {
   // 1. Load data
   float x = v.v[0];
   float y = v.v[1];
-  
+
   vfloat32m1_t col0 = __riscv_vle32_v_f32m1(&m.m[0], vl);
   vfloat32m1_t col1 = __riscv_vle32_v_f32m1(&m.m[4], vl);
   vfloat32m1_t col3 = __riscv_vle32_v_f32m1(&m.m[12], vl);
@@ -1083,9 +1084,9 @@ WMATH_CALL(Vec2, transform_mat4)(WMATH_TYPE(Vec2) v, WMATH_TYPE(Mat4) m) {
   // LoongArch LSX Implementation
   // -----------------------------------------------------------------
   // Load using replve to broadcast directly from memory is not standard, load then broadcast.
-  
+
   // 1. Load inputs
-  // Safe load 64-bit (2 floats) is tricky in pure LSX intrinsics without over-read. 
+  // Safe load 64-bit (2 floats) is tricky in pure LSX intrinsics without over-read.
   // We'll load scalar to be safe or assume padding. Let's use scalar load + repl.
   __m128 x_splat = __lsx_vreplfr2vr_s(v.v[0]);
   __m128 y_splat = __lsx_vreplfr2vr_s(v.v[1]);
@@ -1358,7 +1359,7 @@ WMATH_CALL(Vec3, transform_mat4_upper3x3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat4) m
 
   // 1. Safe Load Vec3 (12 bytes)
   // Load x, y as double (low 64 bits), z as scalar (high 32 bits of low 64)
-  __m128 xy = _mm_castpd_ps(_mm_load_sd((const double*)v.v)); 
+  __m128 xy = _mm_castpd_ps(_mm_load_sd((const double*)v.v));
   __m128 z_val = _mm_load_ss(&v.v[2]);
   // Combine: [x, y, z, 0]
   __m128 vec_v = _mm_movelh_ps(xy, z_val);
@@ -1400,7 +1401,7 @@ WMATH_CALL(Vec3, transform_mat4_upper3x3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat4) m
   // 1. Safe Load
   float32x2_t v_xy = vld1_f32(v.v);       // Load x, y
   float32x4_t v_z_vec = vld1q_dup_f32(&v.v[2]); // Load z (splatted is fine)
-  
+
   // Create a combined vector [x, y, x, y] for lane access
   float32x4_t v_xy_vec = vcombine_f32(v_xy, v_xy);
 
@@ -1585,7 +1586,7 @@ WMATH_CALL(Vec3, transform_mat3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat3) m) {
   // RISC-V Vector Implementation (RVV 1.0)
   size_t vl = 4; // Assuming operation on 4 floats
   vfloat32m1_t vec_v = wcn_load_vec3_partial(v.v);
-  
+
   // Load columns
   vfloat32m1_t col0 = __riscv_vle32_v_f32m1(&m.m[0], vl);
   vfloat32m1_t col1 = __riscv_vle32_v_f32m1(&m.m[4], vl);
@@ -1634,7 +1635,7 @@ WMATH_CALL(Vec3, transform_mat3)(WMATH_TYPE(Vec3) v, WMATH_TYPE(Mat3) m) {
   float x = v.v[0];
   float y = v.v[1];
   float z = v.v[2];
-  
+
   // Unrolled Linear Combination
   r.v[0] = x * m.m[0] + y * m.m[4] + z * m.m[8];
   r.v[1] = x * m.m[1] + y * m.m[5] + z * m.m[9];
@@ -2942,7 +2943,7 @@ WMATH_CALL(Vec4, transform_mat4)(WMATH_TYPE(Vec4) v, WMATH_TYPE(Mat4) m) {
 
 #if !defined(WMATH_DISABLE_SIMD) && WCN_HAS_X86_64
     __m128 v_vec = _mm_loadu_ps(v.v); // [x, y, z, w]
-  
+
   // Load Columns
   __m128 col0 = _mm_loadu_ps(&m.m[0]);
   __m128 col1 = _mm_loadu_ps(&m.m[4]);

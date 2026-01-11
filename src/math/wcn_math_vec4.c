@@ -1,4 +1,5 @@
-#include "wcn_math_internal.h"
+#include "WCN/WCN_Math.h"
+#include "common/wcn_math_internal.h"
 #include <string.h>
 
 // BEGIN Vec4
