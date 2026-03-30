@@ -38,11 +38,19 @@ int main(void) {
     printf("Decoded image: %ux%u px\n", image->width, image->height);
 
     float angle = 0.0f;
-    while (!wcn_glfw_window_should_close(window)) {
+    int frame_count = 0;
+    bool stats_reset = false;
+    const int max_frames = 300;
+    while (!wcn_glfw_window_should_close(window) && frame_count < max_frames) {
         wcn_glfw_poll_events();
 
         WCN_GLFW_RenderFrame frame;
         if (wcn_glfw_begin_frame(window, &frame)) {
+            if (!stats_reset) {
+                wcn_reset_render_stats(ctx);
+                stats_reset = true;
+            }
+
             wcn_set_fill_style(ctx, 0xFFF5F5F5);
             wcn_fill_rect(ctx, 0, 0, 800, 600);
 
@@ -66,9 +74,31 @@ int main(void) {
             angle += 0.02f;
             wcn_glfw_end_frame(window, &frame);
         }
+
+        frame_count++;
+        if (frame_count % 100 == 0) {
+            printf("Frame %d\n", frame_count);
+        }
+    }
+
+    WCN_RenderStats stats = {0};
+    if (wcn_get_render_stats(ctx, &stats)) {
+        printf(
+            "WCN_STATS queue_write_calls=%llu queue_write_bytes=%llu compute_dispatch_count=%llu draw_call_count=%llu rendered_instance_count=%llu rendered_vertex_count=%llu gpu_compute_ticks=%llu gpu_render_ticks=%llu gpu_timestamp_samples=%llu\n",
+            (unsigned long long)stats.queue_write_calls,
+            (unsigned long long)stats.queue_write_bytes,
+            (unsigned long long)stats.compute_dispatch_count,
+            (unsigned long long)stats.draw_call_count,
+            (unsigned long long)stats.rendered_instance_count,
+            (unsigned long long)stats.rendered_vertex_count,
+            (unsigned long long)stats.gpu_compute_ticks,
+            (unsigned long long)stats.gpu_render_ticks,
+            (unsigned long long)stats.gpu_timestamp_samples
+        );
     }
 
     wcn_destroy_image_data(image);
     wcn_glfw_destroy_window(window);
+    printf("Test completed. Rendered %d frames\n", frame_count);
     return 0;
 }

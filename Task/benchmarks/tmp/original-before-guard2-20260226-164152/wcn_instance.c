@@ -6,49 +6,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
-#ifndef __EMSCRIPTEN__
-#include <webgpu/wgpu.h>
-#endif
-
-#ifndef WCN_ENABLE_TEXTURE_BINDGROUP_CACHE
-#define WCN_ENABLE_TEXTURE_BINDGROUP_CACHE 0
-#endif
-
-#ifndef WCN_ENABLE_STATIC_FRAME_REUSE
-#define WCN_ENABLE_STATIC_FRAME_REUSE 0
-#endif
-
-#ifndef WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD
-#define WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD 0
-#endif
-
-#ifndef WCN_ENABLE_SMALL_BATCH_REUSE
-#define WCN_ENABLE_SMALL_BATCH_REUSE 0
-#endif
-
-#ifndef WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-#define WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD 1
-#endif
-
-#ifndef WCN_ENABLE_DIRTY_RANGE_COMPUTE_DISPATCH
-#define WCN_ENABLE_DIRTY_RANGE_COMPUTE_DISPATCH 0
-#endif
-
-#ifndef WCN_DIRTY_RANGE_COMPUTE_MAX_INSTANCES
-#define WCN_DIRTY_RANGE_COMPUTE_MAX_INSTANCES 64
-#endif
-
-#ifndef WCN_DIRTY_RANGE_COMPUTE_MAX_RATIO_PERCENT
-#define WCN_DIRTY_RANGE_COMPUTE_MAX_RATIO_PERCENT 40
-#endif
-
-#ifndef WCN_DIRTY_RANGE_COMPUTE_STABILITY_FRAMES
-#define WCN_DIRTY_RANGE_COMPUTE_STABILITY_FRAMES 8
-#endif
-
-#ifndef WCN_ENABLE_GPU_TIMESTAMP_PROFILING
-#define WCN_ENABLE_GPU_TIMESTAMP_PROFILING 0
-#endif
 
 static bool wcn_is_variation_selector(uint32_t cp) {
     return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF);
@@ -56,281 +13,6 @@ static bool wcn_is_variation_selector(uint32_t cp) {
 
 static bool wcn_is_zero_width_joiner(uint32_t cp) {
     return cp == 0x200D;
-}
-
-typedef struct WCN_RendererRuntimeCache {
-    WCN_Renderer* renderer;
-    WGPUBindGroup texture_bind_group;
-    WGPUTextureView sdf_atlas_view;
-    WGPUSampler sdf_sampler;
-    WGPUTextureView image_atlas_view;
-    WGPUSampler image_sampler;
-    struct WCN_RendererRuntimeCache* next;
-} WCN_RendererRuntimeCache;
-
-static WCN_RendererRuntimeCache* g_renderer_runtime_cache_head = NULL;
-
-static WCN_RendererRuntimeCache* wcn_renderer_runtime_cache_get(WCN_Renderer* renderer) {
-    if (!renderer) {
-        return NULL;
-    }
-
-    WCN_RendererRuntimeCache* node = g_renderer_runtime_cache_head;
-    while (node) {
-        if (node->renderer == renderer) {
-            return node;
-        }
-        node = node->next;
-    }
-
-    WCN_RendererRuntimeCache* created = (WCN_RendererRuntimeCache*)calloc(1, sizeof(WCN_RendererRuntimeCache));
-    if (!created) {
-        return NULL;
-    }
-
-    created->renderer = renderer;
-    created->next = g_renderer_runtime_cache_head;
-    g_renderer_runtime_cache_head = created;
-    return created;
-}
-
-static void wcn_renderer_runtime_cache_remove(WCN_Renderer* renderer) {
-    if (!renderer) {
-        return;
-    }
-
-    WCN_RendererRuntimeCache** link = &g_renderer_runtime_cache_head;
-    while (*link) {
-        WCN_RendererRuntimeCache* node = *link;
-        if (node->renderer == renderer) {
-            *link = node->next;
-            if (node->texture_bind_group) {
-                wgpuBindGroupRelease(node->texture_bind_group);
-            }
-            free(node);
-            return;
-        }
-        link = &(*link)->next;
-    }
-}
-
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-#define WCN_TIMESTAMP_SLOT_COUNT 2u
-#define WCN_TIMESTAMP_QUERIES_PER_SLOT 4u
-#define WCN_TIMESTAMP_TOTAL_QUERIES (WCN_TIMESTAMP_SLOT_COUNT * WCN_TIMESTAMP_QUERIES_PER_SLOT)
-#define WCN_TIMESTAMP_RESULT_BYTES (WCN_TIMESTAMP_QUERIES_PER_SLOT * sizeof(uint64_t))
-// Keep resolve offsets 256-byte aligned to satisfy backend query resolve constraints.
-#define WCN_TIMESTAMP_RESOLVE_STRIDE 256u
-
-static void wcn_renderer_timestamp_map_callback(
-    WGPUMapAsyncStatus status,
-    WGPUStringView message,
-    void* userdata1,
-    void* userdata2
-) {
-    (void)message;
-    WCN_Renderer* renderer = (WCN_Renderer*)userdata1;
-    if (!renderer) {
-        return;
-    }
-    const uint32_t slot = (uint32_t)(uintptr_t)userdata2;
-    if (slot >= WCN_TIMESTAMP_SLOT_COUNT) {
-        return;
-    }
-
-    renderer->timestamp_map_status[slot] = status;
-    renderer->timestamp_map_pending[slot] = false;
-    renderer->timestamp_map_ready[slot] = true;
-}
-
-static void wcn_renderer_destroy_timestamp_resources(WCN_Renderer* renderer) {
-    if (!renderer) {
-        return;
-    }
-
-    for (uint32_t i = 0; i < WCN_TIMESTAMP_SLOT_COUNT; ++i) {
-        if (renderer->timestamp_readback_buffers[i]) {
-            wgpuBufferRelease(renderer->timestamp_readback_buffers[i]);
-            renderer->timestamp_readback_buffers[i] = NULL;
-        }
-        renderer->timestamp_map_pending[i] = false;
-        renderer->timestamp_map_ready[i] = false;
-        renderer->timestamp_map_status[i] = WGPUMapAsyncStatus_Unknown;
-    }
-
-    if (renderer->timestamp_resolve_buffer) {
-        wgpuBufferRelease(renderer->timestamp_resolve_buffer);
-        renderer->timestamp_resolve_buffer = NULL;
-    }
-
-    if (renderer->timestamp_query_set) {
-        wgpuQuerySetRelease(renderer->timestamp_query_set);
-        renderer->timestamp_query_set = NULL;
-    }
-
-    renderer->gpu_timestamp_enabled = false;
-    renderer->gpu_timestamp_use_pass_writes = false;
-    renderer->gpu_timestamp_use_encoder_writes = false;
-}
-
-static void wcn_renderer_init_timestamp_resources(WCN_Renderer* renderer) {
-    if (!renderer || !renderer->device) {
-        return;
-    }
-
-    renderer->gpu_timestamp_enabled = false;
-    renderer->gpu_timestamp_use_pass_writes = false;
-    renderer->gpu_timestamp_use_encoder_writes = false;
-
-    if (!wgpuDeviceHasFeature(renderer->device, WGPUFeatureName_TimestampQuery)) {
-        return;
-    }
-
-    bool has_timestamp_inside_passes = wgpuDeviceHasFeature(
-        renderer->device,
-        (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsidePasses
-    );
-    bool has_timestamp_inside_encoders = wgpuDeviceHasFeature(
-        renderer->device,
-        (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsideEncoders
-    );
-
-    renderer->gpu_timestamp_use_pass_writes = has_timestamp_inside_passes;
-    renderer->gpu_timestamp_use_encoder_writes =
-        !renderer->gpu_timestamp_use_pass_writes && has_timestamp_inside_encoders;
-
-    if (!renderer->gpu_timestamp_use_pass_writes &&
-        !renderer->gpu_timestamp_use_encoder_writes) {
-        printf(
-            "WCN timestamp profiling disabled: no supported timestamp write mode (passes=%s, encoders=%s)\n",
-            has_timestamp_inside_passes ? "yes" : "no",
-            has_timestamp_inside_encoders ? "yes" : "no"
-        );
-        return;
-    }
-
-    WGPUQuerySetDescriptor query_set_desc = {
-        .nextInChain = NULL,
-        .label = "WCN Timestamp Query Set",
-        .type = WGPUQueryType_Timestamp,
-        .count = WCN_TIMESTAMP_TOTAL_QUERIES
-    };
-
-    renderer->timestamp_query_set = wgpuDeviceCreateQuerySet(renderer->device, &query_set_desc);
-    if (!renderer->timestamp_query_set) {
-        wcn_renderer_destroy_timestamp_resources(renderer);
-        return;
-    }
-
-    WGPUBufferDescriptor resolve_buffer_desc = {
-        .nextInChain = NULL,
-        .label = "WCN Timestamp Resolve Buffer",
-        .usage = WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc,
-        .size = (uint64_t)WCN_TIMESTAMP_SLOT_COUNT * WCN_TIMESTAMP_RESOLVE_STRIDE,
-        .mappedAtCreation = false
-    };
-
-    renderer->timestamp_resolve_buffer = wgpuDeviceCreateBuffer(renderer->device, &resolve_buffer_desc);
-    if (!renderer->timestamp_resolve_buffer) {
-        wcn_renderer_destroy_timestamp_resources(renderer);
-        return;
-    }
-
-    for (uint32_t i = 0; i < WCN_TIMESTAMP_SLOT_COUNT; ++i) {
-        WGPUBufferDescriptor readback_desc = {
-            .nextInChain = NULL,
-            .label = "WCN Timestamp Readback Buffer",
-            .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead,
-            .size = WCN_TIMESTAMP_RESULT_BYTES,
-            .mappedAtCreation = false
-        };
-        renderer->timestamp_readback_buffers[i] = wgpuDeviceCreateBuffer(renderer->device, &readback_desc);
-        if (!renderer->timestamp_readback_buffers[i]) {
-            wcn_renderer_destroy_timestamp_resources(renderer);
-            return;
-        }
-        renderer->timestamp_map_pending[i] = false;
-        renderer->timestamp_map_ready[i] = false;
-        renderer->timestamp_map_status[i] = WGPUMapAsyncStatus_Unknown;
-    }
-
-    renderer->timestamp_write_slot = 0;
-    renderer->timestamp_submit_slot = 0;
-    renderer->timestamp_submit_slot_valid = false;
-    renderer->gpu_timestamp_enabled = true;
-    printf(
-        "WCN timestamp profiling enabled: mode=%s\n",
-        renderer->gpu_timestamp_use_pass_writes ? "pass-writes" : "encoder-writes"
-    );
-}
-#endif
-
-static WGPUBindGroup wcn_renderer_get_cached_texture_bind_group(
-    WCN_Renderer* renderer,
-    WCN_RendererRuntimeCache* cache,
-    WGPUTextureView sdf_atlas_view,
-    WGPUSampler sdf_sampler,
-    WGPUTextureView image_atlas_view,
-    WGPUSampler image_sampler
-) {
-    if (!renderer || !cache || !sdf_atlas_view || !sdf_sampler || !image_atlas_view || !image_sampler) {
-        return NULL;
-    }
-
-    if (cache->texture_bind_group &&
-        cache->sdf_atlas_view == sdf_atlas_view &&
-        cache->sdf_sampler == sdf_sampler &&
-        cache->image_atlas_view == image_atlas_view &&
-        cache->image_sampler == image_sampler) {
-        return cache->texture_bind_group;
-    }
-
-    if (cache->texture_bind_group) {
-        wgpuBindGroupRelease(cache->texture_bind_group);
-        cache->texture_bind_group = NULL;
-    }
-
-#ifdef __EMSCRIPTEN__
-    WGPUBindGroup bind_group = wasm_create_sdf_bind_group(
-        renderer->device,
-        renderer->sdf_bind_group_layout,
-        sdf_atlas_view,
-        sdf_sampler,
-        image_atlas_view,
-        image_sampler
-    );
-#else
-    WGPUBindGroupEntry sdf_bind_group_entries[] = {
-        { .binding = 0, .textureView = sdf_atlas_view },
-        { .binding = 1, .sampler = sdf_sampler },
-        { .binding = 2, .textureView = image_atlas_view },
-        { .binding = 3, .sampler = image_sampler }
-    };
-
-    WGPUBindGroupDescriptor sdf_bind_group_desc = {
-        .nextInChain = NULL,
-        .label = "WCN Texture Bind Group",
-        .layout = renderer->sdf_bind_group_layout,
-        .entryCount = 4,
-        .entries = sdf_bind_group_entries
-    };
-
-    WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(
-        renderer->device,
-        &sdf_bind_group_desc
-    );
-#endif
-
-    if (!bind_group) {
-        return NULL;
-    }
-
-    cache->texture_bind_group = bind_group;
-    cache->sdf_atlas_view = sdf_atlas_view;
-    cache->sdf_sampler = sdf_sampler;
-    cache->image_atlas_view = image_atlas_view;
-    cache->image_sampler = image_sampler;
-    return bind_group;
 }
 
 static bool wcn_renderer_create_render_bind_group(WCN_Renderer* renderer) {
@@ -437,195 +119,11 @@ static bool wcn_renderer_create_compute_bind_group(WCN_Renderer* renderer) {
     return renderer->compute_bind_group != NULL;
 }
 
-static bool wcn_renderer_ensure_instance_buffer_capacity(
-    WCN_Renderer* renderer,
-    size_t required_size
-) {
-    if (!renderer) {
-        return false;
-    }
-
-    if (required_size <= renderer->instance_buffer_size) {
-        return true;
-    }
-
-    WGPUBuffer old_buffer = renderer->instance_buffer;
-    const size_t old_size = renderer->instance_buffer_size;
-    size_t new_size = renderer->instance_buffer_size ? renderer->instance_buffer_size : sizeof(WCN_Instance) * 1024;
-    const size_t max_instance_buffer_size = 64 * 1024 * 1024;
-
-    while (new_size < required_size && new_size < max_instance_buffer_size) {
-        new_size *= 2;
-    }
-    if (new_size < required_size) {
-        new_size = required_size;
-    }
-    if (new_size > max_instance_buffer_size) {
-        new_size = max_instance_buffer_size;
-    }
-    if (required_size > new_size) {
-        return false;
-    }
-
-#ifdef __EMSCRIPTEN__
-    WGPUBuffer new_buffer = wasm_create_buffer(
-        renderer->device,
-        "Unified Renderer Instance Buffer (Resized)",
-        new_size,
-        1 | 4
-    );
-#else
-    WGPUBufferDescriptor instance_buffer_desc = {
-        .nextInChain = NULL,
-        .label = "Unified Renderer Instance Buffer (Resized)",
-        .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
-        .size = new_size,
-        .mappedAtCreation = false
-    };
-    WGPUBuffer new_buffer = wgpuDeviceCreateBuffer(renderer->device, &instance_buffer_desc);
-#endif
-    if (!new_buffer) {
-        return false;
-    }
-
-    renderer->instance_buffer = new_buffer;
-    renderer->instance_buffer_size = new_size;
-
-    if (!wcn_renderer_create_render_bind_group(renderer) || !wcn_renderer_create_compute_bind_group(renderer)) {
-        wgpuBufferRelease(new_buffer);
-        renderer->instance_buffer = old_buffer;
-        renderer->instance_buffer_size = old_size;
-        wcn_renderer_create_render_bind_group(renderer);
-        wcn_renderer_create_compute_bind_group(renderer);
-        return false;
-    }
-
-    if (old_buffer) {
-        wgpuBufferRelease(old_buffer);
-    }
-
-    return true;
-}
-
-static bool wcn_renderer_ensure_vertex_buffer_capacity(
-    WCN_Renderer* renderer,
-    size_t required_instance_capacity
-) {
-    if (!renderer) {
-        return false;
-    }
-
-    if (required_instance_capacity <= renderer->vertex_batch_instance_capacity) {
-        return true;
-    }
-
-    const size_t max_vertex_buffer_size = 256 * 1024 * 1024;
-    size_t new_instance_capacity = renderer->vertex_batch_instance_capacity ? renderer->vertex_batch_instance_capacity : 1024;
-    while (new_instance_capacity < required_instance_capacity) {
-        if (new_instance_capacity > (SIZE_MAX / 2)) {
-            new_instance_capacity = required_instance_capacity;
-            break;
-        }
-        new_instance_capacity *= 2;
-    }
-
-    size_t new_size = new_instance_capacity * 6 * sizeof(WCN_VertexGPU);
-    if (new_size > max_vertex_buffer_size) {
-        new_size = max_vertex_buffer_size;
-    }
-    if (new_size < required_instance_capacity * 6 * sizeof(WCN_VertexGPU)) {
-        return false;
-    }
-
-    WGPUBuffer old_buffer = renderer->vertex_buffer;
-    const size_t old_size = renderer->vertex_buffer_size;
-    const size_t old_capacity = renderer->vertex_batch_instance_capacity;
-
-#ifdef __EMSCRIPTEN__
-    WGPUBuffer new_buffer = wasm_create_buffer(
-        renderer->device,
-        "Unified Renderer Vertex Buffer (Resized)",
-        new_size,
-        1 | 8
-    );
-#else
-    WGPUBufferDescriptor vertex_buffer_desc = {
-        .nextInChain = NULL,
-        .label = "Unified Renderer Vertex Buffer (Resized)",
-        .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_Vertex,
-        .size = new_size,
-        .mappedAtCreation = false
-    };
-    WGPUBuffer new_buffer = wgpuDeviceCreateBuffer(renderer->device, &vertex_buffer_desc);
-#endif
-    if (!new_buffer) {
-        return false;
-    }
-
-    renderer->vertex_buffer = new_buffer;
-    renderer->vertex_buffer_size = new_size;
-    renderer->vertex_batch_instance_capacity = new_size / (6 * sizeof(WCN_VertexGPU));
-    if (renderer->vertex_batch_instance_capacity == 0) {
-        renderer->vertex_batch_instance_capacity = 1;
-    }
-
-    if (!wcn_renderer_create_compute_bind_group(renderer)) {
-        wgpuBufferRelease(new_buffer);
-        renderer->vertex_buffer = old_buffer;
-        renderer->vertex_buffer_size = old_size;
-        renderer->vertex_batch_instance_capacity = old_capacity;
-        wcn_renderer_create_compute_bind_group(renderer);
-        return false;
-    }
-
-    if (old_buffer) {
-        wgpuBufferRelease(old_buffer);
-    }
-
-    return true;
-}
-
-#if WCN_ENABLE_STATIC_FRAME_REUSE || WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD || WCN_ENABLE_SMALL_BATCH_REUSE || WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-static bool wcn_renderer_ensure_cached_instances_capacity(
-    WCN_Renderer* renderer,
-    size_t required_instance_count
-) {
-    if (!renderer) {
-        return false;
-    }
-
-    if (required_instance_count <= renderer->cached_instance_capacity) {
-        return true;
-    }
-
-    size_t new_capacity = renderer->cached_instance_capacity ? renderer->cached_instance_capacity : 1024;
-    while (new_capacity < required_instance_count) {
-        if (new_capacity > (SIZE_MAX / 2)) {
-            new_capacity = required_instance_count;
-            break;
-        }
-        new_capacity *= 2;
-    }
-
-    WCN_Instance* new_cache = (WCN_Instance*)realloc(
-        renderer->cached_instances,
-        new_capacity * sizeof(WCN_Instance)
-    );
-    if (!new_cache) {
-        return false;
-    }
-
-    renderer->cached_instances = new_cache;
-    renderer->cached_instance_capacity = new_capacity;
-    return true;
-}
-#endif
-
 // ============================================================================
-// 瀹炰緥缂撳啿鍖虹鐞?(Instance Buffer Management)
+// 实例缓冲区管理 (Instance Buffer Management)
 // ============================================================================
 
-// 鍒濆鍖栧疄渚嬬紦鍐插尯
+// 初始化实例缓冲区
 bool wcn_instance_buffer_init(WCN_InstanceBuffer* buffer, size_t initial_capacity) {
     if (!buffer) {
         return false;
@@ -642,7 +140,7 @@ bool wcn_instance_buffer_init(WCN_InstanceBuffer* buffer, size_t initial_capacit
     return true;
 }
 
-// 閿€姣佸疄渚嬬紦鍐插尯
+// 销毁实例缓冲区
 void wcn_instance_buffer_destroy(WCN_InstanceBuffer* buffer) {
     if (!buffer) {
         return;
@@ -657,7 +155,7 @@ void wcn_instance_buffer_destroy(WCN_InstanceBuffer* buffer) {
     buffer->capacity = 0;
 }
 
-// 娓呯┖瀹炰緥缂撳啿鍖?
+// 清空实例缓冲区
 void wcn_instance_buffer_clear(WCN_InstanceBuffer* buffer) {
     if (!buffer) {
         return;
@@ -666,7 +164,7 @@ void wcn_instance_buffer_clear(WCN_InstanceBuffer* buffer) {
     buffer->count = 0;
 }
 
-// 鎵╁睍瀹炰緥缂撳啿鍖猴紙瀹归噺缈诲€嶏級
+// 扩展实例缓冲区（容量翻倍）
 bool wcn_instance_buffer_grow(WCN_InstanceBuffer* buffer) {
     if (!buffer) {
         return false;
@@ -688,20 +186,20 @@ bool wcn_instance_buffer_grow(WCN_InstanceBuffer* buffer) {
     return true;
 }
 
-// 娣诲姞瀹炰緥鍒扮紦鍐插尯
+// 添加实例到缓冲区
 bool wcn_instance_buffer_add(WCN_InstanceBuffer* buffer, const WCN_Instance* instance) {
     if (!buffer || !instance) {
         return false;
     }
     
-    // 濡傛灉缂撳啿鍖哄凡婊★紝鎵╁睍瀹归噺
+    // 如果缓冲区已满，扩展容量
     if (buffer->count >= buffer->capacity) {
         if (!wcn_instance_buffer_grow(buffer)) {
             return false;
         }
     }
     
-    // 澶嶅埗瀹炰緥鏁版嵁
+    // 复制实例数据
     memcpy(&buffer->instances[buffer->count], instance, sizeof(WCN_Instance));
     buffer->count++;
     
@@ -709,7 +207,7 @@ bool wcn_instance_buffer_add(WCN_InstanceBuffer* buffer, const WCN_Instance* ins
 }
 
 // ============================================================================
-// 娓叉煋鍣ㄥ垱寤哄拰閿€姣?(Renderer Creation and Destruction)
+// 渲染器创建和销毁 (Renderer Creation and Destruction)
 // ============================================================================
 
 // Helper function to create shader module
@@ -732,15 +230,15 @@ static WGPUShaderModule wcn_renderer_create_shader_module(
     };
     
 #ifdef __EMSCRIPTEN__
-    // Emscripten: label 鏄?const char*
+    // Emscripten: label 是 const char*
     WGPUShaderModuleDescriptor shader_desc = {
         .nextInChain = &wgsl_source.chain
     };
-    // 淇 label 瀛楁锛堜紶 NULL 閬垮厤绫诲瀷闂锛?
+    // 修复 label 字段（传 NULL 避免类型问题）
     uint8_t* desc_ptr = (uint8_t*)&shader_desc;
-    *(const char**)(desc_ptr + 4) = NULL;  // label 璁句负 NULL
+    *(const char**)(desc_ptr + 4) = NULL;  // label 设为 NULL
 #else
-    // 鍘熺敓: label 鏄?WGPUStringView
+    // 原生: label 是 WGPUStringView
     WGPUShaderModuleDescriptor shader_desc = {
         .nextInChain = &wgsl_source.chain,
         .label = {
@@ -759,7 +257,7 @@ static WGPUShaderModule wcn_renderer_create_shader_module(
     return module;
 }
 
-// 鍒涘缓缁熶竴娓叉煋鍣?
+// 创建统一渲染器
 WCN_Renderer* wcn_create_renderer(
     WGPUDevice device,
     WGPUQueue queue,
@@ -959,7 +457,7 @@ WCN_Renderer* wcn_create_renderer(
     
     // Create bind group layout for Group 1 (SDF Atlas)
 #ifdef __EMSCRIPTEN__
-    // WASM: 浣跨敤 EM_JS 鍑芥暟鍒涘缓 SDF bind group layout
+    // WASM: 使用 EM_JS 函数创建 SDF bind group layout
     renderer->sdf_bind_group_layout = wasm_create_sdf_bind_group_layout(
         device,
         "Unified Renderer Texture Bind Group Layout (Group 1)"
@@ -1023,7 +521,7 @@ WCN_Renderer* wcn_create_renderer(
     
     // Create pipeline layout with both bind group layouts
 #ifdef __EMSCRIPTEN__
-    // WASM: 浣跨敤 EM_JS 鍑芥暟鍒涘缓 pipeline layout锛岀‘淇?bind group layouts 姝ｇ‘浼犻€?
+    // WASM: 使用 EM_JS 函数创建 pipeline layout，确保 bind group layouts 正确传递
     WGPUPipelineLayout pipeline_layout = wasm_create_pipeline_layout(
         device,
         "Unified Renderer Pipeline Layout",
@@ -1415,37 +913,15 @@ WCN_Renderer* wcn_create_renderer(
     };
     
     wgpuQueueWriteBuffer(queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
-    renderer->stat_queue_write_calls += 1;
-    renderer->stat_queue_write_bytes += (uint64_t)sizeof(uniform_data);
-    renderer->uniform_cache_valid = true;
-    renderer->uniform_upload_cache_valid = true;
-    renderer->cached_viewport_width = width;
-    renderer->cached_viewport_height = height;
-    renderer->cached_instance_count = 0;
-    renderer->cached_uniform_upload_viewport_width = width;
-    renderer->cached_uniform_upload_viewport_height = height;
-    renderer->cached_uniform_upload_instance_count = 0;
-    renderer->cached_uniform_upload_instance_offset = 0;
-    renderer->dirty_compute_candidate_offset = 0;
-    renderer->dirty_compute_candidate_count = 0;
-    renderer->dirty_compute_candidate_streak = 0;
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    wcn_renderer_init_timestamp_resources(renderer);
-#endif
     
     return renderer;
 }
 
-// 閿€姣佺粺涓€娓叉煋鍣?
+// 销毁统一渲染器
 void wcn_destroy_renderer(WCN_Renderer* renderer) {
     if (!renderer) {
         return;
     }
-
-    wcn_renderer_runtime_cache_remove(renderer);
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    wcn_renderer_destroy_timestamp_resources(renderer);
-#endif
     
     // Release GPU buffers
     if (renderer->uniform_buffer) {
@@ -1502,24 +978,16 @@ void wcn_destroy_renderer(WCN_Renderer* renderer) {
     
     // Free CPU-side instance buffer
     wcn_instance_buffer_destroy(&renderer->cpu_instances);
-
-    if (renderer->cached_instances) {
-        free(renderer->cached_instances);
-        renderer->cached_instances = NULL;
-    }
-    renderer->cached_instance_capacity = 0;
-    renderer->cached_instance_count = 0;
-    renderer->cached_vertices_valid = false;
     
     // Free renderer structure
     free(renderer);
 }
 
 // ============================================================================
-// 瀹炰緥娣诲姞鍑芥暟 (Instance Addition Functions)
+// 实例添加函数 (Instance Addition Functions)
 // ============================================================================
 
-// 娣诲姞鐭╁舰瀹炰緥
+// 添加矩形实例
 void wcn_renderer_add_rect(
     WCN_Renderer* renderer,
     float x, float y, float width, float height,
@@ -1619,7 +1087,7 @@ void wcn_renderer_add_image(
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
 }
 
-// 娣诲姞鏂囨湰瀹炰緥
+// 添加文本实例
 void wcn_renderer_add_text(
     WCN_Renderer* renderer,
     WCN_Context* ctx,
@@ -1757,7 +1225,7 @@ void wcn_renderer_add_text(
     }
 }
 
-// 娣诲姞涓夎褰㈠疄渚?
+// 添加三角形实例
 void wcn_renderer_add_triangles(
     WCN_Renderer* renderer,
     const WCN_SimpleVertex* vertices, size_t vertex_count,
@@ -1859,7 +1327,7 @@ void wcn_renderer_add_triangles(
         // transform[2] stores edge flags (7 = all edges are outer edges)
         instance.transform[0] = 1.0f;
         instance.transform[1] = 0.0f;
-        instance.transform[2] = 7.0f;  // 杈圭紭鏍囪: 鎵€鏈夎竟閮芥槸澶栬竟缂?
+        instance.transform[2] = 7.0f;  // 边缘标记: 所有边都是外边缘
         instance.transform[3] = 1.0f;
         
         // Set instance type
@@ -1870,7 +1338,7 @@ void wcn_renderer_add_triangles(
     }
 }
 
-// 娣诲姞绾挎瀹炰緥
+// 添加线段实例
 // cap_flags: bit 0-7 = cap style, bit 8 = render start cap, bit 9 = render end cap
 void wcn_renderer_add_line(
     WCN_Renderer* renderer,
@@ -1939,10 +1407,10 @@ void wcn_renderer_add_line(
 }
 
 // ============================================================================
-// GPU SDF 娓叉煋鍑芥暟 (Arc, Bezier)
+// GPU SDF 渲染函数 (Arc, Bezier)
 // ============================================================================
 
-// 娣诲姞鍦嗗姬瀹炰緥 (GPU SDF 娓叉煋)
+// 添加圆弧实例 (GPU SDF 渲染)
 void wcn_renderer_add_arc(
     WCN_Renderer* renderer,
     float cx, float cy,
@@ -1990,7 +1458,7 @@ void wcn_renderer_add_arc(
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
 }
 
-// 娣诲姞鍦嗗舰/鎵囧舰濉厖瀹炰緥 (GPU SDF 娓叉煋)
+// 添加圆形/扇形填充实例 (GPU SDF 渲染)
 void wcn_renderer_add_circle_fill(
     WCN_Renderer* renderer,
     float cx, float cy,
@@ -2009,7 +1477,7 @@ void wcn_renderer_add_circle_fill(
     instance.position[0] = cx;
     instance.position[1] = cy;
     instance.size[0] = radius;
-    instance.size[1] = 0.0f;  // 濉厖涓嶉渶瑕?stroke_width
+    instance.size[1] = 0.0f;  // 填充不需要 stroke_width
     instance.uv[0] = start_angle;
     instance.uv[1] = end_angle;
     instance.uvSize[0] = bbox_size;
@@ -2035,7 +1503,7 @@ void wcn_renderer_add_circle_fill(
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
 }
 
-// 娣诲姞浜屾璐濆灏旀洸绾垮疄渚?(GPU SDF 娓叉煋)
+// 添加二次贝塞尔曲线实例 (GPU SDF 渲染)
 void wcn_renderer_add_quadratic_bezier(
     WCN_Renderer* renderer,
     float x0, float y0,
@@ -2048,7 +1516,7 @@ void wcn_renderer_add_quadratic_bezier(
 ) {
     if (!renderer) return;
     
-    // 璁＄畻杈圭晫妗?
+    // 计算边界框
     float min_x = fminf(fminf(x0, cpx), x1);
     float max_x = fmaxf(fmaxf(x0, cpx), x1);
     float min_y = fminf(fminf(y0, cpy), y1);
@@ -2072,7 +1540,7 @@ void wcn_renderer_add_quadratic_bezier(
     instance.size[0] = width;
     instance.size[1] = height;
     
-    // 褰掍竴鍖栧潗鏍?
+    // 归一化坐标
     instance.uv[0] = (cpx - min_x) / width;
     instance.uv[1] = (cpy - min_y) / height;
     instance.uvSize[0] = (x1 - min_x) / width;
@@ -2099,7 +1567,7 @@ void wcn_renderer_add_quadratic_bezier(
     wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
 }
 
-// 娣诲姞涓夋璐濆灏旀洸绾?(鍒嗚В涓轰袱涓簩娆¤礉濉炲皵)
+// 添加三次贝塞尔曲线 (分解为两个二次贝塞尔)
 void wcn_renderer_add_cubic_bezier(
     WCN_Renderer* renderer,
     float x0, float y0,
@@ -2113,7 +1581,7 @@ void wcn_renderer_add_cubic_bezier(
 ) {
     if (!renderer) return;
     
-    // 灏嗕笁娆¤礉濉炲皵鍒嗚В涓轰袱涓簩娆¤礉濉炲皵
+    // 将三次贝塞尔分解为两个二次贝塞尔
     float mid_x = (x0 + 3.0f * cp1x + 3.0f * cp2x + x1) / 8.0f;
     float mid_y = (y0 + 3.0f * cp1y + 3.0f * cp2y + y1) / 8.0f;
     
@@ -2127,11 +1595,11 @@ void wcn_renderer_add_cubic_bezier(
 }
 
 // ============================================================================
-// 娓叉煋鍑芥暟 (Rendering Functions)
+// 渲染函数 (Rendering Functions)
 // ============================================================================
 
-// 娓叉煋鎵€鏈夊疄渚?
-// 娓叉煋鎵€鏈夊疄渚?
+// 渲染所有实例
+// 渲染所有实例
 void wcn_renderer_render(
     WCN_Context* ctx,
     WGPUTextureView sdf_atlas_view,
@@ -2142,13 +1610,10 @@ void wcn_renderer_render(
     }
 
     WCN_Renderer* renderer = ctx->renderer;
-    size_t total_instances = renderer->cpu_instances.count;
-    if (total_instances == 0) {
+
+    if (renderer->cpu_instances.count == 0) {
         return;
     }
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    wcn_renderer_collect_timestamp_results(ctx);
-#endif
 
     if (!sdf_atlas_view || !ctx->sdf_sampler) {
         printf("Warning: No SDF atlas provided to renderer, skipping draw\n");
@@ -2160,268 +1625,124 @@ void wcn_renderer_render(
         return;
     }
 
-    size_t required_size = total_instances * sizeof(WCN_Instance);
-    if (!wcn_renderer_ensure_instance_buffer_capacity(renderer, required_size)) {
-        return;
-    }
-    if (!wcn_renderer_ensure_vertex_buffer_capacity(renderer, total_instances)) {
-        return;
-    }
+    // 检查并调整 Instance Buffer 大小
+    size_t required_size = renderer->cpu_instances.count * sizeof(WCN_Instance);
+    if (required_size > renderer->instance_buffer_size) {
+        // 保存旧缓冲区以便释放
+        WGPUBuffer old_buffer = renderer->instance_buffer;
+        WGPUBindGroup old_bind_group = renderer->bind_group;
+        WGPUBindGroup old_compute_bind_group = renderer->compute_bind_group;
 
-    size_t total_vertices = total_instances * 6;
-    if (total_vertices == 0 || total_vertices > 0xFFFFFFFFu) {
-        return;
-    }
-    uint32_t total_vertices_u32 = (uint32_t)total_vertices;
-    uint32_t workgroups = (total_vertices_u32 + 255) / 256;
-    if (workgroups == 0 || workgroups > 65535u) {
-        return;
-    }
+        // 计算新的缓冲区大小（2的幂次方，但不超过最大限制）
+        size_t new_size = renderer->instance_buffer_size ? renderer->instance_buffer_size : sizeof(WCN_Instance) * 1024;
+        const size_t MAX_INSTANCE_BUFFER_SIZE = 64 * 1024 * 1024; // 64MB 最大限制
 
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    bool timestamp_this_frame = false;
-    uint32_t timestamp_slot = 0;
-    uint32_t timestamp_query_base = 0;
-    WGPUComputePassTimestampWrites compute_timestamp_writes = {0};
-    WGPURenderPassTimestampWrites render_timestamp_writes = {0};
-    renderer->timestamp_submit_slot_valid = false;
-    if (renderer->gpu_timestamp_enabled) {
-        for (uint32_t i = 0; i < WCN_TIMESTAMP_SLOT_COUNT; ++i) {
-            uint32_t candidate = (renderer->timestamp_write_slot + i) % WCN_TIMESTAMP_SLOT_COUNT;
-            if (!renderer->timestamp_map_pending[candidate] && !renderer->timestamp_map_ready[candidate]) {
-                timestamp_this_frame = true;
-                timestamp_slot = candidate;
-                timestamp_query_base = candidate * WCN_TIMESTAMP_QUERIES_PER_SLOT;
-                renderer->timestamp_write_slot = (candidate + 1) % WCN_TIMESTAMP_SLOT_COUNT;
-                break;
-            }
+        while (new_size < required_size && new_size < MAX_INSTANCE_BUFFER_SIZE) {
+            new_size *= 2;
         }
-    }
-#endif
 
-    bool uniform_values_changed = !renderer->uniform_cache_valid ||
-        renderer->cached_instance_count != total_instances ||
-        renderer->cached_viewport_width != ctx->width ||
-        renderer->cached_viewport_height != ctx->height;
-
-    bool has_instance_cache = false;
-#if WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD || WCN_ENABLE_STATIC_FRAME_REUSE || WCN_ENABLE_SMALL_BATCH_REUSE || WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-    has_instance_cache = wcn_renderer_ensure_cached_instances_capacity(renderer, total_instances);
-#endif
-
-    bool instances_changed = true;
-    bool should_upload_instance_buffer = true;
-    size_t upload_instance_offset = 0;
-    size_t upload_instance_size = required_size;
-    const uint8_t* upload_instance_data = (const uint8_t*)renderer->cpu_instances.instances;
-    bool workload_has_image_instances = false;
-
-#if WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD || WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-    const size_t min_instances_for_partial_upload = 128;
-    const size_t partial_upload_full_threshold_percent = 75;
-    const size_t small_batch_dirty_upload_threshold = 128;
-    if (has_instance_cache && renderer->cached_instance_count == total_instances) {
-        size_t first_changed = total_instances;
-        size_t last_changed = 0;
-        for (size_t i = 0; i < total_instances; ++i) {
-            if (renderer->cpu_instances.instances[i].type == WCN_INSTANCE_TYPE_IMAGE) {
-                workload_has_image_instances = true;
-            }
-            if (memcmp(&renderer->cached_instances[i], &renderer->cpu_instances.instances[i], sizeof(WCN_Instance)) != 0) {
-                if (first_changed == total_instances) {
-                    first_changed = i;
-                }
-                last_changed = i;
+        // 如果仍然不够，使用所需大小但不超过最大限制
+        if (new_size < required_size) {
+            new_size = required_size;
+        }
+        if (new_size > MAX_INSTANCE_BUFFER_SIZE) {
+            new_size = MAX_INSTANCE_BUFFER_SIZE;
+            // 如果仍然不够，只渲染部分实例
+            if (required_size > MAX_INSTANCE_BUFFER_SIZE) {
+                required_size = MAX_INSTANCE_BUFFER_SIZE;
             }
         }
 
-        if (first_changed == total_instances) {
-            instances_changed = false;
-            should_upload_instance_buffer = false;
-            upload_instance_size = 0;
-        } else if (total_instances >= min_instances_for_partial_upload) {
-            size_t changed_instance_count = (last_changed - first_changed) + 1;
-            size_t changed_percent = (changed_instance_count * 100) / total_instances;
-            if (changed_percent < partial_upload_full_threshold_percent) {
-                upload_instance_offset = first_changed * sizeof(WCN_Instance);
-                upload_instance_size = changed_instance_count * sizeof(WCN_Instance);
-                upload_instance_data = ((const uint8_t*)renderer->cpu_instances.instances) + upload_instance_offset;
-            }
-#if WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-        } else if (total_instances <= small_batch_dirty_upload_threshold) {
-            size_t changed_instance_count = (last_changed - first_changed) + 1;
-            upload_instance_offset = first_changed * sizeof(WCN_Instance);
-            upload_instance_size = changed_instance_count * sizeof(WCN_Instance);
-            upload_instance_data = ((const uint8_t*)renderer->cpu_instances.instances) + upload_instance_offset;
-#endif
-        }
-    }
-#endif
-
-#if WCN_ENABLE_STATIC_FRAME_REUSE && !WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD
-    if (renderer->cached_vertices_valid &&
-        has_instance_cache &&
-        renderer->cached_instance_count == total_instances &&
-        memcmp(renderer->cached_instances, renderer->cpu_instances.instances, required_size) == 0) {
-        instances_changed = false;
-        should_upload_instance_buffer = false;
-        upload_instance_size = 0;
-    }
-#endif
-
-    bool uniforms_changed = uniform_values_changed;
-    bool need_compute = true;
-
-#if WCN_ENABLE_STATIC_FRAME_REUSE
-    uniforms_changed = !renderer->cached_vertices_valid || uniform_values_changed;
-    need_compute = !renderer->cached_vertices_valid || instances_changed || uniforms_changed;
-#endif
-
-#if WCN_ENABLE_SMALL_BATCH_REUSE && !WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD && !WCN_ENABLE_STATIC_FRAME_REUSE
-    const size_t small_batch_reuse_threshold = 128;
-    if (has_instance_cache &&
-        renderer->cached_vertices_valid &&
-        !uniforms_changed &&
-        total_instances <= small_batch_reuse_threshold &&
-        renderer->cached_instance_count == total_instances &&
-        memcmp(renderer->cached_instances, renderer->cpu_instances.instances, required_size) == 0) {
-        instances_changed = false;
-        should_upload_instance_buffer = false;
-        upload_instance_size = 0;
-        need_compute = false;
-    }
-#endif
-
-    size_t compute_instance_offset = 0;
-    size_t compute_instance_count = total_instances;
-    uint32_t compute_workgroups = workgroups;
-
-#if WCN_ENABLE_DIRTY_RANGE_COMPUTE_DISPATCH
-    bool dirty_range_candidate_valid = false;
-    size_t dirty_range_candidate_offset = 0;
-    size_t dirty_range_candidate_count = 0;
-    uint32_t dirty_range_candidate_workgroups = 0;
-
-    if (need_compute &&
-        !uniforms_changed &&
-        instances_changed &&
-        !workload_has_image_instances &&
-        should_upload_instance_buffer &&
-        upload_instance_size > 0 &&
-        upload_instance_size < required_size &&
-        total_instances <= WCN_DIRTY_RANGE_COMPUTE_MAX_INSTANCES &&
-        (upload_instance_offset % sizeof(WCN_Instance)) == 0 &&
-        (upload_instance_size % sizeof(WCN_Instance)) == 0) {
-        size_t candidate_offset = upload_instance_offset / sizeof(WCN_Instance);
-        size_t candidate_count = upload_instance_size / sizeof(WCN_Instance);
-        size_t candidate_ratio_percent = (candidate_count * 100) / total_instances;
-        if (candidate_count > 0 &&
-            candidate_count <= WCN_DIRTY_RANGE_COMPUTE_MAX_INSTANCES &&
-            candidate_ratio_percent <= WCN_DIRTY_RANGE_COMPUTE_MAX_RATIO_PERCENT &&
-            (candidate_offset + candidate_count) <= total_instances) {
-            size_t candidate_vertices = candidate_count * 6;
-            if (candidate_vertices > 0 && candidate_vertices <= 0xFFFFFFFFu) {
-                uint32_t candidate_workgroups = ((uint32_t)candidate_vertices + 255u) / 256u;
-                if (candidate_workgroups > 0 && candidate_workgroups <= 65535u) {
-                    dirty_range_candidate_valid = true;
-                    dirty_range_candidate_offset = candidate_offset;
-                    dirty_range_candidate_count = candidate_count;
-                    dirty_range_candidate_workgroups = candidate_workgroups;
-                }
-            }
-        }
-    }
-
-    if (dirty_range_candidate_valid) {
-        uint32_t candidate_offset_u32 = (uint32_t)dirty_range_candidate_offset;
-        uint32_t candidate_count_u32 = (uint32_t)dirty_range_candidate_count;
-        if (renderer->dirty_compute_candidate_offset == candidate_offset_u32 &&
-            renderer->dirty_compute_candidate_count == candidate_count_u32) {
-            if (renderer->dirty_compute_candidate_streak < 0xFFFFFFFFu) {
-                renderer->dirty_compute_candidate_streak += 1;
-            }
-        } else {
-            renderer->dirty_compute_candidate_offset = candidate_offset_u32;
-            renderer->dirty_compute_candidate_count = candidate_count_u32;
-            renderer->dirty_compute_candidate_streak = 1;
-        }
-
-        if (renderer->dirty_compute_candidate_streak >= WCN_DIRTY_RANGE_COMPUTE_STABILITY_FRAMES) {
-            compute_instance_offset = dirty_range_candidate_offset;
-            compute_instance_count = dirty_range_candidate_count;
-            compute_workgroups = dirty_range_candidate_workgroups;
-        }
-    } else {
-        renderer->dirty_compute_candidate_offset = 0;
-        renderer->dirty_compute_candidate_count = 0;
-        renderer->dirty_compute_candidate_streak = 0;
-    }
-#endif
-
-    if (instances_changed && should_upload_instance_buffer) {
-        wgpuQueueWriteBuffer(
-            renderer->queue,
-            renderer->instance_buffer,
-            upload_instance_offset,
-            upload_instance_data,
-            upload_instance_size
+#ifdef __EMSCRIPTEN__
+        renderer->instance_buffer = wasm_create_buffer(
+            renderer->device,
+            "Unified Renderer Instance Buffer (Resized)",
+            new_size,
+            1 | 4 // Usage: Storage | CopyDst
         );
-        renderer->stat_queue_write_calls += 1;
-        renderer->stat_queue_write_bytes += (uint64_t)upload_instance_size;
-    }
-
-    WCN_RendererUniforms uniform_data = {
-        .viewport_size = {(float)ctx->width, (float)ctx->height},
-        .instance_count = (uint32_t)(need_compute ? compute_instance_count : total_instances),
-        .instance_offset = (uint32_t)(need_compute ? compute_instance_offset : 0)
-    };
-    bool uniform_upload_changed = !renderer->uniform_upload_cache_valid ||
-        renderer->cached_uniform_upload_viewport_width != ctx->width ||
-        renderer->cached_uniform_upload_viewport_height != ctx->height ||
-        renderer->cached_uniform_upload_instance_count != uniform_data.instance_count ||
-        renderer->cached_uniform_upload_instance_offset != uniform_data.instance_offset;
-
-    if (need_compute && uniform_upload_changed) {
-        wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
-        renderer->stat_queue_write_calls += 1;
-        renderer->stat_queue_write_bytes += (uint64_t)sizeof(uniform_data);
-        renderer->uniform_upload_cache_valid = true;
-        renderer->cached_uniform_upload_viewport_width = ctx->width;
-        renderer->cached_uniform_upload_viewport_height = ctx->height;
-        renderer->cached_uniform_upload_instance_count = uniform_data.instance_count;
-        renderer->cached_uniform_upload_instance_offset = uniform_data.instance_offset;
-    }
-
-    if (uniforms_changed) {
-        renderer->uniform_cache_valid = true;
-        renderer->cached_viewport_width = ctx->width;
-        renderer->cached_viewport_height = ctx->height;
-        renderer->cached_instance_count = total_instances;
-    }
-
-    if (need_compute) {
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-        if (timestamp_this_frame && renderer->gpu_timestamp_use_encoder_writes) {
-            wgpuCommandEncoderWriteTimestamp(
-                ctx->current_command_encoder,
-                renderer->timestamp_query_set,
-                timestamp_query_base + 0
-            );
-        }
+#else
+        WGPUBufferDescriptor instance_buffer_desc = {
+            .nextInChain = NULL,
+            .label = "Unified Renderer Instance Buffer (Resized)",
+            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
+            .size = new_size,
+            .mappedAtCreation = false
+        };
+        renderer->instance_buffer = wgpuDeviceCreateBuffer(
+            renderer->device,
+            &instance_buffer_desc
+        );
 #endif
+
+        // 如果创建新缓冲区失败，恢复旧缓冲区
+        if (!renderer->instance_buffer) {
+            renderer->instance_buffer = old_buffer;
+            return;
+        }
+
+        renderer->instance_buffer_size = new_size;
+
+        // 创建新的绑定组
+        bool bind_group_ok = wcn_renderer_create_render_bind_group(renderer);
+        bool compute_bind_group_ok = wcn_renderer_create_compute_bind_group(renderer);
+
+        if (!bind_group_ok || !compute_bind_group_ok) {
+            // 如果绑定组创建失败，回滚到旧缓冲区
+            wgpuBufferRelease(renderer->instance_buffer);
+            renderer->instance_buffer = old_buffer;
+            renderer->instance_buffer_size = old_buffer ? new_size : 0;
+            return;
+        }
+
+        // 成功创建新缓冲区，释放旧资源
+        if (old_buffer) {
+            wgpuBufferRelease(old_buffer);
+        }
+        if (old_bind_group) {
+            wgpuBindGroupRelease(old_bind_group);
+        }
+        if (old_compute_bind_group) {
+            wgpuBindGroupRelease(old_compute_bind_group);
+        }
+    }
+
+    // 上传 Instance 数据
+    wgpuQueueWriteBuffer(
+        renderer->queue,
+        renderer->instance_buffer,
+        0,
+        renderer->cpu_instances.instances,
+        required_size
+    );
+
+    size_t total_instances = renderer->cpu_instances.count;
+    size_t batch_capacity = renderer->vertex_batch_instance_capacity;
+    if (batch_capacity == 0) {
+        return;
+    }
+
+    size_t instance_offset = 0;
+
+    // --- 开始 Batch 循环 ---
+    while (instance_offset < total_instances) {
+        size_t batch_instances = total_instances - instance_offset;
+        if (batch_instances > batch_capacity) {
+            batch_instances = batch_capacity;
+        }
+
+        // 更新 Uniforms
+        WCN_RendererUniforms uniform_data = {
+            .viewport_size = {(float)ctx->width, (float)ctx->height},
+            .instance_count = (uint32_t)batch_instances,
+            .instance_offset = (uint32_t)instance_offset
+        };
+        wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
+
+        // --- Compute Pass (顶点展开) ---
         WGPUComputePassDescriptor compute_pass_desc = {
             .nextInChain = NULL,
-            .label = "Instance Expand Pass",
-            .timestampWrites = NULL
+            .label = "Instance Expand Pass"
         };
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-        if (timestamp_this_frame && renderer->gpu_timestamp_use_pass_writes) {
-            compute_timestamp_writes.querySet = renderer->timestamp_query_set;
-            compute_timestamp_writes.beginningOfPassWriteIndex = timestamp_query_base + 0;
-            compute_timestamp_writes.endOfPassWriteIndex = timestamp_query_base + 1;
-            compute_pass_desc.timestampWrites = &compute_timestamp_writes;
-        }
-#endif
         WGPUComputePassEncoder compute_pass = wgpuCommandEncoderBeginComputePass(
             ctx->current_command_encoder,
             &compute_pass_desc
@@ -2432,205 +1753,117 @@ void wcn_renderer_render(
 
         wgpuComputePassEncoderSetPipeline(compute_pass, renderer->compute_pipeline);
         wgpuComputePassEncoderSetBindGroup(compute_pass, 0, renderer->compute_bind_group, 0, NULL);
-        wgpuComputePassEncoderDispatchWorkgroups(compute_pass, compute_workgroups, 1, 1);
-        renderer->stat_compute_dispatch_count += 1;
+
+        // [Updated] 计算 Dispatch Workgroups
+        // 逻辑变更：现在每个线程处理 1 个顶点，而不是 1 个实例。
+        // Workgroup Size 从 64 变更为 256 (匹配 Shader 中的 @workgroup_size(256))
+        uint32_t total_vertices_in_batch = (uint32_t)batch_instances * 6;
+        uint32_t workgroups = (total_vertices_in_batch + 255) / 256;
+
+        // 确保至少分发 1 个组 (虽然 total_vertices_in_batch > 0 时上面公式已保证)
+        if (workgroups == 0 && total_vertices_in_batch > 0) {
+            workgroups = 1;
+        }
+
+        wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroups, 1, 1);
         wgpuComputePassEncoderEnd(compute_pass);
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-        if (timestamp_this_frame && renderer->gpu_timestamp_use_encoder_writes) {
-            wgpuCommandEncoderWriteTimestamp(
-                ctx->current_command_encoder,
-                renderer->timestamp_query_set,
-                timestamp_query_base + 1
-            );
-        }
-#endif
-#if WCN_ENABLE_STATIC_FRAME_REUSE || WCN_ENABLE_SMALL_BATCH_REUSE
-        renderer->cached_vertices_valid = true;
-        renderer->cached_viewport_width = ctx->width;
-        renderer->cached_viewport_height = ctx->height;
-#endif
-    }
+        // wgpuComputePassEncoderRelease(compute_pass); // 注意：某些实现可能需要释放 encoder，WebGPU C API 通常由 End 隐式完成或不需要
 
-#if WCN_ENABLE_INSTANCE_PARTIAL_UPLOAD || WCN_ENABLE_STATIC_FRAME_REUSE || WCN_ENABLE_SMALL_BATCH_REUSE || WCN_ENABLE_SMALL_BATCH_DIRTY_UPLOAD
-    if (has_instance_cache) {
-        if (instances_changed && upload_instance_size > 0) {
-            if (upload_instance_offset == 0 && upload_instance_size == required_size) {
-                memcpy(renderer->cached_instances, renderer->cpu_instances.instances, required_size);
-            } else {
-                memcpy(
-                    ((uint8_t*)renderer->cached_instances) + upload_instance_offset,
-                    ((const uint8_t*)renderer->cpu_instances.instances) + upload_instance_offset,
-                    upload_instance_size
-                );
-            }
-        }
-        renderer->cached_instance_count = total_instances;
-    } else {
-        renderer->cached_instance_count = 0;
-#if WCN_ENABLE_STATIC_FRAME_REUSE || WCN_ENABLE_SMALL_BATCH_REUSE
-        renderer->cached_vertices_valid = false;
-#endif
-    }
-#endif
+        // --- Render Pass (绘制) ---
+        size_t batch_vertex_bytes = batch_instances * 6 * sizeof(WCN_VertexGPU);
 
-    WGPULoadOp load_op = ctx->render_pass_needs_begin ? ctx->pending_color_load_op : WGPULoadOp_Load;
-    ctx->render_pass_needs_begin = false;
-    ctx->pending_color_load_op = WGPULoadOp_Load;
+        WGPULoadOp load_op = ctx->render_pass_needs_begin ? ctx->pending_color_load_op : WGPULoadOp_Load;
+        ctx->render_pass_needs_begin = false;
+        ctx->pending_color_load_op = WGPULoadOp_Load;
 
 #ifdef __EMSCRIPTEN__
-    ctx->current_render_pass = wasm_begin_render_pass(
-        ctx->current_command_encoder,
-        ctx->current_texture_view_id,
-        load_op == WGPULoadOp_Clear ? 1 : 0
-    );
-#else
-    #if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (timestamp_this_frame && renderer->gpu_timestamp_use_encoder_writes) {
-        wgpuCommandEncoderWriteTimestamp(
+        ctx->current_render_pass = wasm_begin_render_pass(
             ctx->current_command_encoder,
-            renderer->timestamp_query_set,
-            timestamp_query_base + 2
+            ctx->current_texture_view_id,
+            load_op == WGPULoadOp_Clear ? 1 : 0
         );
-    }
-    #endif
-    WGPURenderPassColorAttachment color_attachment = {
-        .view = ctx->current_texture_view,
-        .resolveTarget = NULL,
-        .loadOp = load_op,
-        .storeOp = WGPUStoreOp_Store,
-        .clearValue = ctx->pending_clear_color
-    };
+#else
+        WGPURenderPassColorAttachment color_attachment = {
+            .view = ctx->current_texture_view,
+            .resolveTarget = NULL,
+            .loadOp = load_op,
+            .storeOp = WGPUStoreOp_Store,
+            .clearValue = ctx->pending_clear_color
+        };
 
-    WGPURenderPassDescriptor render_pass_desc = {
-        .nextInChain = NULL,
-        .label = "WCN Render Pass",
-        .colorAttachmentCount = 1,
-        .colorAttachments = &color_attachment,
-        .depthStencilAttachment = NULL,
-        .occlusionQuerySet = NULL,
-        .timestampWrites = NULL
-    };
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (timestamp_this_frame && renderer->gpu_timestamp_use_pass_writes) {
-        render_timestamp_writes.querySet = renderer->timestamp_query_set;
-        render_timestamp_writes.beginningOfPassWriteIndex = timestamp_query_base + 2;
-        render_timestamp_writes.endOfPassWriteIndex = timestamp_query_base + 3;
-        render_pass_desc.timestampWrites = &render_timestamp_writes;
-    }
+        WGPURenderPassDescriptor render_pass_desc = {
+            .nextInChain = NULL,
+            .label = "WCN Render Pass",
+            .colorAttachmentCount = 1,
+            .colorAttachments = &color_attachment,
+            .depthStencilAttachment = NULL,
+            .occlusionQuerySet = NULL,
+            .timestampWrites = NULL
+        };
+
+        ctx->current_render_pass = wgpuCommandEncoderBeginRenderPass(
+            ctx->current_command_encoder,
+            &render_pass_desc
+        );
 #endif
 
-    ctx->current_render_pass = wgpuCommandEncoderBeginRenderPass(
-        ctx->current_command_encoder,
-        &render_pass_desc
-    );
-#endif
-    if (!ctx->current_render_pass) {
-        return;
-    }
+        if (!ctx->current_render_pass) {
+            return;
+        }
 
-#if WCN_ENABLE_TEXTURE_BINDGROUP_CACHE
-    WCN_RendererRuntimeCache* runtime_cache = wcn_renderer_runtime_cache_get(renderer);
-    if (!runtime_cache) {
+        WGPUBindGroup sdf_bind_group = NULL;
+
+        // 创建纹理绑定组，将文本和图像图集一起绑定
+#ifdef __EMSCRIPTEN__
+        sdf_bind_group = wasm_create_sdf_bind_group(
+            renderer->device,
+            renderer->sdf_bind_group_layout,
+            sdf_atlas_view,
+            ctx->sdf_sampler,
+            image_atlas_view,
+            ctx->image_sampler
+        );
+#else
+        WGPUBindGroupEntry sdf_bind_group_entries[] = {
+            { .binding = 0, .textureView = sdf_atlas_view },
+            { .binding = 1, .sampler = ctx->sdf_sampler },
+            { .binding = 2, .textureView = image_atlas_view },
+            { .binding = 3, .sampler = ctx->image_sampler }
+        };
+
+        WGPUBindGroupDescriptor sdf_bind_group_desc = {
+            .nextInChain = NULL,
+            .label = "WCN Texture Bind Group",
+            .layout = renderer->sdf_bind_group_layout,
+            .entryCount = 4,
+            .entries = sdf_bind_group_entries
+        };
+
+        sdf_bind_group = wgpuDeviceCreateBindGroup(
+            renderer->device,
+            &sdf_bind_group_desc
+        );
+#endif
+        if (sdf_bind_group) {
+            wgpuRenderPassEncoderSetPipeline(ctx->current_render_pass, renderer->pipeline);
+            wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 0, renderer->bind_group, 0, NULL);
+            wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 1, sdf_bind_group, 0, NULL);
+            wgpuRenderPassEncoderSetVertexBuffer(ctx->current_render_pass, 0, renderer->vertex_buffer, 0, batch_vertex_bytes);
+
+            // Draw 调用保持不变，绘制 batch_instances * 6 个顶点
+            wgpuRenderPassEncoderDraw(ctx->current_render_pass, (uint32_t)(batch_instances * 6), 1, 0, 0);
+
+            wgpuBindGroupRelease(sdf_bind_group);
+        }
+
         wgpuRenderPassEncoderEnd(ctx->current_render_pass);
         wgpuRenderPassEncoderRelease(ctx->current_render_pass);
         ctx->current_render_pass = NULL;
-        return;
+
+        instance_offset += batch_instances;
     }
 
-    WGPUBindGroup sdf_bind_group = wcn_renderer_get_cached_texture_bind_group(
-        renderer,
-        runtime_cache,
-        sdf_atlas_view,
-        ctx->sdf_sampler,
-        image_atlas_view,
-        ctx->image_sampler
-    );
-#else
-    WGPUBindGroup sdf_bind_group = NULL;
-#ifdef __EMSCRIPTEN__
-    sdf_bind_group = wasm_create_sdf_bind_group(
-        renderer->device,
-        renderer->sdf_bind_group_layout,
-        sdf_atlas_view,
-        ctx->sdf_sampler,
-        image_atlas_view,
-        ctx->image_sampler
-    );
-#else
-    WGPUBindGroupEntry sdf_bind_group_entries[] = {
-        { .binding = 0, .textureView = sdf_atlas_view },
-        { .binding = 1, .sampler = ctx->sdf_sampler },
-        { .binding = 2, .textureView = image_atlas_view },
-        { .binding = 3, .sampler = ctx->image_sampler }
-    };
-
-    WGPUBindGroupDescriptor sdf_bind_group_desc = {
-        .nextInChain = NULL,
-        .label = "WCN Texture Bind Group",
-        .layout = renderer->sdf_bind_group_layout,
-        .entryCount = 4,
-        .entries = sdf_bind_group_entries
-    };
-
-    sdf_bind_group = wgpuDeviceCreateBindGroup(
-        renderer->device,
-        &sdf_bind_group_desc
-    );
-#endif
-#endif
-
-    if (sdf_bind_group) {
-        size_t total_vertex_bytes = total_vertices * sizeof(WCN_VertexGPU);
-        wgpuRenderPassEncoderSetPipeline(ctx->current_render_pass, renderer->pipeline);
-        wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 0, renderer->bind_group, 0, NULL);
-        wgpuRenderPassEncoderSetBindGroup(ctx->current_render_pass, 1, sdf_bind_group, 0, NULL);
-        wgpuRenderPassEncoderSetVertexBuffer(ctx->current_render_pass, 0, renderer->vertex_buffer, 0, total_vertex_bytes);
-        wgpuRenderPassEncoderDraw(ctx->current_render_pass, total_vertices_u32, 1, 0, 0);
-        renderer->stat_draw_call_count += 1;
-        renderer->stat_rendered_instance_count += (uint64_t)total_instances;
-        renderer->stat_rendered_vertex_count += (uint64_t)total_vertices_u32;
-#if !WCN_ENABLE_TEXTURE_BINDGROUP_CACHE
-        wgpuBindGroupRelease(sdf_bind_group);
-#endif
-    }
-
-    wgpuRenderPassEncoderEnd(ctx->current_render_pass);
-    wgpuRenderPassEncoderRelease(ctx->current_render_pass);
-    ctx->current_render_pass = NULL;
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (timestamp_this_frame && renderer->gpu_timestamp_use_encoder_writes) {
-        wgpuCommandEncoderWriteTimestamp(
-            ctx->current_command_encoder,
-            renderer->timestamp_query_set,
-            timestamp_query_base + 3
-        );
-    }
-#endif
-
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (timestamp_this_frame) {
-        uint64_t resolve_offset = (uint64_t)timestamp_slot * WCN_TIMESTAMP_RESOLVE_STRIDE;
-        wgpuCommandEncoderResolveQuerySet(
-            ctx->current_command_encoder,
-            renderer->timestamp_query_set,
-            timestamp_query_base,
-            WCN_TIMESTAMP_QUERIES_PER_SLOT,
-            renderer->timestamp_resolve_buffer,
-            resolve_offset
-        );
-        wgpuCommandEncoderCopyBufferToBuffer(
-            ctx->current_command_encoder,
-            renderer->timestamp_resolve_buffer,
-            resolve_offset,
-            renderer->timestamp_readback_buffers[timestamp_slot],
-            0,
-            WCN_TIMESTAMP_RESULT_BYTES
-        );
-        renderer->timestamp_submit_slot = timestamp_slot;
-        renderer->timestamp_submit_slot_valid = true;
-    }
-#endif
-
+    // 清理 View 引用
 #ifdef __EMSCRIPTEN__
     if (ctx->current_texture_view_id >= 0) {
         freeWGPUTextureView(ctx->current_texture_view_id);
@@ -2645,105 +1878,10 @@ void wcn_renderer_render(
 }
 
 // ============================================================================
-// 宸ュ叿鍑芥暟 (Utility Functions)
+// 工具函数 (Utility Functions)
 // ============================================================================
 
-// 娓呯┖娓叉煋鍣ㄥ疄渚嬬紦鍐插尯
-void wcn_renderer_collect_timestamp_results(WCN_Context* ctx) {
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (!ctx || !ctx->renderer) {
-        return;
-    }
-
-    WCN_Renderer* renderer = ctx->renderer;
-    if (!renderer->gpu_timestamp_enabled) {
-        return;
-    }
-
-    if (ctx->instance) {
-        wgpuInstanceProcessEvents(ctx->instance);
-    }
-    if (ctx->device) {
-        wgpuDevicePoll(ctx->device, false, NULL);
-    }
-
-    for (uint32_t slot = 0; slot < WCN_TIMESTAMP_SLOT_COUNT; ++slot) {
-        if (!renderer->timestamp_map_ready[slot]) {
-            continue;
-        }
-
-        renderer->timestamp_map_ready[slot] = false;
-        if (renderer->timestamp_map_status[slot] != WGPUMapAsyncStatus_Success) {
-            continue;
-        }
-
-        const uint64_t* data = (const uint64_t*)wgpuBufferGetConstMappedRange(
-            renderer->timestamp_readback_buffers[slot],
-            0,
-            WCN_TIMESTAMP_RESULT_BYTES
-        );
-        if (data) {
-            uint64_t compute_ticks = 0;
-            uint64_t render_ticks = 0;
-            if (data[1] >= data[0]) {
-                compute_ticks = data[1] - data[0];
-            }
-            if (data[3] >= data[2]) {
-                render_ticks = data[3] - data[2];
-            }
-            renderer->stat_gpu_compute_ticks += compute_ticks;
-            renderer->stat_gpu_render_ticks += render_ticks;
-            renderer->stat_gpu_timestamp_samples += 1;
-        }
-
-        wgpuBufferUnmap(renderer->timestamp_readback_buffers[slot]);
-    }
-#else
-    (void)ctx;
-#endif
-}
-
-void wcn_renderer_on_submitted(WCN_Context* ctx) {
-#if WCN_ENABLE_GPU_TIMESTAMP_PROFILING && !defined(__EMSCRIPTEN__)
-    if (!ctx || !ctx->renderer) {
-        return;
-    }
-
-    WCN_Renderer* renderer = ctx->renderer;
-    if (!renderer->gpu_timestamp_enabled || !renderer->timestamp_submit_slot_valid) {
-        return;
-    }
-
-    const uint32_t slot = renderer->timestamp_submit_slot;
-    renderer->timestamp_submit_slot_valid = false;
-    if (slot >= WCN_TIMESTAMP_SLOT_COUNT) {
-        return;
-    }
-    if (renderer->timestamp_map_pending[slot] || renderer->timestamp_map_ready[slot]) {
-        return;
-    }
-
-    WGPUBufferMapCallbackInfo callback_info = {
-        .nextInChain = NULL,
-        .mode = WGPUCallbackMode_AllowProcessEvents,
-        .callback = wcn_renderer_timestamp_map_callback,
-        .userdata1 = renderer,
-        .userdata2 = (void*)(uintptr_t)slot
-    };
-
-    wgpuBufferMapAsync(
-        renderer->timestamp_readback_buffers[slot],
-        WGPUMapMode_Read,
-        0,
-        WCN_TIMESTAMP_RESULT_BYTES,
-        callback_info
-    );
-    renderer->timestamp_map_pending[slot] = true;
-#else
-    (void)ctx;
-#endif
-}
-
+// 清空渲染器实例缓冲区
 void wcn_renderer_clear(WCN_Renderer* renderer) {
     if (!renderer) {
         return;
@@ -2752,7 +1890,7 @@ void wcn_renderer_clear(WCN_Renderer* renderer) {
     wcn_instance_buffer_clear(&renderer->cpu_instances);
 }
 
-// 璋冩暣娓叉煋鍣ㄨ鍙ｅぇ灏?
+// 调整渲染器视口大小
 void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height) {
     if (!renderer) {
         return;
@@ -2761,9 +1899,6 @@ void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height
     // Update viewport dimensions
     renderer->width = width;
     renderer->height = height;
-    renderer->cached_vertices_valid = false;
-    renderer->uniform_cache_valid = false;
-    renderer->uniform_upload_cache_valid = false;
     
     // Update uniform buffer with new window size
     WCN_RendererUniforms uniform_data = {
@@ -2773,18 +1908,4 @@ void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height
     };
     
     wgpuQueueWriteBuffer(renderer->queue, renderer->uniform_buffer, 0, &uniform_data, sizeof(uniform_data));
-    renderer->stat_queue_write_calls += 1;
-    renderer->stat_queue_write_bytes += (uint64_t)sizeof(uniform_data);
-    renderer->uniform_cache_valid = true;
-    renderer->uniform_upload_cache_valid = true;
-    renderer->cached_viewport_width = width;
-    renderer->cached_viewport_height = height;
-    renderer->cached_instance_count = 0;
-    renderer->cached_uniform_upload_viewport_width = width;
-    renderer->cached_uniform_upload_viewport_height = height;
-    renderer->cached_uniform_upload_instance_count = 0;
-    renderer->cached_uniform_upload_instance_offset = 0;
-    renderer->dirty_compute_candidate_offset = 0;
-    renderer->dirty_compute_candidate_count = 0;
-    renderer->dirty_compute_candidate_streak = 0;
 }

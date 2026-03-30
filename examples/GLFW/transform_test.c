@@ -277,13 +277,17 @@ int main() {
     // 由于 WCN 需要 TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES 特性（用于读写存储纹理）
     // 必须在设备创建时启用此特性
     // 使用原始值 0x00030002 对应 WGPUNativeFeature_TextureAdapterSpecificFormatFeatures
-    WGPUFeatureName requiredFeatures[] = {
-        (WGPUFeatureName)0x00030002
-    };
+    WGPUFeatureName requiredFeatures[1];
+    size_t requiredFeatureCount = 0;
+    bool hasTimestampQuery = wgpuAdapterHasFeature(adapter, WGPUFeatureName_TimestampQuery);
+
+    if (hasTimestampQuery) {
+        requiredFeatures[requiredFeatureCount++] = WGPUFeatureName_TimestampQuery;
+    }
 
     WGPUDeviceDescriptor deviceDesc = {0};
-    deviceDesc.requiredFeatureCount = 1;
-    deviceDesc.requiredFeatures = requiredFeatures;
+    deviceDesc.requiredFeatureCount = requiredFeatureCount;
+    deviceDesc.requiredFeatures = requiredFeatureCount > 0 ? requiredFeatures : NULL;
     deviceDesc.deviceLostCallbackInfo = (WGPUDeviceLostCallbackInfo){
         .mode = WGPUCallbackMode_AllowProcessEvents,
         .callback = handle_device_lost,
