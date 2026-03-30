@@ -435,5 +435,40 @@ void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format) {
     ctx->surface_format = format;
 }
 
+void wcn_reset_render_stats(WCN_Context* ctx) {
+    if (!ctx || !ctx->renderer) {
+        return;
+    }
+
+    wcn_renderer_collect_timestamp_results(ctx);
+    ctx->renderer->stat_queue_write_calls = 0;
+    ctx->renderer->stat_queue_write_bytes = 0;
+    ctx->renderer->stat_compute_dispatch_count = 0;
+    ctx->renderer->stat_draw_call_count = 0;
+    ctx->renderer->stat_rendered_instance_count = 0;
+    ctx->renderer->stat_rendered_vertex_count = 0;
+    ctx->renderer->stat_gpu_compute_ticks = 0;
+    ctx->renderer->stat_gpu_render_ticks = 0;
+    ctx->renderer->stat_gpu_timestamp_samples = 0;
+}
+
+bool wcn_get_render_stats(WCN_Context* ctx, WCN_RenderStats* out_stats) {
+    if (!ctx || !ctx->renderer || !out_stats) {
+        return false;
+    }
+
+    wcn_renderer_collect_timestamp_results(ctx);
+    out_stats->queue_write_calls = ctx->renderer->stat_queue_write_calls;
+    out_stats->queue_write_bytes = ctx->renderer->stat_queue_write_bytes;
+    out_stats->compute_dispatch_count = ctx->renderer->stat_compute_dispatch_count;
+    out_stats->draw_call_count = ctx->renderer->stat_draw_call_count;
+    out_stats->rendered_instance_count = ctx->renderer->stat_rendered_instance_count;
+    out_stats->rendered_vertex_count = ctx->renderer->stat_rendered_vertex_count;
+    out_stats->gpu_compute_ticks = ctx->renderer->stat_gpu_compute_ticks;
+    out_stats->gpu_render_ticks = ctx->renderer->stat_gpu_render_ticks;
+    out_stats->gpu_timestamp_samples = ctx->renderer->stat_gpu_timestamp_samples;
+    return true;
+}
+
 
 

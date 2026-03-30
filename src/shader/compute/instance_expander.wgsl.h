@@ -1,11 +1,10 @@
-#ifndef WCN_INSTANCE_EXPANDER_WGSL_H
+﻿#ifndef WCN_INSTANCE_EXPANDER_WGSL_H
 #define WCN_INSTANCE_EXPANDER_WGSL_H
 
 #include "WCN/WCN_WGSL.h"
 
 static const char* WCN_INSTANCE_EXPANDER_WGSL = WGSL_CODE(
 
-// Constants
 const INSTANCE_TYPE_RECT: u32 = 0u;
 const INSTANCE_TYPE_TEXT: u32 = 1u;
 const INSTANCE_TYPE_PATH: u32 = 2u;
@@ -15,6 +14,7 @@ const INSTANCE_TYPE_ARC: u32 = 5u;
 const INSTANCE_TYPE_BEZIER: u32 = 6u;
 const INSTANCE_TYPE_CIRCLE_FILL: u32 = 7u;
 
+const CIRCLE_FILL_FLAG_RAW_JOIN_NORMALS: u32 = 0x40000000u;
 const LINE_CAP_START_ENABLED: u32 = 0x100u;
 const LINE_CAP_END_ENABLED: u32 = 0x200u;
 
@@ -55,17 +55,12 @@ struct VertexData {
 @group(0) @binding(1) var<storage, read_write> vertices: array<VertexData>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-// Optimization: Use Workgroup Size 256 for better occupancy on modern GPUs
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    // Parallelism: Each thread handles ONE vertex, not one instance.
     let global_vertex_index = global_id.x;
-
-    // Calculate which instance and which vertex within the quad (0-5) this thread handles
     let instance_idx_local = global_vertex_index / 6u;
-    let vertex_sub_idx = global_vertex_index % 6u; // 0..5
+    let vertex_sub_idx = global_vertex_index % 6u;
 
-    // Bounds check
     if (instance_idx_local >= uniforms.instance_count) {
         return;
     }
@@ -73,36 +68,51 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let instance_index = uniforms.instance_offset + instance_idx_local;
     let instance = instances[instance_index];
 
-    // Optimization: Generate local position (UV) mathematically to avoid array lookup logic
-    // Map 0->(0,0), 1->(1,0), 2->(0,1), 3->(1,1), 4->(0,1), 5->(1,0)
-    // x is 1.0 at indices 1, 3, 5
-    // y is 1.0 at indices 2, 3, 4
-    let lx = f32(vertex_sub_idx & 1u); // 1, 3, 5 are odd
+    let PI = 3.14159265;
+    let TWO_PI = 6.283185307;
+
+    let lx = f32(vertex_sub_idx & 1u);
     let ly = select(0.0, 1.0, (vertex_sub_idx > 1u) & (vertex_sub_idx < 5u));
     let local_pos = vec2<f32>(lx, ly);
 
     var sized_pos = local_pos * instance.size;
+    var circle_start_angle = instance.uv.x;
+    var circle_end_angle = instance.uv.y;
 
-    // Arc Logic - 圆弧使用 uvSize 作为边界框大小
     if (instance.instance_type == INSTANCE_TYPE_ARC) {
         sized_pos = (local_pos - 0.5) * instance.uvSize;
     }
 
-    // Circle Fill Logic - 圆形填充使用 uvSize 作为边界框大小
     if (instance.instance_type == INSTANCE_TYPE_CIRCLE_FILL) {
-        sized_pos = (local_pos - 0.5) * instance.uvSize;
+        if ((instance.flags & CIRCLE_FILL_FLAG_RAW_JOIN_NORMALS) != 0u) {
+            let n1_len = max(length(instance.uv), 1e-6);
+            let n2_len = max(length(instance.uvSize), 1e-6);
+            let n1 = instance.uv / n1_len;
+            let n2 = instance.uvSize / n2_len;
+            let a1 = atan2(n1.y, n1.x);
+            let a2 = atan2(n2.y, n2.x);
+            var diff = a2 - a1;
+            if (diff > PI) {
+                diff = diff - TWO_PI;
+            }
+            if (diff < -PI) {
+                diff = diff + TWO_PI;
+            }
+            circle_start_angle = a1;
+            circle_end_angle = a1 + diff;
+            sized_pos = (local_pos - 0.5) * vec2<f32>(instance.size.x * 2.0);
+        } else {
+            sized_pos = (local_pos - 0.5) * instance.uvSize;
+        }
     }
 
-    // Line Logic
     if (instance.instance_type == INSTANCE_TYPE_LINE) {
         let dir = instance.uv;
         let perp = vec2<f32>(-dir.y, dir.x);
 
-        // Use vector components directly
         let length = instance.size.x;
         let width = instance.size.y;
 
-        // Branchless selection for caps
         let start_cap = (instance.flags & LINE_CAP_START_ENABLED) != 0u;
         let end_cap = (instance.flags & LINE_CAP_END_ENABLED) != 0u;
 
@@ -116,13 +126,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let along = (local_pos.x - 0.5) * extended_length + center_offset;
         let across = (local_pos.y - 0.5) * width;
 
-        // FMA (Fused Multiply-Add) optimization usually handled by compiler, but explicit is good
         sized_pos = dir * along + perp * across;
     }
 
-    // Matrix Transform
-    // Expand manually to potentially use fma instructions
-    // PATH 类型的顶点已经是世界坐标，且 transform[2] 存储边缘标记，跳过变换
     var world_pos: vec2<f32>;
     if (instance.instance_type == INSTANCE_TYPE_PATH) {
         world_pos = sized_pos + instance.position;
@@ -133,25 +139,22 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         ) + instance.position;
     }
 
-    // Coordinate Space Conversion (NDC)
-    // Pre-calculate inverse scale to replace division with multiplication
     let inv_viewport = 1.0 / uniforms.viewport_size;
     let ndc_x = (world_pos.x * inv_viewport.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (world_pos.y * inv_viewport.y) * 2.0;
 
-    // Build Vertex Output
     var vertex: VertexData;
     vertex.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-
-    // Optimization: Use built-in intrinsic for color unpacking
     vertex.color = unpack4x8unorm(instance.color);
 
-    // ARC 和 CIRCLE_FILL 类型需要保持 uv 不变（存储角度数据，不能插值）
-    if (instance.instance_type == INSTANCE_TYPE_ARC || instance.instance_type == INSTANCE_TYPE_CIRCLE_FILL) {
-        vertex.uv = instance.uv;  // 直接传递 start_angle, end_angle
+    if (instance.instance_type == INSTANCE_TYPE_ARC) {
+        vertex.uv = instance.uv;
+    } else if (instance.instance_type == INSTANCE_TYPE_CIRCLE_FILL) {
+        vertex.uv = vec2<f32>(circle_start_angle, circle_end_angle);
     } else {
         vertex.uv = instance.uv + local_pos * instance.uvSize;
     }
+
     vertex.instance_type = instance.instance_type;
     vertex.flags = instance.flags;
     vertex.local_pos = local_pos;
@@ -159,36 +162,27 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     vertex.padding0 = 0.0;
     vertex.size = instance.size;
 
-    // Initialize tri vectors
     vertex.tri_v0 = vec2<f32>(0.0);
     vertex.tri_v1 = vec2<f32>(0.0);
     vertex.tri_v2 = vec2<f32>(0.0);
 
-    // Path Logic
     if (instance.instance_type == INSTANCE_TYPE_PATH) {
         let safe_size = max(instance.size, vec2<f32>(1e-4));
         let inv_safe_size = 1.0 / safe_size;
-        // 三角形顶点: uv=v0, uvSize=v1, (params_x, flags)=v2
         vertex.tri_v0 = (instance.uv - instance.position) * inv_safe_size;
         vertex.tri_v1 = (instance.uvSize - instance.position) * inv_safe_size;
         vertex.tri_v2 = (vec2<f32>(instance.params_x, bitcast<f32>(instance.flags)) - instance.position) * inv_safe_size;
-        // 边缘标记存储在 transform.z 中
         vertex.params_x = instance.transform.z;
     }
 
-    // Bezier Logic - 传递贝塞尔曲线数据
     if (instance.instance_type == INSTANCE_TYPE_BEZIER) {
-        // tri_v0 = 控制点归一化坐标 (从 uv)
         vertex.tri_v0 = instance.uv;
-        // tri_v1 = 起点归一化坐标 (从 transform[2,3])
         vertex.tri_v1 = vec2<f32>(instance.transform.z, instance.transform.w);
-        // tri_v2 = 终点归一化坐标 (从 uvSize)
         vertex.tri_v2 = instance.uvSize;
     }
 
-    // Optimization: Coalesced Global Memory Write
-    // Thread N writes to Index N.
-    vertices[global_vertex_index] = vertex;
+    let output_vertex_index = instance_index * 6u + vertex_sub_idx;
+    vertices[output_vertex_index] = vertex;
 }
 );
 

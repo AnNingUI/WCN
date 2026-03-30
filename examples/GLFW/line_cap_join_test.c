@@ -23,12 +23,18 @@ int main(void) {
     
     // 主循环
     int frame_count = 0;
+    bool stats_reset = false;
     while (!wcn_glfw_window_should_close(window) && frame_count < 300) {
         wcn_glfw_poll_events();
         
         // 开始渲染帧
         WCN_GLFW_RenderFrame frame;
         if (wcn_glfw_begin_frame(window, &frame)) {
+            if (!stats_reset) {
+                wcn_reset_render_stats(ctx);
+                stats_reset = true;
+            }
+
             uint32_t width, height;
             wcn_glfw_get_size(window, &width, &height);
             
@@ -114,6 +120,22 @@ int main(void) {
     }
     
     // 清理
+    WCN_RenderStats stats = {0};
+    if (wcn_get_render_stats(ctx, &stats)) {
+        printf(
+            "WCN_STATS queue_write_calls=%llu queue_write_bytes=%llu compute_dispatch_count=%llu draw_call_count=%llu rendered_instance_count=%llu rendered_vertex_count=%llu gpu_compute_ticks=%llu gpu_render_ticks=%llu gpu_timestamp_samples=%llu\n",
+            (unsigned long long)stats.queue_write_calls,
+            (unsigned long long)stats.queue_write_bytes,
+            (unsigned long long)stats.compute_dispatch_count,
+            (unsigned long long)stats.draw_call_count,
+            (unsigned long long)stats.rendered_instance_count,
+            (unsigned long long)stats.rendered_vertex_count,
+            (unsigned long long)stats.gpu_compute_ticks,
+            (unsigned long long)stats.gpu_render_ticks,
+            (unsigned long long)stats.gpu_timestamp_samples
+        );
+    }
+
     wcn_glfw_destroy_window(window);
     
     printf("Test completed. Rendered %d frames\n", frame_count);

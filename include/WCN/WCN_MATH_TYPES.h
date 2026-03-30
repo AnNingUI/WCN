@@ -28,7 +28,7 @@ typedef struct {
 // Mat4 Type
 
 typedef struct {
-  float m[16]; // Using 9 elements for better SIMD alignment
+  float m[16];
 } WMATH_TYPE(Mat4);
 
 typedef struct {
@@ -122,4 +122,51 @@ typedef struct {
   float v_z;
   float v_w;
 } WMATH_CREATE_TYPE(Vec4);
+
+// #ifdef __WMATH_SOA__
+// Vec2xN: 适用于路径点、UV坐标流
+typedef struct {
+    float* x; // 必须 16 字节对齐
+    float* y;
+    int count;
+} WMATH_TYPE(Vec2xN);
+
+// Vec3xN: 适用于基础粒子位置、速度、颜色(RGB)
+typedef struct {
+    float* x;
+    float* y;
+    float* z;
+    int count;
+} WMATH_TYPE(Vec3xN);
+
+// Vec4xN: 适用于带 Alpha 的颜色、切线流
+typedef struct {
+    float* x;
+    float* y;
+    float* z;
+    float* w;
+    int count;
+} WMATH_TYPE(Vec4xN);
+
+// QuatxN: 适用于大量旋转数据的更新
+typedef struct {
+    float* x;
+    float* y;
+    float* z;
+    float* w;
+    int count;
+} WMATH_TYPE(QuatxN);
+
+// Mat3xN: 适用于 3D 旋转/缩放矩阵序列
+typedef struct {
+    float* m[9]; // m[0] 指向所有矩阵的 m00，m[1] 指向 m01...
+    int count;
+} WMATH_TYPE(Mat3xN);
+
+// Mat4xN: 适用于骨骼变换矩阵、实例渲染世界矩阵
+typedef struct {
+    float* m[16]; // m[0..15] 映射 4x4 矩阵的 16 个分量
+    int count;
+} WMATH_TYPE(Mat4xN);
+// #endif // __WMATH_SOA__
 #endif // WCN_MATH_TYPES_H

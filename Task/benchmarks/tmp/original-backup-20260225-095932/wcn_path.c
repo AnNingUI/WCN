@@ -1,4 +1,4 @@
-﻿#include "wcn_internal.h"
+#include "wcn_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -8,14 +8,8 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
-#ifndef WCN_ENABLE_GPU_ROUND_JOIN_COMPUTE
-#define WCN_ENABLE_GPU_ROUND_JOIN_COMPUTE 1
-#endif
-
-#define WCN_CIRCLE_FILL_FLAG_RAW_JOIN_NORMALS 0x40000000u
-
 // ============================================================================
-// GPU Native 璺緞绠＄悊
+// GPU Native 路径管理
 // ============================================================================
 
 static WCN_GPUNativePath* wcn_gpu_path_create(void) {
@@ -70,7 +64,7 @@ static void wcn_gpu_path_add_cmd(WCN_GPUNativePath* path, uint8_t type, const fl
 }
 
 // ============================================================================
-// Line Join 杈呭姪鍑芥暟
+// Line Join 辅助函数
 // ============================================================================
 
 static void add_round_join(WCN_Renderer* renderer,
@@ -80,33 +74,6 @@ static void add_round_join(WCN_Renderer* renderer,
                            float half_width,
                            uint32_t color,
                            const float transform[4]) {
-#if WCN_ENABLE_GPU_ROUND_JOIN_COMPUTE
-    (void)transform;
-    if (!renderer || half_width <= 0.0f) {
-        return;
-    }
-
-    // Encode raw join normals; start/end angle will be derived in compute pass.
-    WCN_Instance instance = {0};
-    instance.position[0] = x;
-    instance.position[1] = y;
-    instance.size[0] = half_width; // Circle radius
-    instance.size[1] = 0.0f;
-    instance.uv[0] = perp1_x;
-    instance.uv[1] = perp1_y;
-    instance.uvSize[0] = perp2_x;
-    instance.uvSize[1] = perp2_y;
-    instance.transform[0] = 1.0f;
-    instance.transform[1] = 0.0f;
-    instance.transform[2] = 0.0f;
-    instance.transform[3] = 1.0f;
-    instance.color = color;
-    instance.type = WCN_INSTANCE_TYPE_CIRCLE_FILL;
-    instance.flags = WCN_CIRCLE_FILL_FLAG_RAW_JOIN_NORMALS;
-    instance.param0 = 0.0f;
-    wcn_instance_buffer_add(&renderer->cpu_instances, &instance);
-    return;
-#else
     const float angle1 = atan2f(perp1_y, perp1_x);
     const float angle2 = atan2f(perp2_y, perp2_x);
 
@@ -141,7 +108,6 @@ static void add_round_join(WCN_Renderer* renderer,
     wcn_renderer_add_triangles(renderer, vertices, segments + 2, indices, segments * 3, color, transform);
     free(vertices);
     free(indices);
-#endif
 }
 
 static void add_bevel_join(WCN_Renderer* renderer,
@@ -213,7 +179,7 @@ static void add_miter_join(WCN_Renderer* renderer,
 }
 
 // ============================================================================
-// 璺緞鎿嶄綔绉佹湁鍑芥暟 (淇濈暀鐢ㄤ簬 fill 鐨勭偣鏁扮粍)
+// 路径操作私有函数 (保留用于 fill 的点数组)
 // ============================================================================
 
 static WCN_Path* wcn_get_current_path(WCN_Context* ctx) {
@@ -224,7 +190,7 @@ static WCN_Path* wcn_get_current_path(WCN_Context* ctx) {
 static void wcn_create_new_path(WCN_Context* ctx) {
     if (!ctx) return;
 
-    // 閲婃斁鐜版湁鐨勭偣鏁扮粍璺緞
+    // 释放现有的点数组路径
     if (ctx->current_path) {
         if (ctx->current_path->points) free(ctx->current_path->points);
         if (ctx->current_path->commands) free(ctx->current_path->commands);
@@ -237,7 +203,7 @@ static void wcn_create_new_path(WCN_Context* ctx) {
         ctx->current_path->is_closed = false;
     }
     
-    // 鍒涘缓鎴栨竻绌?GPU Native 璺緞
+    // 创建或清空 GPU Native 路径
     if (!ctx->gpu_path) {
         ctx->gpu_path = wcn_gpu_path_create();
     } else {
@@ -282,21 +248,21 @@ static void wcn_path_close(WCN_Path* path) {
 }
 
 // ============================================================================
-// Fill 娓叉煋 (浣跨敤鐐规暟缁勬墖褰笁瑙掑寲 + 杈圭紭鎶楅敮榻?
+// Fill 渲染 (使用点数组扇形三角化 + 边缘抗锯齿)
 // ============================================================================
 
-// 鍐呴儴鍑芥暟锛氭坊鍔犲甫杈圭紭鏍囪鐨勪笁瑙掑舰
+// 内部函数：添加带边缘标记的三角形
 static void wcn_add_triangle_with_edges(
     WCN_Renderer* renderer,
     float v0_x, float v0_y,
     float v1_x, float v1_y,
     float v2_x, float v2_y,
-    uint32_t edge_flags,  // bit 0: v0-v1 鏄杈圭紭, bit 1: v1-v2 鏄杈圭紭, bit 2: v2-v0 鏄杈圭紭
+    uint32_t edge_flags,  // bit 0: v0-v1 是外边缘, bit 1: v1-v2 是外边缘, bit 2: v2-v0 是外边缘
     uint32_t color
 ) {
     if (!renderer) return;
     
-    // 璁＄畻杈圭晫妗?
+    // 计算边界框
     float min_x = v0_x;
     float max_x = v0_x;
     float min_y = v0_y;
@@ -322,7 +288,7 @@ static void wcn_add_triangle_with_edges(
     instance.size[0] = width;
     instance.size[1] = height;
     
-    // 瀛樺偍涓夎褰㈤《鐐?(涓?wcn_renderer_add_triangles 鐩稿悓鐨勭紪鐮?
+    // 存储三角形顶点 (与 wcn_renderer_add_triangles 相同的编码)
     // uv: v0
     // uvSize: v1
     // param0: v2.x
@@ -333,17 +299,17 @@ static void wcn_add_triangle_with_edges(
     instance.uvSize[1] = v1_y;
     instance.param0 = v2_x;
     
-    // v2.y 瀛樺偍鍦?flags 涓?(bit-cast)
+    // v2.y 存储在 flags 中 (bit-cast)
     union { float f; uint32_t u; } converter;
     converter.f = v2_y;
     instance.flags = converter.u;
     
     instance.color = color;
     
-    // transform 鐭╅樀锛氬墠涓や釜鏄崟浣嶇煩闃碉紝transform[2] 瀛樺偍杈圭紭鏍囪
+    // transform 矩阵：前两个是单位矩阵，transform[2] 存储边缘标记
     instance.transform[0] = 1.0f;
     instance.transform[1] = 0.0f;
-    instance.transform[2] = (float)edge_flags;  // 杈圭紭鏍囪
+    instance.transform[2] = (float)edge_flags;  // 边缘标记
     instance.transform[3] = 1.0f;
     
     instance.type = WCN_INSTANCE_TYPE_PATH;
@@ -358,7 +324,7 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
     const uint32_t color = state->fill_color;
     const size_t num_points = path->point_count / 2;
 
-    // 鍙樻崲鎵€鏈夐《鐐?
+    // 变换所有顶点
     float* transformed = (float*)malloc(num_points * 2 * sizeof(float));
     if (!transformed) return;
 
@@ -369,12 +335,12 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
         transformed[i*2+1] = x * state->transform_matrix[1] + y * state->transform_matrix[5] + state->transform_matrix[13];
     }
 
-    // 鎵囧舰涓夎鍖栵細浠庨《鐐?0 鍑哄彂
-    // 涓夎褰?i: (0, i+1, i+2)
-    // 澶栬竟缂樺垽鏂細
-    // - 杈?0-(i+1): 鍙湁绗竴涓笁瑙掑舰鐨勮繖鏉¤竟鏄杈圭紭 (i==0)
-    // - 杈?(i+1)-(i+2): 鎬绘槸澶栬竟缂橈紙澶氳竟褰㈣疆寤擄級
-    // - 杈?(i+2)-0: 鍙湁鏈€鍚庝竴涓笁瑙掑舰鐨勮繖鏉¤竟鏄杈圭紭 (i==num_points-3)
+    // 扇形三角化：从顶点 0 出发
+    // 三角形 i: (0, i+1, i+2)
+    // 外边缘判断：
+    // - 边 0-(i+1): 只有第一个三角形的这条边是外边缘 (i==0)
+    // - 边 (i+1)-(i+2): 总是外边缘（多边形轮廓）
+    // - 边 (i+2)-0: 只有最后一个三角形的这条边是外边缘 (i==num_points-3)
     
     const size_t num_triangles = num_points - 2;
     
@@ -386,16 +352,16 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
         float v2_x = transformed[(i+2)*2];
         float v2_y = transformed[(i+2)*2+1];
         
-        // 璁＄畻杈圭紭鏍囪
+        // 计算边缘标记
         uint32_t edge_flags = 0;
         
-        // bit 0: v0-v1 鏄杈圭紭 (鍙湁绗竴涓笁瑙掑舰)
+        // bit 0: v0-v1 是外边缘 (只有第一个三角形)
         if (i == 0) edge_flags |= 1;
         
-        // bit 1: v1-v2 鎬绘槸澶栬竟缂橈紙澶氳竟褰㈣疆寤撹竟锛?
+        // bit 1: v1-v2 总是外边缘（多边形轮廓边）
         edge_flags |= 2;
         
-        // bit 2: v2-v0 鏄杈圭紭 (鍙湁鏈€鍚庝竴涓笁瑙掑舰)
+        // bit 2: v2-v0 是外边缘 (只有最后一个三角形)
         if (i == num_triangles - 1) edge_flags |= 4;
         
         wcn_add_triangle_with_edges(ctx->renderer, v0_x, v0_y, v1_x, v1_y, v2_x, v2_y, edge_flags, color);
@@ -405,7 +371,7 @@ static void wcn_render_path_fill(WCN_Context* ctx, WCN_Path* path) {
 }
 
 // ============================================================================
-// Stroke 娓叉煋 (GPU Native - 浣跨敤 SDF 瀹炰緥)
+// Stroke 渲染 (GPU Native - 使用 SDF 实例)
 // ============================================================================
 
 static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path) {
@@ -424,7 +390,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
         state->transform_matrix[4], state->transform_matrix[5]
     };
     
-    // 鍙樻崲杈呭姪瀹?
+    // 变换辅助宏
     #define TRANSFORM_X(px, py) ((px) * state->transform_matrix[0] + (py) * state->transform_matrix[4] + state->transform_matrix[12])
     #define TRANSFORM_Y(px, py) ((px) * state->transform_matrix[1] + (py) * state->transform_matrix[5] + state->transform_matrix[13])
 
@@ -453,7 +419,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
                 float tx2 = TRANSFORM_X(x, y);
                 float ty2 = TRANSFORM_Y(x, y);
                 
-                // 璁＄畻鏂瑰悜
+                // 计算方向
                 float dx = tx2 - tx1;
                 float dy = ty2 - ty1;
                 float len = sqrtf(dx * dx + dy * dy);
@@ -476,7 +442,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
                         }
                     }
                     
-                    // 纭畾 cap flags
+                    // 确定 cap flags
                     bool is_first = (i == 0 || path->commands[i-1].type == WCN_CMD_MOVE_TO);
                     bool is_last = (i == path->command_count - 1 || (i + 1 < path->command_count && path->commands[i+1].type == WCN_CMD_MOVE_TO));
                     uint32_t cap_flags = line_cap & 0xFF;
@@ -498,18 +464,18 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
             }
             
             case WCN_CMD_ARC: {
-                // GPU SDF 鍦嗗姬娓叉煋
+                // GPU SDF 圆弧渲染
                 float cx = cmd->params[0];
                 float cy = cmd->params[1];
                 float radius = cmd->params[2];
                 float start_angle = cmd->params[3];
                 float end_angle = cmd->params[4];
                 
-                // 璁＄畻鍦嗗姬璧风偣
+                // 计算圆弧起点
                 float arc_start_x = cx + radius * cosf(start_angle);
                 float arc_start_y = cy + radius * sinf(start_angle);
                 
-                // 濡傛灉褰撳墠鐐逛笌鍦嗗姬璧风偣涓嶅悓锛屽厛鐢讳竴鏉¤繛鎺ョ嚎
+                // 如果当前点与圆弧起点不同，先画一条连接线
                 if (fabsf(cur_x - arc_start_x) > 0.001f || fabsf(cur_y - arc_start_y) > 0.001f) {
                     float tx1 = TRANSFORM_X(cur_x, cur_y);
                     float ty1 = TRANSFORM_Y(cur_x, cur_y);
@@ -524,15 +490,15 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
                 
                 wcn_renderer_add_arc(ctx->renderer, tcx, tcy, radius, start_angle, end_angle, line_width, color, transform, 0);
                 
-                // 鏇存柊褰撳墠鐐逛负鍦嗗姬缁堢偣
+                // 更新当前点为圆弧终点
                 cur_x = cx + radius * cosf(end_angle);
                 cur_y = cy + radius * sinf(end_angle);
-                has_prev_segment = false; // 鍦嗗姬鍚庨噸缃?join 鐘舵€?
+                has_prev_segment = false; // 圆弧后重置 join 状态
                 break;
             }
             
             case WCN_CMD_QUAD_TO: {
-                // GPU SDF 浜屾璐濆灏旀覆鏌?
+                // GPU SDF 二次贝塞尔渲染
                 float cpx = cmd->params[0];
                 float cpy = cmd->params[1];
                 float x = cmd->params[2];
@@ -554,7 +520,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
             }
             
             case WCN_CMD_CUBIC_TO: {
-                // GPU SDF 涓夋璐濆灏旀覆鏌?(鍒嗚В涓轰袱涓簩娆?
+                // GPU SDF 三次贝塞尔渲染 (分解为两个二次)
                 float cp1x = cmd->params[0];
                 float cp1y = cmd->params[1];
                 float cp2x = cmd->params[2];
@@ -580,7 +546,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
             }
             
             case WCN_CMD_CLOSE: {
-                // 闂悎璺緞锛氱敾绾垮洖鍒拌捣鐐?
+                // 闭合路径：画线回到起点
                 if (fabsf(cur_x - path->start_x) > 0.001f || fabsf(cur_y - path->start_y) > 0.001f) {
                     float tx1 = TRANSFORM_X(cur_x, cur_y);
                     float ty1 = TRANSFORM_Y(cur_x, cur_y);
@@ -602,7 +568,7 @@ static void wcn_render_path_stroke_gpu(WCN_Context* ctx, WCN_GPUNativePath* path
 }
 
 // ============================================================================
-// 鍏叡 API 瀹炵幇
+// 公共 API 实现
 // ============================================================================
 
 void wcn_begin_path(WCN_Context* ctx) {
@@ -667,7 +633,7 @@ void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
         while (angle_diff <= 0.0f) angle_diff += 2.0f * M_PI;
     }
 
-    // 涓?fill 鐢熸垚鐐规暟缁?(淇濈暀鍘熸湁閫昏緫)
+    // 为 fill 生成点数组 (保留原有逻辑)
     int segments = (int)(radius * fabsf(angle_diff) / 2.0f);
     if (segments < 4) segments = 4;
     if (segments > 256) segments = 256;
@@ -694,9 +660,9 @@ void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
         wcn_path_close(path);
     }
     
-    // 涓?stroke 娣诲姞 GPU 鍛戒护
+    // 为 stroke 添加 GPU 命令
     if (ctx->gpu_path) {
-        // 鍏堟坊鍔?line_to 鍒板渾寮ц捣鐐?(濡傛灉闇€瑕?
+        // 先添加 line_to 到圆弧起点 (如果需要)
         float arc_start_x = x + radius * cosf(start_angle);
         float arc_start_y = y + radius * sinf(start_angle);
         
@@ -710,7 +676,7 @@ void wcn_arc(WCN_Context* ctx, const float x, const float y, const float radius,
             ctx->gpu_path->start_y = arc_start_y;
         }
         
-        // 娣诲姞鍦嗗姬鍛戒护
+        // 添加圆弧命令
         float params[5] = {x, y, radius, start_angle, end_angle};
         wcn_gpu_path_add_cmd(ctx->gpu_path, WCN_CMD_ARC, params, 5);
         
@@ -729,14 +695,14 @@ void wcn_rect(WCN_Context* ctx, float x, float y, float width, float height) {
     wcn_close_path(ctx);
 }
 
-// 妫€娴?GPU 璺緞鏄惁涓虹畝鍗曞渾褰?寮у舰 (鍙湁涓€涓?ARC 鍛戒护)
+// 检测 GPU 路径是否为简单圆形/弧形 (只有一个 ARC 命令)
 static bool wcn_is_simple_circle_path(WCN_GPUNativePath* gpu_path, 
                                        float* out_cx, float* out_cy, 
                                        float* out_radius,
                                        float* out_start_angle, float* out_end_angle) {
     if (!gpu_path || gpu_path->command_count == 0) return false;
     
-    // 鏌ユ壘 ARC 鍛戒护
+    // 查找 ARC 命令
     int arc_count = 0;
     int other_count = 0;
     WCN_PathCmd* arc_cmd = NULL;
@@ -747,19 +713,19 @@ static bool wcn_is_simple_circle_path(WCN_GPUNativePath* gpu_path,
             arc_count++;
             arc_cmd = cmd;
         } else if (cmd->type == WCN_CMD_MOVE_TO) {
-            // MOVE_TO 鍙互蹇界暐
+            // MOVE_TO 可以忽略
         } else if (cmd->type == WCN_CMD_LINE_TO) {
-            // LINE_TO 鍒板渾寮ц捣鐐瑰彲浠ュ拷鐣ワ紝鍏朵粬鎯呭喌涓嶆槸绠€鍗曞渾
+            // LINE_TO 到圆弧起点可以忽略，其他情况不是简单圆
             other_count++;
         } else if (cmd->type == WCN_CMD_CLOSE) {
-            // CLOSE 鍙互蹇界暐
+            // CLOSE 可以忽略
         } else {
-            // 鍏朵粬鍛戒护锛堣礉濉炲皵绛夛級涓嶆槸绠€鍗曞渾
+            // 其他命令（贝塞尔等）不是简单圆
             return false;
         }
     }
     
-    // 鍙湁涓€涓?ARC 鍛戒护锛屼笖娌℃湁鍏朵粬澶嶆潅鍛戒护
+    // 只有一个 ARC 命令，且没有其他复杂命令
     if (arc_count == 1 && arc_cmd && other_count <= 1) {
         *out_cx = arc_cmd->params[0];
         *out_cy = arc_cmd->params[1];
@@ -775,7 +741,7 @@ static bool wcn_is_simple_circle_path(WCN_GPUNativePath* gpu_path,
 void wcn_fill(WCN_Context* ctx) {
     if (!ctx || !ctx->in_frame) return;
 
-    // 妫€娴嬫槸鍚︿负绠€鍗曞渾褰?寮у舰锛屼娇鐢?GPU SDF 娓叉煋
+    // 检测是否为简单圆形/弧形，使用 GPU SDF 渲染
     float cx, cy, radius, start_angle, end_angle;
     if (ctx->gpu_path && wcn_is_simple_circle_path(ctx->gpu_path, &cx, &cy, &radius, &start_angle, &end_angle)) {
         const WCN_GPUState* state = &ctx->state_stack.states[ctx->state_stack.current_state];
@@ -785,7 +751,7 @@ void wcn_fill(WCN_Context* ctx) {
             state->transform_matrix[4], state->transform_matrix[5]
         };
         
-        // 鍙樻崲鍦嗗績
+        // 变换圆心
         float tcx = cx * state->transform_matrix[0] + cy * state->transform_matrix[4] + state->transform_matrix[12];
         float tcy = cx * state->transform_matrix[1] + cy * state->transform_matrix[5] + state->transform_matrix[13];
         
@@ -793,7 +759,7 @@ void wcn_fill(WCN_Context* ctx) {
         return;
     }
 
-    // 闈炲渾褰㈣矾寰勶紝浣跨敤浼犵粺涓夎鍖?
+    // 非圆形路径，使用传统三角化
     WCN_Path* path = wcn_get_current_path(ctx);
     if (path) {
         wcn_render_path_fill(ctx, path);
@@ -803,14 +769,14 @@ void wcn_fill(WCN_Context* ctx) {
 void wcn_stroke(WCN_Context* ctx) {
     if (!ctx || !ctx->in_frame) return;
 
-    // 浣跨敤 GPU Native 璺緞娓叉煋
+    // 使用 GPU Native 路径渲染
     if (ctx->gpu_path && ctx->gpu_path->command_count > 0) {
         wcn_render_path_stroke_gpu(ctx, ctx->gpu_path);
     }
 }
 
 // ============================================================================
-// 璐濆灏旀洸绾?API
+// 贝塞尔曲线 API
 // ============================================================================
 
 static bool wcn_get_last_path_point(WCN_Context* ctx, float* out_x, float* out_y) {
@@ -835,7 +801,7 @@ void wcn_quadratic_curve_to(WCN_Context* ctx, float cpx, float cpy, float x, flo
         y0 = cpy;
     }
 
-    // 涓?fill 鐢熸垚鐐规暟缁?
+    // 为 fill 生成点数组
     const int segments = 16;
     for (int i = 1; i <= segments; i++) {
         float t = (float)i / (float)segments;
@@ -845,7 +811,7 @@ void wcn_quadratic_curve_to(WCN_Context* ctx, float cpx, float cpy, float x, flo
         wcn_path_add_point(path, px, py, 1);
     }
     
-    // 涓?stroke 娣诲姞 GPU 鍛戒护
+    // 为 stroke 添加 GPU 命令
     if (ctx->gpu_path) {
         float params[4] = {cpx, cpy, x, y};
         wcn_gpu_path_add_cmd(ctx->gpu_path, WCN_CMD_QUAD_TO, params, 4);
@@ -866,7 +832,7 @@ void wcn_bezier_curve_to(WCN_Context* ctx, float cp1x, float cp1y, float cp2x, f
         y0 = cp1y;
     }
 
-    // 涓?fill 鐢熸垚鐐规暟缁?
+    // 为 fill 生成点数组
     const int segments = 24;
     for (int i = 1; i <= segments; i++) {
         float t = (float)i / (float)segments;
@@ -876,7 +842,7 @@ void wcn_bezier_curve_to(WCN_Context* ctx, float cp1x, float cp1y, float cp2x, f
         wcn_path_add_point(path, px, py, 1);
     }
     
-    // 涓?stroke 娣诲姞 GPU 鍛戒护
+    // 为 stroke 添加 GPU 命令
     if (ctx->gpu_path) {
         float params[6] = {cp1x, cp1y, cp2x, cp2y, x, y};
         wcn_gpu_path_add_cmd(ctx->gpu_path, WCN_CMD_CUBIC_TO, params, 6);
@@ -884,4 +850,3 @@ void wcn_bezier_curve_to(WCN_Context* ctx, float cp1x, float cp1y, float cp2x, f
         ctx->gpu_path->current_y = y;
     }
 }
-

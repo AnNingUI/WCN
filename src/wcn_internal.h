@@ -123,6 +123,42 @@ typedef struct WCN_Renderer {
     // 视口
     uint32_t width;
     uint32_t height;
+    uint64_t stat_queue_write_calls;
+    uint64_t stat_queue_write_bytes;
+    uint64_t stat_compute_dispatch_count;
+    uint64_t stat_draw_call_count;
+    uint64_t stat_rendered_instance_count;
+    uint64_t stat_rendered_vertex_count;
+    WCN_Instance* cached_instances;
+    size_t cached_instance_capacity;
+    size_t cached_instance_count;
+    uint32_t cached_viewport_width;
+    uint32_t cached_viewport_height;
+    bool cached_vertices_valid;
+    bool uniform_cache_valid;
+    bool uniform_upload_cache_valid;
+    uint32_t cached_uniform_upload_viewport_width;
+    uint32_t cached_uniform_upload_viewport_height;
+    uint32_t cached_uniform_upload_instance_count;
+    uint32_t cached_uniform_upload_instance_offset;
+    uint32_t dirty_compute_candidate_offset;
+    uint32_t dirty_compute_candidate_count;
+    uint32_t dirty_compute_candidate_streak;
+    bool gpu_timestamp_enabled;
+    bool gpu_timestamp_use_pass_writes;
+    bool gpu_timestamp_use_encoder_writes;
+    WGPUQuerySet timestamp_query_set;
+    WGPUBuffer timestamp_resolve_buffer;
+    WGPUBuffer timestamp_readback_buffers[2];
+    bool timestamp_map_pending[2];
+    bool timestamp_map_ready[2];
+    WGPUMapAsyncStatus timestamp_map_status[2];
+    uint32_t timestamp_write_slot;
+    uint32_t timestamp_submit_slot;
+    bool timestamp_submit_slot_valid;
+    uint64_t stat_gpu_compute_ticks;
+    uint64_t stat_gpu_render_ticks;
+    uint64_t stat_gpu_timestamp_samples;
 } WCN_Renderer;
 
 // ============================================================================
@@ -471,6 +507,8 @@ void wcn_renderer_render(
 // 工具函数
 void wcn_renderer_clear(WCN_Renderer* renderer);
 void wcn_renderer_resize(WCN_Renderer* renderer, uint32_t width, uint32_t height);
+void wcn_renderer_on_submitted(WCN_Context* ctx);
+void wcn_renderer_collect_timestamp_results(WCN_Context* ctx);
 
 // ============================================================================
 // 三角化函数（wcn_triangulate.c）

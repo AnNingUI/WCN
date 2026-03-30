@@ -6,6 +6,7 @@
 #include <webgpu/wgpu.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // 平台相关的头文件包含
 #if defined(_WIN32)
@@ -40,6 +41,76 @@ typedef struct {
     
     WCN_Context* wcn_ctx;
 } WCN_GLFW_Window;
+
+static bool wcn_glfw_str_eq_ignore_case(const char* a, const char* b) {
+    if (!a || !b) {
+        return false;
+    }
+    while (*a && *b) {
+        char ca = *a;
+        char cb = *b;
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + ('a' - 'A'));
+        if (ca != cb) {
+            return false;
+        }
+        ++a;
+        ++b;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static bool wcn_glfw_supports_present_mode(const WGPUSurfaceCapabilities* caps, WGPUPresentMode mode) {
+    if (!caps || !caps->presentModes || caps->presentModeCount == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < caps->presentModeCount; ++i) {
+        if (caps->presentModes[i] == mode) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const char* wcn_glfw_present_mode_name(WGPUPresentMode mode) {
+    switch (mode) {
+        case WGPUPresentMode_Fifo: return "fifo";
+        case WGPUPresentMode_FifoRelaxed: return "fifo_relaxed";
+        case WGPUPresentMode_Immediate: return "immediate";
+        case WGPUPresentMode_Mailbox: return "mailbox";
+        default: return "unknown";
+    }
+}
+
+static WGPUPresentMode wcn_glfw_choose_present_mode(const WGPUSurfaceCapabilities* caps) {
+    const char* requested = getenv("WCN_GLFW_PRESENT_MODE");
+    if (requested && requested[0] != '\0') {
+        if (wcn_glfw_str_eq_ignore_case(requested, "immediate") &&
+            wcn_glfw_supports_present_mode(caps, WGPUPresentMode_Immediate)) {
+            return WGPUPresentMode_Immediate;
+        }
+        if (wcn_glfw_str_eq_ignore_case(requested, "mailbox") &&
+            wcn_glfw_supports_present_mode(caps, WGPUPresentMode_Mailbox)) {
+            return WGPUPresentMode_Mailbox;
+        }
+        if (wcn_glfw_str_eq_ignore_case(requested, "fifo_relaxed") &&
+            wcn_glfw_supports_present_mode(caps, WGPUPresentMode_FifoRelaxed)) {
+            return WGPUPresentMode_FifoRelaxed;
+        }
+        if (wcn_glfw_str_eq_ignore_case(requested, "fifo") &&
+            wcn_glfw_supports_present_mode(caps, WGPUPresentMode_Fifo)) {
+            return WGPUPresentMode_Fifo;
+        }
+    }
+
+    if (wcn_glfw_supports_present_mode(caps, WGPUPresentMode_Fifo)) {
+        return WGPUPresentMode_Fifo;
+    }
+    if (caps && caps->presentModeCount > 0 && caps->presentModes) {
+        return caps->presentModes[0];
+    }
+    return WGPUPresentMode_Fifo;
+}
 
 // 错误回调
 static void wcn_glfw_error_callback(int error, const char* description) {
@@ -213,10 +284,49 @@ static WCN_GLFW_Window* wcn_glfw_create_window(uint32_t width, uint32_t height, 
     }
     
     // 请求 device
-    WGPUFeatureName requiredFeatures[] = {(WGPUFeatureName)0x00030002};
+    WGPUFeatureName requiredFeatures[4];
+    size_t required_feature_count = 0;
+    bool has_timestamp_query = wgpuAdapterHasFeature(wcn_window->adapter, WGPUFeatureName_TimestampQuery);
+    bool has_native_timestamp_inside_passes = wgpuAdapterHasFeature(
+        wcn_window->adapter,
+        (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsidePasses
+    );
+    bool has_native_timestamp_inside_encoders = wgpuAdapterHasFeature(
+        wcn_window->adapter,
+        (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsideEncoders
+    );
+    bool has_texture_adapter_specific_formats = wgpuAdapterHasFeature(
+        wcn_window->adapter,
+        (WGPUFeatureName)WGPUNativeFeature_TextureAdapterSpecificFormatFeatures
+    );
+
+    if (has_timestamp_query) {
+        requiredFeatures[required_feature_count++] = WGPUFeatureName_TimestampQuery;
+    }
+    if (has_texture_adapter_specific_formats) {
+        requiredFeatures[required_feature_count++] =
+            (WGPUFeatureName)WGPUNativeFeature_TextureAdapterSpecificFormatFeatures;
+    }
+    if (has_native_timestamp_inside_encoders) {
+        requiredFeatures[required_feature_count++] =
+            (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsideEncoders;
+    }
+    if (has_native_timestamp_inside_passes) {
+        requiredFeatures[required_feature_count++] =
+            (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsidePasses;
+    }
+
+    printf(
+        "WCN adapter features: timestamp_query=%s, ts_inside_encoders=%s, ts_inside_passes=%s, texture_adapter_specific=%s\n",
+        has_timestamp_query ? "yes" : "no",
+        has_native_timestamp_inside_encoders ? "yes" : "no",
+        has_native_timestamp_inside_passes ? "yes" : "no",
+        has_texture_adapter_specific_formats ? "yes" : "no"
+    );
+
     WGPUDeviceDescriptor device_desc = {
-        .requiredFeatureCount = 1,
-        .requiredFeatures = requiredFeatures,
+        .requiredFeatureCount = required_feature_count,
+        .requiredFeatures = required_feature_count > 0 ? requiredFeatures : NULL,
         .deviceLostCallbackInfo = (WGPUDeviceLostCallbackInfo){
             .mode = WGPUCallbackMode_AllowProcessEvents,
             .callback = wcn_glfw_device_lost_callback
@@ -247,18 +357,27 @@ static WCN_GLFW_Window* wcn_glfw_create_window(uint32_t width, uint32_t height, 
         glfwTerminate();
         return NULL;
     }
+
+    printf(
+        "WCN device features enabled: timestamp_query=%s, ts_inside_encoders=%s, ts_inside_passes=%s\n",
+        wgpuDeviceHasFeature(wcn_window->device, WGPUFeatureName_TimestampQuery) ? "yes" : "no",
+        wgpuDeviceHasFeature(wcn_window->device, (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsideEncoders) ? "yes" : "no",
+        wgpuDeviceHasFeature(wcn_window->device, (WGPUFeatureName)WGPUNativeFeature_TimestampQueryInsidePasses) ? "yes" : "no"
+    );
     
     // 获取 surface 能力
     WGPUSurfaceCapabilities surfaceCapabilities;
     wgpuSurfaceGetCapabilities(wcn_window->surface, wcn_window->adapter, &surfaceCapabilities);
     wcn_window->surface_format = surfaceCapabilities.formats[0];
+    WGPUPresentMode present_mode = wcn_glfw_choose_present_mode(&surfaceCapabilities);
+    printf("WCN present mode: %s\n", wcn_glfw_present_mode_name(present_mode));
     
     // 配置 surface
     WGPUSurfaceConfiguration config = {
         .device = wcn_window->device,
         .format = wcn_window->surface_format,
         .usage = WGPUTextureUsage_RenderAttachment,
-        .presentMode = WGPUPresentMode_Fifo,
+        .presentMode = present_mode,
         .alphaMode = surfaceCapabilities.alphaModes[0],
         .width = width,
         .height = height
@@ -382,11 +501,12 @@ static inline void wcn_glfw_handle_resize(WCN_GLFW_Window* wcn_window, uint32_t 
     wgpuSurfaceGetCapabilities(wcn_window->surface, wcn_window->adapter, &surfaceCapabilities);
 
     // 重新配置表面
+    WGPUPresentMode present_mode = wcn_glfw_choose_present_mode(&surfaceCapabilities);
     WGPUSurfaceConfiguration config = {
         .device = wcn_window->device,
         .format = wcn_window->surface_format,
         .usage = WGPUTextureUsage_RenderAttachment,
-        .presentMode = WGPUPresentMode_Fifo,
+        .presentMode = present_mode,
         .alphaMode = surfaceCapabilities.alphaModes[0],
         .width = new_width,
         .height = new_height

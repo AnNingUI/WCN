@@ -138,6 +138,18 @@ typedef struct WCN_TextMetrics {
     float em_height_descent;
 } WCN_TextMetrics;
 
+typedef struct WCN_RenderStats {
+    uint64_t queue_write_calls;
+    uint64_t queue_write_bytes;
+    uint64_t compute_dispatch_count;
+    uint64_t draw_call_count;
+    uint64_t rendered_instance_count;
+    uint64_t rendered_vertex_count;
+    uint64_t gpu_compute_ticks;
+    uint64_t gpu_render_ticks;
+    uint64_t gpu_timestamp_samples;
+} WCN_RenderStats;
+
 // ============================================================================
 // 字体和字形数据结构
 // ============================================================================
@@ -357,6 +369,9 @@ WGPUTextureFormat wcn_get_surface_format(WCN_Context* ctx);
 
 // 设置 Surface 格式
 void wcn_set_surface_format(WCN_Context* ctx, WGPUTextureFormat format);
+
+void wcn_reset_render_stats(WCN_Context* ctx);
+bool wcn_get_render_stats(WCN_Context* ctx, WCN_RenderStats* out_stats);
 
 #ifdef __cplusplus
 }

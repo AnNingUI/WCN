@@ -210,6 +210,7 @@ void wcn_submit_commands(WCN_Context* ctx) {
     WGPUCommandBuffer command_buffer = wgpuCommandEncoderFinish(ctx->current_command_encoder, &command_buffer_desc);
     if (command_buffer) {
         wgpuQueueSubmit(ctx->queue, 1, &command_buffer);
+        wcn_renderer_on_submitted(ctx);
         wgpuCommandBufferRelease(command_buffer);
     }
 

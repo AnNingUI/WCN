@@ -12,9 +12,21 @@
 // 包含 stb_truetype 解码器实现
 #include "../../impl/wcn_stb_truetype_impl.h"
 
-// Demo font paths
-static const char* primary_font_path = "../../assets/NotoSerifSC-VF.ttf";
-static const char* fallback_font_path = "../../assets/font/DejaVuSans.ttf";
+static const char* PRIMARY_FONT_CANDIDATES[] = {
+    "assets/NotoSerifSC-VF.ttf",
+    "../../../assets/NotoSerifSC-VF.ttf",
+    "../../../../assets/NotoSerifSC-VF.ttf",
+    "../../assets/NotoSerifSC-VF.ttf",
+    NULL
+};
+
+static const char* FALLBACK_FONT_CANDIDATES[] = {
+    "assets/font/DejaVuSans.ttf",
+    "../../../assets/font/DejaVuSans.ttf",
+    "../../../../assets/font/DejaVuSans.ttf",
+    "../../assets/font/DejaVuSans.ttf",
+    NULL
+};
 
 // 辅助函数：从文件加载字体数据
 static bool load_font_data_from_file(const char* path, unsigned char** out_data, size_t* out_size) {
@@ -47,6 +59,21 @@ static bool load_font_data_from_file(const char* path, unsigned char** out_data,
     return true;
 }
 
+static const char* wcn_find_existing_font_path(const char* const* candidates) {
+    if (!candidates) {
+        return NULL;
+    }
+
+    for (size_t i = 0; candidates[i] != NULL; ++i) {
+        FILE* file = fopen(candidates[i], "rb");
+        if (file) {
+            fclose(file);
+            return candidates[i];
+        }
+    }
+    return NULL;
+}
+
 int main(void) {
     printf("=== WCN SDF Text Rendering Test ===\n");
 
@@ -71,8 +98,11 @@ int main(void) {
     unsigned char* font_data = NULL;
     size_t font_size = 0;
 
-    printf("Loading primary font: %s\n", primary_font_path);
-    if (load_font_data_from_file(primary_font_path, &font_data, &font_size)) {
+    const char* primary_font_path = wcn_find_existing_font_path(PRIMARY_FONT_CANDIDATES);
+    const char* fallback_font_path = wcn_find_existing_font_path(FALLBACK_FONT_CANDIDATES);
+
+    printf("Loading primary font: %s\n", primary_font_path ? primary_font_path : "(not found)");
+    if (primary_font_path && load_font_data_from_file(primary_font_path, &font_data, &font_size)) {
         if (stb_decoder->load_font(font_data, font_size, &primary_face)) {
             printf("  -> primary font ready\n");
             wcn_set_font_face(ctx, primary_face, 24.0f);
@@ -85,8 +115,8 @@ int main(void) {
         printf("  -> failed to read primary font file\n");
     }
 
-    printf("Loading fallback font: %s\n", fallback_font_path);
-    if (load_font_data_from_file(fallback_font_path, &font_data, &font_size)) {
+    printf("Loading fallback font: %s\n", fallback_font_path ? fallback_font_path : "(not found)");
+    if (fallback_font_path && load_font_data_from_file(fallback_font_path, &font_data, &font_size)) {
         if (stb_decoder->load_font(font_data, font_size, &fallback_face)) {
             printf("  -> fallback font ready\n");
             if (!wcn_add_font_fallback(ctx, fallback_face)) {
@@ -109,8 +139,10 @@ int main(void) {
 
     // 主循环
     int frame_count = 0;
+    bool stats_reset = false;
+    const int max_frames = 300;
     double last_time = glfwGetTime();
-    while (!wcn_glfw_window_should_close(window)) {
+    while (!wcn_glfw_window_should_close(window) && frame_count < max_frames) {
         wcn_glfw_poll_events();
 
         // 检查窗口大小是否发生变化
@@ -134,6 +166,11 @@ int main(void) {
         // 开始渲染帧
         WCN_GLFW_RenderFrame frame;
         if (wcn_glfw_begin_frame(window, &frame)) {
+            if (!stats_reset) {
+                wcn_reset_render_stats(ctx);
+                stats_reset = true;
+            }
+
             uint32_t width, height;
             wcn_glfw_get_size(window, &width, &height);
 
@@ -263,6 +300,22 @@ int main(void) {
     if (fallback_face) {
         stb_decoder->free_font(fallback_face);
     }
+    WCN_RenderStats stats = {0};
+    if (wcn_get_render_stats(ctx, &stats)) {
+        printf(
+            "WCN_STATS queue_write_calls=%llu queue_write_bytes=%llu compute_dispatch_count=%llu draw_call_count=%llu rendered_instance_count=%llu rendered_vertex_count=%llu gpu_compute_ticks=%llu gpu_render_ticks=%llu gpu_timestamp_samples=%llu\n",
+            (unsigned long long)stats.queue_write_calls,
+            (unsigned long long)stats.queue_write_bytes,
+            (unsigned long long)stats.compute_dispatch_count,
+            (unsigned long long)stats.draw_call_count,
+            (unsigned long long)stats.rendered_instance_count,
+            (unsigned long long)stats.rendered_vertex_count,
+            (unsigned long long)stats.gpu_compute_ticks,
+            (unsigned long long)stats.gpu_render_ticks,
+            (unsigned long long)stats.gpu_timestamp_samples
+        );
+    }
+
     wcn_glfw_destroy_window(window);
 
     printf("Test completed. Rendered %d frames\n", frame_count);
