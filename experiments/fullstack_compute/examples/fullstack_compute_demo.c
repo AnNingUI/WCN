@@ -633,7 +633,7 @@ int main(void) {
             gatec_sum_oq_clip = 0u;
             prev_scene_mode = scene_mode;
         }
-        fs_core_set_clip_layer_reuse_reserve(core, 0u);
+        fs_core_set_clip_layer_reuse_reserve(core, 2u);
         if (scene_mode != 1) {
             miter_slider_dragging = false;
         }
