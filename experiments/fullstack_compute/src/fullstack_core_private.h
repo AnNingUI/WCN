@@ -285,6 +285,18 @@ typedef struct FS_Point2 {
     float y;
 } FS_Point2;
 
+typedef struct FS_FillContour {
+    FS_Point2* points;
+    uint32_t count;
+    uint32_t capacity;
+    float area2;
+    float abs_area2;
+    int32_t parent;
+    uint32_t depth;
+    bool is_hole;
+    int32_t owner_outer;
+} FS_FillContour;
+
 typedef struct FS_HitFillContext {
     float px;
     float py;
@@ -767,6 +779,26 @@ uint32_t fs_style_resolve_stroke_color_at(const FS_InternalState* st, float px, 
 bool fs_draw_linear_gradient_rect_cells(FS_Core* core, float x, float y, float w, float h, const FS_StyleLinearGradient* grad);
 bool fs_draw_radial_gradient_rect_cells(FS_Core* core, float x, float y, float w, float h, const FS_StyleRadialGradient* grad);
 bool fs_draw_conic_gradient_rect_cells(FS_Core* core, float x, float y, float w, float h, const FS_StyleConicGradient* grad);
+bool fs_emit_fill_triangle_fan(FS_Core* core, const FS_Point2* points, uint32_t count, uint32_t color);
+bool fs_emit_fill_triangles_ear_clip(FS_Core* core, const FS_Point2* points, uint32_t count, uint32_t color, bool allow_fan_fallback);
+float fs_polygon_signed_area2(const FS_Point2* points, uint32_t count);
+float fs_cross2(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c);
+bool fs_point_in_contour(const FS_Point2* points, uint32_t count, const FS_Point2* p);
+void fs_points_reverse(FS_Point2* points, uint32_t count);
+bool fs_point_in_triangle_or_edge(const FS_Point2* p, const FS_Point2* a, const FS_Point2* b, const FS_Point2* c);
+uint32_t fs_find_rightmost_point(const FS_Point2* points, uint32_t count);
+int fs_orient2d(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c);
+bool fs_point_on_segment(const FS_Point2* p, const FS_Point2* a, const FS_Point2* b);
+bool fs_segments_intersect(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c, const FS_Point2* d);
+bool fs_bridge_visible(const FS_Point2* outer, uint32_t outer_count, uint32_t outer_idx, const FS_Point2* hole, uint32_t hole_count, uint32_t hole_idx);
+bool fs_find_outer_bridge_point(const FS_Point2* outer, uint32_t outer_count, const FS_Point2* hole, uint32_t hole_count, uint32_t hole_idx, uint32_t* out_outer_idx);
+bool fs_merge_hole_into_polygon(FS_Point2** io_poly, uint32_t* io_count, uint32_t* io_capacity, FS_Point2* hole, uint32_t hole_count, uint32_t hole_right_idx);
+bool fs_fill_points_reserve(FS_Point2** io_points, uint32_t* io_capacity, uint32_t required);
+bool fs_fill_points_push_unique(FS_Point2** io_points, uint32_t* io_count, uint32_t* io_capacity, float x, float y);
+void fs_fill_contour_clear(FS_FillContour* contour);
+bool fs_fill_contours_reserve(FS_FillContour** io_contours, uint32_t* io_capacity, uint32_t required);
+bool fs_contour_finalize(FS_FillContour* contour);
+bool fs_polygon_compact_in_place(FS_Point2* points, uint32_t* io_count);
 float fs_arc_resolve_delta(float start_angle, float end_angle, bool counterclockwise);
 void fs_path_state_borrow(const FS_InternalState* st, FS_PathStateBorrow* out_state);
 void fs_path_state_bind_path2d(FS_InternalState* st, const FS_Path2D* path);

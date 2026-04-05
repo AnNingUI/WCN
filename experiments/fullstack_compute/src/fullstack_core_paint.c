@@ -772,3 +772,576 @@ bool fs_draw_conic_gradient_rect_cells(
     }
     return true;
 }
+
+bool fs_emit_fill_triangle_fan(FS_Core* core, const FS_Point2* points, uint32_t count, uint32_t color) {
+    if (!core || !points || count < 3u) {
+        return true;
+    }
+    const FS_Point2 p0 = points[0];
+    for (uint32_t i = 1u; i + 1u < count; ++i) {
+        const FS_Point2 p1 = points[i];
+        const FS_Point2 p2 = points[i + 1u];
+        const float area2 =
+            (p1.x - p0.x) * (p2.y - p0.y) -
+            (p1.y - p0.y) * (p2.x - p0.x);
+        if (fabsf(area2) <= 1e-6f) {
+            continue;
+        }
+        if (!fs_cmd_triangle(core, p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, color)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool fs_fill_points_reserve(FS_Point2** io_points, uint32_t* io_capacity, uint32_t required) {
+    if (!io_points || !io_capacity) {
+        return false;
+    }
+    if (required <= *io_capacity) {
+        return true;
+    }
+    uint32_t new_cap = (*io_capacity > 0u) ? *io_capacity : 64u;
+    while (new_cap < required) {
+        if (new_cap > UINT32_MAX / 2u) {
+            new_cap = required;
+            break;
+        }
+        new_cap *= 2u;
+    }
+    FS_Point2* grown = (FS_Point2*)realloc(*io_points, (size_t)new_cap * sizeof(FS_Point2));
+    if (!grown) {
+        return false;
+    }
+    *io_points = grown;
+    *io_capacity = new_cap;
+    return true;
+}
+
+bool fs_fill_points_push_unique(
+    FS_Point2** io_points,
+    uint32_t* io_count,
+    uint32_t* io_capacity,
+    float x,
+    float y
+) {
+    if (!io_points || !io_count || !io_capacity) {
+        return false;
+    }
+    if (*io_count > 0u) {
+        const FS_Point2* prev = &(*io_points)[*io_count - 1u];
+        if (fabsf(prev->x - x) <= 1e-4f && fabsf(prev->y - y) <= 1e-4f) {
+            return true;
+        }
+    }
+    const uint32_t required = *io_count + 1u;
+    if (!fs_fill_points_reserve(io_points, io_capacity, required)) {
+        return false;
+    }
+    FS_Point2* dst = *io_points;
+    dst[*io_count].x = x;
+    dst[*io_count].y = y;
+    *io_count = required;
+    return true;
+}
+
+void fs_fill_contour_clear(FS_FillContour* contour) {
+    if (!contour) {
+        return;
+    }
+    free(contour->points);
+    contour->points = NULL;
+    contour->count = 0u;
+    contour->capacity = 0u;
+    contour->area2 = 0.0f;
+    contour->abs_area2 = 0.0f;
+    contour->parent = -1;
+    contour->depth = 0u;
+    contour->is_hole = false;
+    contour->owner_outer = -1;
+}
+
+bool fs_fill_contours_reserve(FS_FillContour** io_contours, uint32_t* io_capacity, uint32_t required) {
+    if (!io_contours || !io_capacity) {
+        return false;
+    }
+    if (required <= *io_capacity) {
+        return true;
+    }
+    uint32_t new_cap = (*io_capacity > 0u) ? *io_capacity : 8u;
+    while (new_cap < required) {
+        if (new_cap > UINT32_MAX / 2u) {
+            new_cap = required;
+            break;
+        }
+        new_cap *= 2u;
+    }
+    FS_FillContour* grown = (FS_FillContour*)realloc(*io_contours, (size_t)new_cap * sizeof(FS_FillContour));
+    if (!grown) {
+        return false;
+    }
+    if (new_cap > *io_capacity) {
+        memset(grown + *io_capacity, 0, (size_t)(new_cap - *io_capacity) * sizeof(FS_FillContour));
+    }
+    *io_contours = grown;
+    *io_capacity = new_cap;
+    return true;
+}
+
+float fs_polygon_signed_area2(const FS_Point2* points, uint32_t count) {
+    if (!points || count < 3u) {
+        return 0.0f;
+    }
+    float area2 = 0.0f;
+    for (uint32_t i = 0u; i < count; ++i) {
+        const FS_Point2* a = &points[i];
+        const FS_Point2* b = &points[(i + 1u) % count];
+        area2 += (a->x * b->y) - (b->x * a->y);
+    }
+    return area2;
+}
+
+float fs_cross2(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c) {
+    return (b->x - a->x) * (c->y - a->y) - (b->y - a->y) * (c->x - a->x);
+}
+
+bool fs_point_in_contour(const FS_Point2* points, uint32_t count, const FS_Point2* p) {
+    if (!points || !p || count < 3u) {
+        return false;
+    }
+    bool inside = false;
+    for (uint32_t i = 0u, j = count - 1u; i < count; j = i++) {
+        const FS_Point2* a = &points[i];
+        const FS_Point2* b = &points[j];
+        const bool intersects =
+            ((a->y > p->y) != (b->y > p->y)) &&
+            (p->x < (b->x - a->x) * (p->y - a->y) / ((b->y - a->y) + 1e-12f) + a->x);
+        if (intersects) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+void fs_points_reverse(FS_Point2* points, uint32_t count) {
+    if (!points || count < 2u) {
+        return;
+    }
+    uint32_t i = 0u;
+    uint32_t j = count - 1u;
+    while (i < j) {
+        FS_Point2 tmp = points[i];
+        points[i] = points[j];
+        points[j] = tmp;
+        ++i;
+        --j;
+    }
+}
+
+bool fs_contour_finalize(FS_FillContour* contour) {
+    if (!contour || contour->count < 3u) {
+        return false;
+    }
+    if (!fs_polygon_compact_in_place(contour->points, &contour->count)) {
+        return false;
+    }
+    contour->area2 = fs_polygon_signed_area2(contour->points, contour->count);
+    contour->abs_area2 = fabsf(contour->area2);
+    return contour->abs_area2 > 1e-5f;
+}
+
+bool fs_point_in_triangle_or_edge(
+    const FS_Point2* p,
+    const FS_Point2* a,
+    const FS_Point2* b,
+    const FS_Point2* c
+) {
+    const float e0 = fs_cross2(a, b, p);
+    const float e1 = fs_cross2(b, c, p);
+    const float e2 = fs_cross2(c, a, p);
+    const bool has_neg = (e0 < -1e-6f) || (e1 < -1e-6f) || (e2 < -1e-6f);
+    const bool has_pos = (e0 > 1e-6f) || (e1 > 1e-6f) || (e2 > 1e-6f);
+    return !(has_neg && has_pos);
+}
+
+uint32_t fs_find_rightmost_point(const FS_Point2* points, uint32_t count) {
+    uint32_t idx = 0u;
+    for (uint32_t i = 1u; i < count; ++i) {
+        if (points[i].x > points[idx].x + 1e-6f ||
+            (fabsf(points[i].x - points[idx].x) <= 1e-6f && points[i].y < points[idx].y)) {
+            idx = i;
+        }
+    }
+    return idx;
+}
+
+int fs_orient2d(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c) {
+    const float v = (b->x - a->x) * (c->y - a->y) - (b->y - a->y) * (c->x - a->x);
+    if (v > 1e-6f) {
+        return 1;
+    }
+    if (v < -1e-6f) {
+        return -1;
+    }
+    return 0;
+}
+
+bool fs_point_on_segment(const FS_Point2* p, const FS_Point2* a, const FS_Point2* b) {
+    if (!p || !a || !b) {
+        return false;
+    }
+    if (fabsf(fs_cross2(a, b, p)) > 1e-6f) {
+        return false;
+    }
+    const float min_x = fminf(a->x, b->x) - 1e-6f;
+    const float max_x = fmaxf(a->x, b->x) + 1e-6f;
+    const float min_y = fminf(a->y, b->y) - 1e-6f;
+    const float max_y = fmaxf(a->y, b->y) + 1e-6f;
+    return p->x >= min_x && p->x <= max_x && p->y >= min_y && p->y <= max_y;
+}
+
+bool fs_segments_intersect(const FS_Point2* a, const FS_Point2* b, const FS_Point2* c, const FS_Point2* d) {
+    const int o1 = fs_orient2d(a, b, c);
+    const int o2 = fs_orient2d(a, b, d);
+    const int o3 = fs_orient2d(c, d, a);
+    const int o4 = fs_orient2d(c, d, b);
+    if (o1 != o2 && o3 != o4) {
+        return true;
+    }
+    if (o1 == 0 && fs_point_on_segment(c, a, b)) {
+        return true;
+    }
+    if (o2 == 0 && fs_point_on_segment(d, a, b)) {
+        return true;
+    }
+    if (o3 == 0 && fs_point_on_segment(a, c, d)) {
+        return true;
+    }
+    if (o4 == 0 && fs_point_on_segment(b, c, d)) {
+        return true;
+    }
+    return false;
+}
+
+bool fs_bridge_visible(
+    const FS_Point2* outer,
+    uint32_t outer_count,
+    uint32_t outer_idx,
+    const FS_Point2* hole,
+    uint32_t hole_count,
+    uint32_t hole_idx
+) {
+    if (!outer || !hole || outer_count < 3u || hole_count < 3u || outer_idx >= outer_count || hole_idx >= hole_count) {
+        return false;
+    }
+
+    const FS_Point2* hp = &hole[hole_idx];
+    const FS_Point2* op = &outer[outer_idx];
+    const FS_Point2 seg_a = *hp;
+    const FS_Point2 seg_b = *op;
+
+    const FS_Point2 near_hole = {
+        .x = hp->x + (op->x - hp->x) * 1e-3f,
+        .y = hp->y + (op->y - hp->y) * 1e-3f
+    };
+    if (fs_point_in_contour(hole, hole_count, &near_hole)) {
+        return false;
+    }
+
+    const FS_Point2 mid = {
+        .x = 0.5f * (hp->x + op->x),
+        .y = 0.5f * (hp->y + op->y)
+    };
+    if (!fs_point_in_contour(outer, outer_count, &mid)) {
+        return false;
+    }
+
+    for (uint32_t i = 0u; i < outer_count; ++i) {
+        const uint32_t j = (i + 1u) % outer_count;
+        if (i == outer_idx || j == outer_idx) {
+            continue;
+        }
+        if (fs_segments_intersect(&seg_a, &seg_b, &outer[i], &outer[j])) {
+            return false;
+        }
+    }
+
+    for (uint32_t i = 0u; i < hole_count; ++i) {
+        const uint32_t j = (i + 1u) % hole_count;
+        if (i == hole_idx || j == hole_idx) {
+            continue;
+        }
+        if (fs_segments_intersect(&seg_a, &seg_b, &hole[i], &hole[j])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool fs_find_outer_bridge_point(
+    const FS_Point2* outer,
+    uint32_t outer_count,
+    const FS_Point2* hole,
+    uint32_t hole_count,
+    uint32_t hole_idx,
+    uint32_t* out_outer_idx
+) {
+    if (!outer || !hole || !out_outer_idx || outer_count < 3u || hole_count < 3u || hole_idx >= hole_count) {
+        return false;
+    }
+
+    const FS_Point2* hole_point = &hole[hole_idx];
+    const float hx = hole_point->x;
+    const float hy = hole_point->y;
+    const float eps = 1e-6f;
+
+    bool ray_hit = false;
+    float best_ix = 1e30f;
+    uint32_t best_ei = 0u;
+    uint32_t best_ej = 0u;
+    for (uint32_t i = 0u; i < outer_count; ++i) {
+        const uint32_t j = (i + 1u) % outer_count;
+        const FS_Point2* a = &outer[i];
+        const FS_Point2* b = &outer[j];
+        const float ay = a->y;
+        const float by = b->y;
+        if (fabsf(ay - by) <= eps) {
+            continue;
+        }
+        if ((hy < fminf(ay, by)) || (hy > fmaxf(ay, by))) {
+            continue;
+        }
+        const float t = (hy - ay) / (by - ay);
+        if (t < -eps || t > 1.0f + eps) {
+            continue;
+        }
+        const float ix = a->x + t * (b->x - a->x);
+        if (ix <= hx + eps) {
+            continue;
+        }
+        if (!ray_hit || ix < best_ix) {
+            ray_hit = true;
+            best_ix = ix;
+            best_ei = i;
+            best_ej = j;
+        }
+    }
+
+    if (ray_hit) {
+        uint32_t primary = best_ei;
+        uint32_t secondary = best_ej;
+        if (outer[best_ej].x > outer[best_ei].x) {
+            primary = best_ej;
+            secondary = best_ei;
+        }
+        if (fs_bridge_visible(outer, outer_count, primary, hole, hole_count, hole_idx)) {
+            *out_outer_idx = primary;
+            return true;
+        }
+        if (fs_bridge_visible(outer, outer_count, secondary, hole, hole_count, hole_idx)) {
+            *out_outer_idx = secondary;
+            return true;
+        }
+
+        uint32_t interval_best = 0u;
+        float interval_score = 1e30f;
+        bool interval_found = false;
+        for (uint32_t i = 0u; i < outer_count; ++i) {
+            if (outer[i].x < hx - eps || outer[i].x > best_ix + eps) {
+                continue;
+            }
+            if (!fs_bridge_visible(outer, outer_count, i, hole, hole_count, hole_idx)) {
+                continue;
+            }
+            const float dx = outer[i].x - hx;
+            const float dy = outer[i].y - hy;
+            const float score = dx * dx + dy * dy;
+            if (!interval_found || score < interval_score) {
+                interval_found = true;
+                interval_best = i;
+                interval_score = score;
+            }
+        }
+        if (interval_found) {
+            *out_outer_idx = interval_best;
+            return true;
+        }
+    }
+
+    uint32_t fallback_best = 0u;
+    float fallback_score = 1e30f;
+    bool fallback_right = false;
+
+    uint32_t visible_best = 0u;
+    float visible_score = 1e30f;
+    bool visible_right = false;
+    bool found_visible = false;
+
+    for (uint32_t i = 0u; i < outer_count; ++i) {
+        const float dx = outer[i].x - hole_point->x;
+        const float dy = outer[i].y - hole_point->y;
+        const float d2 = dx * dx + dy * dy;
+        const bool right = dx >= -1e-4f;
+
+        if (right) {
+            if (!fallback_right || d2 < fallback_score) {
+                fallback_right = true;
+                fallback_best = i;
+                fallback_score = d2;
+            }
+        } else if (!fallback_right && d2 < fallback_score) {
+            fallback_best = i;
+            fallback_score = d2;
+        }
+
+        if (!fs_bridge_visible(outer, outer_count, i, hole, hole_count, hole_idx)) {
+            continue;
+        }
+        if (right) {
+            if (!visible_right || d2 < visible_score) {
+                visible_right = true;
+                visible_best = i;
+                visible_score = d2;
+                found_visible = true;
+            }
+        } else if (!visible_right && (!found_visible || d2 < visible_score)) {
+            visible_best = i;
+            visible_score = d2;
+            found_visible = true;
+        }
+    }
+
+    *out_outer_idx = found_visible ? visible_best : fallback_best;
+    return true;
+}
+
+bool fs_merge_hole_into_polygon(
+    FS_Point2** io_poly,
+    uint32_t* io_count,
+    uint32_t* io_capacity,
+    FS_Point2* hole,
+    uint32_t hole_count,
+    uint32_t hole_right_idx
+) {
+    if (!io_poly || !io_count || !io_capacity || !hole || hole_count < 3u || *io_count < 3u) {
+        return false;
+    }
+    if (hole_right_idx >= hole_count) {
+        return false;
+    }
+    uint32_t oi = 0u;
+    if (!fs_find_outer_bridge_point(*io_poly, *io_count, hole, hole_count, hole_right_idx, &oi)) {
+        return false;
+    }
+
+    const uint32_t old_count = *io_count;
+    const uint32_t required = old_count + hole_count + 2u;
+    FS_Point2* merged = NULL;
+    uint32_t merged_capacity = 0u;
+    if (!fs_fill_points_reserve(&merged, &merged_capacity, required)) {
+        return false;
+    }
+
+    uint32_t out_count = 0u;
+    for (uint32_t i = 0u; i <= oi; ++i) {
+        merged[out_count++] = (*io_poly)[i];
+    }
+    for (uint32_t s = 0u; s < hole_count; ++s) {
+        const uint32_t hi = (hole_right_idx + s) % hole_count;
+        merged[out_count++] = hole[hi];
+    }
+    merged[out_count++] = hole[hole_right_idx];
+    for (uint32_t i = oi; i < old_count; ++i) {
+        merged[out_count++] = (*io_poly)[i];
+    }
+
+    free(*io_poly);
+    *io_poly = merged;
+    *io_count = out_count;
+    *io_capacity = merged_capacity;
+    return true;
+}
+
+bool fs_emit_fill_triangles_ear_clip(FS_Core* core, const FS_Point2* points, uint32_t count, uint32_t color, bool allow_fan_fallback) {
+    if (!core || !points || count < 3u) {
+        return true;
+    }
+
+    uint32_t* indices = (uint32_t*)malloc((size_t)count * sizeof(uint32_t));
+    if (!indices) {
+        return false;
+    }
+    for (uint32_t i = 0u; i < count; ++i) {
+        indices[i] = i;
+    }
+
+    uint32_t remaining = count;
+    const bool ccw = fs_polygon_signed_area2(points, count) >= 0.0f;
+    bool ok = true;
+    uint32_t guard = 0u;
+    const uint32_t guard_max = count * count * 2u + 16u;
+
+    while (ok && remaining > 3u && guard < guard_max) {
+        bool ear_found = false;
+        for (uint32_t i = 0u; i < remaining; ++i) {
+            const uint32_t ip = (i + remaining - 1u) % remaining;
+            const uint32_t in = (i + 1u) % remaining;
+            const FS_Point2* a = &points[indices[ip]];
+            const FS_Point2* b = &points[indices[i]];
+            const FS_Point2* c = &points[indices[in]];
+            const float cross = fs_cross2(a, b, c);
+            const bool is_convex = ccw ? (cross > 1e-6f) : (cross < -1e-6f);
+            if (!is_convex) {
+                continue;
+            }
+
+            bool contains_other = false;
+            for (uint32_t j = 0u; j < remaining; ++j) {
+                if (j == ip || j == i || j == in) {
+                    continue;
+                }
+                const FS_Point2* p = &points[indices[j]];
+                if (fs_point_in_triangle_or_edge(p, a, b, c)) {
+                    contains_other = true;
+                    break;
+                }
+            }
+            if (contains_other) {
+                continue;
+            }
+
+            if (!fs_cmd_triangle(core, a->x, a->y, b->x, b->y, c->x, c->y, color)) {
+                ok = false;
+                break;
+            }
+
+            if (i + 1u < remaining) {
+                memmove(&indices[i], &indices[i + 1u], (size_t)(remaining - i - 1u) * sizeof(uint32_t));
+            }
+            remaining -= 1u;
+            ear_found = true;
+            break;
+        }
+
+        if (!ear_found) {
+            break;
+        }
+        guard += 1u;
+    }
+
+    if (ok && remaining == 3u) {
+        const FS_Point2* a = &points[indices[0]];
+        const FS_Point2* b = &points[indices[1]];
+        const FS_Point2* c = &points[indices[2]];
+        if (fabsf(fs_cross2(a, b, c)) > 1e-6f) {
+            ok = fs_cmd_triangle(core, a->x, a->y, b->x, b->y, c->x, c->y, color);
+        }
+    } else if (ok && remaining > 3u && allow_fan_fallback) {
+        ok = fs_emit_fill_triangle_fan(core, points, count, color);
+    } else if (ok && remaining > 3u) {
+        ok = false;
+    }
+
+    free(indices);
+    return ok;
+}
