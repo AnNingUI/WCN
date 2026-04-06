@@ -1011,6 +1011,46 @@ static void* fs_stb_load_font_file(const char* path) {
     return handle;
 }
 
+static void* fs_stb_load_font_memory(const uint8_t* data, size_t size) {
+    if (!data || size == 0) {
+        return NULL;
+    }
+    uint8_t* bytes = (uint8_t*)malloc(size);
+    if (!bytes) {
+        return NULL;
+    }
+    memcpy(bytes, data, size);
+
+    FS_StbFontHandle* handle = (FS_StbFontHandle*)calloc(1, sizeof(FS_StbFontHandle));
+    if (!handle) {
+        free(bytes);
+        return NULL;
+    }
+    handle->bytes = bytes;
+    handle->bytes_size = size;
+    {
+        const char* dbg = getenv("FS_STB_CBDT_CACHE_DEBUG");
+        handle->cbdt_cache_debug = (dbg && dbg[0] != '\0' && dbg[0] != '0');
+    }
+    handle->has_stbtt = stbtt_InitFont(&handle->info, bytes, 0) != 0;
+    handle->prefer_bitmap_rgba = false;
+    if (handle->has_stbtt) {
+        const size_t face_off = (size_t)handle->info.fontstart;
+        const uint8_t* face_bytes = (face_off < size) ? (bytes + face_off) : bytes;
+        const size_t face_size = (face_off < size) ? (size - face_off) : size;
+        handle->has_cbdt = fs_stb_cbdt_init(&handle->cbdt, face_bytes, (size_t)face_size, 128u);
+        (void)fs_stb_parse_colr_cpal(handle);
+    } else {
+        handle->has_cbdt = fs_stb_cbdt_init(&handle->cbdt, bytes, size, 128u);
+    }
+    if (!handle->has_stbtt && !handle->has_cbdt) {
+        free(bytes);
+        free(handle);
+        return NULL;
+    }
+    return handle;
+}
+
 static void fs_stb_destroy_font(void* font_handle) {
     FS_StbFontHandle* handle = (FS_StbFontHandle*)font_handle;
     if (!handle) {
@@ -1345,6 +1385,7 @@ static void fs_stb_free_glyph_pixels(uint8_t* pixels) {
 static const FS_FontBackend g_stb_font_backend = {
     .name = "stb_truetype",
     .load_font_file = fs_stb_load_font_file,
+    .load_font_memory = fs_stb_load_font_memory,
     .destroy_font = fs_stb_destroy_font,
     .get_glyph_sdf = fs_stb_get_glyph_sdf,
     .get_glyph_sdf_by_index = fs_stb_get_glyph_sdf_by_index,

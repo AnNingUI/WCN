@@ -8,6 +8,7 @@
 #include <webgpu/wgpu.h>
 
 #include "../include/fullstack_core.h"
+#include "../include/fullstack_effects.h"
 
 typedef struct FS_GlfwBackend {
     GLFWwindow* window;

@@ -64,6 +64,8 @@ static void fs_style_snapshot_dispose(FS_StyleSnapshot* snap) {
     snap->dash_segments = NULL;
     snap->dash_count = 0u;
     snap->dash_offset = 0.0f;
+    fs_filter_chain_destroy(snap->filter_chain);
+    snap->filter_chain = NULL;
 }
 
 bool fs_style_snapshot_capture(FS_StyleSnapshot* dst, const FS_InternalState* st) {
@@ -117,6 +119,7 @@ bool fs_style_snapshot_capture(FS_StyleSnapshot* dst, const FS_InternalState* st
         memcpy(dst->dash_segments, st->style_dash_segments, (size_t)st->style_dash_count * sizeof(float));
         dst->dash_count = st->style_dash_count;
     }
+    dst->filter_chain = fs_filter_chain_clone(st->filter_chain);
     return true;
 }
 
@@ -165,6 +168,9 @@ void fs_style_snapshot_apply(FS_InternalState* st, FS_StyleSnapshot* src) {
     src->dash_segments = NULL;
     src->dash_count = 0u;
     src->dash_offset = 0.0f;
+    fs_filter_chain_destroy(st->filter_chain);
+    st->filter_chain = src->filter_chain;
+    src->filter_chain = NULL;
 }
 
 void fs_state_snapshot_dispose(FS_StateSnapshot* snap) {
@@ -234,6 +240,8 @@ void fs_style_reset_state(FS_InternalState* st) {
     st->style_dash_segments = NULL;
     st->style_dash_count = 0u;
     st->style_dash_offset = 0.0f;
+    fs_filter_chain_destroy(st->filter_chain);
+    st->filter_chain = NULL;
 }
 
 bool fs_style_has_dash(const FS_InternalState* st) {

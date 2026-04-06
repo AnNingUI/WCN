@@ -20,7 +20,7 @@ bool fs_recreate_clip_compute_bind_group(FS_Core* core) {
     };
     WGPUBindGroupDescriptor desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute Bind Group",
+        .label = { .data = "FS Clip Compute Bind Group", .length = 26 },
         .layout = core->clip_compute_bgl,
         .entryCount = 4,
         .entries = entries
@@ -56,7 +56,7 @@ WGPUBindGroup fs_create_clip_compute_bind_group_range(
     };
     WGPUBindGroupDescriptor desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute Bind Group Range",
+        .label = { .data = "FS Clip Compute Bind Group Range", .length = 32 },
         .layout = core->clip_compute_bgl,
         .entryCount = 4,
         .entries = entries
@@ -99,7 +99,7 @@ WGPUBindGroup fs_create_clip_edge_transform_bind_group_range(
     };
     WGPUBindGroupDescriptor desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Edge Transform Bind Group Range",
+        .label = { .data = "FS Clip Edge Transform Bind Group Range", .length = 39 },
         .layout = core->clip_edge_transform_bgl,
         .entryCount = 4,
         .entries = entries

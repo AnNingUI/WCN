@@ -286,6 +286,8 @@ float fs_style_get_shadow_blur(const FS_Core* core);
 bool fs_style_set_shadow_offset(FS_Core* core, float offset_x, float offset_y);
 float fs_style_get_shadow_offset_x(const FS_Core* core);
 float fs_style_get_shadow_offset_y(const FS_Core* core);
+bool fs_style_set_filter(FS_Core* core, const char* filter_string);
+bool fs_style_get_filter(const FS_Core* core, char* buffer, size_t buffer_size);
 bool fs_style_set_text_align(FS_Core* core, FS_TextAlign align);
 FS_TextAlign fs_style_get_text_align(const FS_Core* core);
 bool fs_style_set_text_baseline(FS_Core* core, FS_TextBaseline baseline);
@@ -462,6 +464,7 @@ bool fs_core_get_canvas_image_data_rgba8(
 );
 
 bool fs_core_load_font_file(FS_Core* core, const char* path);
+bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size);
 bool fs_core_register_image_font(
     FS_Core* core,
     const FS_ImageFontSequence* sequences,

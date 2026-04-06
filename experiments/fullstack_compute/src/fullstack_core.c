@@ -2122,7 +2122,7 @@ static bool fs_recreate_compute_bind_group(FS_Core* core) {
     };
     WGPUBindGroupDescriptor desc = {
         .nextInChain = NULL,
-        .label = "FS Compute Bind Group",
+        .label = { .data = "FS Compute Bind Group", .length = 21 },
         .layout = core->compute_bgl,
         .entryCount = 5,
         .entries = entries
@@ -2155,7 +2155,7 @@ static bool fs_create_image_atlas(FS_Core* core) {
 
     WGPUTextureDescriptor tex_desc = {
         .nextInChain = NULL,
-        .label = "FS Image Atlas",
+        .label = { .data = "FS Image Atlas", .length = 14 },
         .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
         .dimension = WGPUTextureDimension_2D,
         .size = {core->image_atlas_width, core->image_atlas_height, core->image_atlas_layers},
@@ -2172,7 +2172,7 @@ static bool fs_create_image_atlas(FS_Core* core) {
 
     WGPUTextureViewDescriptor view_desc = {
         .nextInChain = NULL,
-        .label = "FS Image Atlas View",
+        .label = { .data = "FS Image Atlas View", .length = 19 },
         .format = WGPUTextureFormat_RGBA8Unorm,
         .dimension = WGPUTextureViewDimension_2DArray,
         .baseMipLevel = 0,
@@ -2188,7 +2188,7 @@ static bool fs_create_image_atlas(FS_Core* core) {
 
     WGPUSamplerDescriptor sampler_desc = {
         .nextInChain = NULL,
-        .label = "FS Image Atlas Sampler",
+        .label = { .data = "FS Image Atlas Sampler", .length = 22 },
         .addressModeU = WGPUAddressMode_ClampToEdge,
         .addressModeV = WGPUAddressMode_ClampToEdge,
         .addressModeW = WGPUAddressMode_ClampToEdge,
@@ -2220,7 +2220,7 @@ static bool fs_create_glyph_atlas(FS_Core* core) {
 
     WGPUTextureDescriptor tex_desc = {
         .nextInChain = NULL,
-        .label = "FS Glyph Atlas",
+        .label = { .data = "FS Glyph Atlas", .length = 14 },
         .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
         .dimension = WGPUTextureDimension_2D,
         .size = {core->glyph_atlas_width, core->glyph_atlas_height, 1},
@@ -2237,7 +2237,7 @@ static bool fs_create_glyph_atlas(FS_Core* core) {
 
     WGPUTextureViewDescriptor view_desc = {
         .nextInChain = NULL,
-        .label = "FS Glyph Atlas View",
+        .label = { .data = "FS Glyph Atlas View", .length = 19 },
         .format = WGPUTextureFormat_RGBA8Unorm,
         .dimension = WGPUTextureViewDimension_2D,
         .baseMipLevel = 0,
@@ -2253,7 +2253,7 @@ static bool fs_create_glyph_atlas(FS_Core* core) {
 
     WGPUSamplerDescriptor sampler_desc = {
         .nextInChain = NULL,
-        .label = "FS Glyph Atlas Sampler",
+        .label = { .data = "FS Glyph Atlas Sampler", .length = 22 },
         .addressModeU = WGPUAddressMode_ClampToEdge,
         .addressModeV = WGPUAddressMode_ClampToEdge,
         .addressModeW = WGPUAddressMode_ClampToEdge,
@@ -2326,7 +2326,7 @@ static bool fs_create_clip_mask(FS_Core* core) {
 
     WGPUTextureDescriptor tex_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Mask",
+        .label = { .data = "FS Clip Mask", .length = 12 },
         .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopyDst,
         .dimension = WGPUTextureDimension_2D,
         .size = {core->clip_mask_width, core->clip_mask_height, core->clip_mask_layers},
@@ -2343,7 +2343,7 @@ static bool fs_create_clip_mask(FS_Core* core) {
 
     WGPUTextureViewDescriptor view_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Mask View",
+        .label = { .data = "FS Clip Mask View", .length = 17 },
         .format = WGPUTextureFormat_RGBA8Unorm,
         .dimension = WGPUTextureViewDimension_2DArray,
         .baseMipLevel = 0,
@@ -2359,7 +2359,7 @@ static bool fs_create_clip_mask(FS_Core* core) {
 
     WGPUSamplerDescriptor sampler_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Mask Sampler",
+        .label = { .data = "FS Clip Mask Sampler", .length = 20 },
         .addressModeU = WGPUAddressMode_ClampToEdge,
         .addressModeV = WGPUAddressMode_ClampToEdge,
         .addressModeW = WGPUAddressMode_ClampToEdge,
@@ -2398,7 +2398,7 @@ static bool fs_create_msaa_color_target(FS_Core* core) {
     const uint32_t tex_h = core->height > 0u ? core->height : 1u;
     WGPUTextureDescriptor tex_desc = {
         .nextInChain = NULL,
-        .label = "FS MSAA Color",
+        .label = { .data = "FS MSAA Color", .length = 13 },
         .usage = WGPUTextureUsage_RenderAttachment,
         .dimension = WGPUTextureDimension_2D,
         .size = {tex_w, tex_h, 1u},
@@ -2414,7 +2414,7 @@ static bool fs_create_msaa_color_target(FS_Core* core) {
     }
     WGPUTextureViewDescriptor view_desc = {
         .nextInChain = NULL,
-        .label = "FS MSAA Color View",
+        .label = { .data = "FS MSAA Color View", .length = 18 },
         .format = core->target_format,
         .dimension = WGPUTextureViewDimension_2D,
         .baseMipLevel = 0u,
@@ -2469,7 +2469,7 @@ static bool fs_recreate_render_bind_group(FS_Core* core) {
     };
     WGPUBindGroupDescriptor desc = {
         .nextInChain = NULL,
-        .label = "FS Render Bind Group",
+        .label = { .data = "FS Render Bind Group", .length = 20 },
         .layout = core->render_bgl,
         .entryCount = 9,
         .entries = entries
@@ -2552,7 +2552,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     };
     WGPUBindGroupLayoutDescriptor compute_bgl_desc = {
         .nextInChain = NULL,
-        .label = "FS Compute BGL",
+        .label = { .data = "FS Compute BGL", .length = 14 },
         .entryCount = 5,
         .entries = compute_entries
     };
@@ -2644,7 +2644,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     };
     WGPUBindGroupLayoutDescriptor render_bgl_desc = {
         .nextInChain = NULL,
-        .label = "FS Render BGL",
+        .label = { .data = "FS Render BGL", .length = 13 },
         .entryCount = 9,
         .entries = render_entries
     };
@@ -2660,7 +2660,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     WGPUStringView compute_entry = {.data = "main", .length = 4};
     WGPUPipelineLayoutDescriptor compute_layout_desc = {
         .nextInChain = NULL,
-        .label = "FS Compute Pipeline Layout",
+        .label = { .data = "FS Compute Pipeline Layout", .length = 26 },
         .bindGroupLayoutCount = 1,
         .bindGroupLayouts = &core->compute_bgl
     };
@@ -2674,7 +2674,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     }
     WGPUComputePipelineDescriptor compute_pipe_desc = {
         .nextInChain = NULL,
-        .label = "FS Compute Pipeline",
+        .label = { .data = "FS Compute Pipeline", .length = 19 },
         .layout = compute_layout,
         .compute = {
             .module = compute_shader,
@@ -2726,7 +2726,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     };
     WGPUBindGroupLayoutDescriptor clip_bgl_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute BGL",
+        .label = { .data = "FS Clip Compute BGL", .length = 19 },
         .entryCount = 4,
         .entries = clip_entries
     };
@@ -2740,7 +2740,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     }
     WGPUPipelineLayoutDescriptor clip_layout_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute Pipeline Layout",
+        .label = { .data = "FS Clip Compute Pipeline Layout", .length = 31 },
         .bindGroupLayoutCount = 1,
         .bindGroupLayouts = &core->clip_compute_bgl
     };
@@ -2754,7 +2754,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     }
     WGPUComputePipelineDescriptor clip_pipe_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute Pipeline",
+        .label = { .data = "FS Clip Compute Pipeline", .length = 24 },
         .layout = clip_layout,
         .compute = {
             .module = clip_shader,
@@ -2806,7 +2806,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     };
     WGPUBindGroupLayoutDescriptor clip_edge_transform_bgl_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Edge Transform BGL",
+        .label = { .data = "FS Clip Edge Transform BGL", .length = 26 },
         .entryCount = 4,
         .entries = clip_edge_transform_entries
     };
@@ -2820,7 +2820,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     }
     WGPUPipelineLayoutDescriptor clip_edge_transform_layout_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Edge Transform Pipeline Layout",
+        .label = { .data = "FS Clip Edge Transform Pipeline Layout", .length = 38 },
         .bindGroupLayoutCount = 1,
         .bindGroupLayouts = &core->clip_edge_transform_bgl
     };
@@ -2835,7 +2835,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     }
     WGPUComputePipelineDescriptor clip_edge_transform_pipe_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Edge Transform Pipeline",
+        .label = { .data = "FS Clip Edge Transform Pipeline", .length = 31 },
         .layout = clip_edge_transform_layout,
         .compute = {
             .module = clip_edge_transform_shader,
@@ -2878,7 +2878,9 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
         .buffers = &vb_layout
     };
     WGPUColorTargetState target = {
-        .format = core->target_format,
+        // Use RGBA8Unorm to match scene_texture (always used as render target).
+        // presentation_pipeline handles canvas swap chain format (BGRA8UnormSrgb).
+        .format = WGPUTextureFormat_RGBA8Unorm,
         .blend = NULL,
         .writeMask = WGPUColorWriteMask_All
     };
@@ -2894,7 +2896,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
 
     WGPUPipelineLayoutDescriptor render_layout_desc = {
         .nextInChain = NULL,
-        .label = "FS Render Pipeline Layout",
+        .label = { .data = "FS Render Pipeline Layout", .length = 25 },
         .bindGroupLayoutCount = 1,
         .bindGroupLayouts = &core->render_bgl
     };
@@ -2909,10 +2911,10 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     for (uint32_t i = 0u; i < FS_RENDER_PIPELINE_COUNT; ++i) {
         WGPUBlendState blend = fs_make_blend_state_for_pipeline(i);
         target.blend = &blend;
-        const uint32_t sample_count = core->render_sample_count > 0u ? core->render_sample_count : 1u;
+        const uint32_t sample_count = 1u;  // scene_texture has sampleCount=1
         WGPURenderPipelineDescriptor render_pipe_desc = {
             .nextInChain = NULL,
-            .label = "FS Render Pipeline",
+            .label = { .data = "FS Render Pipeline", .length = 18 },
             .layout = render_layout,
             .vertex = vertex_state,
             .primitive = {
@@ -3561,6 +3563,20 @@ void fs_core_destroy(FS_Core* core) {
     free(core);
 }
 
+struct FS_EffectResources* fs_core_get_effects_resources(FS_Core* core) {
+    if (!core) {
+        return NULL;
+    }
+    return core->effects;
+}
+
+void fs_core_set_effects_resources(FS_Core* core, struct FS_EffectResources* effects) {
+    if (!core) {
+        return;
+    }
+    core->effects = effects;
+}
+
 bool fs_core_init(
     FS_Core* core,
     WGPUDevice device,
@@ -3680,8 +3696,12 @@ bool fs_core_init(
         memset(core->canvas_shadow_rgba, 0, clear_size);
     }
     core->canvas_shadow_serial = 0u;
-    core->canvas_shadow_serial = 0u;
     core->canvas_image_data_handle_valid = 0u;
+    // Initialize effects subsystem (Gaussian blur, filter pipeline, shadow)
+    if (!fs_effects_init(core)) {
+        fs_release_resources(core);
+        return false;
+    }
     return true;
 }
 
@@ -3734,6 +3754,7 @@ void fs_core_shutdown(FS_Core* core) {
     if (!core) {
         return;
     }
+    fs_effects_destroy(core);
     fs_release_resources(core);
 }
 
@@ -3803,6 +3824,10 @@ void fs_core_resize(FS_Core* core, uint32_t width, uint32_t height) {
             }
         }
     } else {
+        fs_mark_context_lost(core);
+    }
+    // Resize effects subsystem textures and recreate presentation pipeline
+    if (!fs_effects_resize(core, core->width, core->height)) {
         fs_mark_context_lost(core);
     }
     fs_clip_reset_state(st);
@@ -4075,7 +4100,7 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
 
     WGPUComputePassDescriptor edge_transform_pass_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Edge Transform Pass",
+        .label = { .data = "FS Clip Edge Transform Pass", .length = 27 },
         .timestampWrites = NULL
     };
     WGPUComputePassEncoder edge_transform_pass =
@@ -4131,7 +4156,7 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
 
     WGPUComputePassDescriptor clip_pass_desc = {
         .nextInChain = NULL,
-        .label = "FS Clip Compute Pass",
+        .label = { .data = "FS Clip Compute Pass", .length = 20 },
         .timestampWrites = NULL
     };
     WGPUComputePassEncoder clip_pass = wgpuCommandEncoderBeginComputePass(encoder, &clip_pass_desc);
@@ -4298,7 +4323,7 @@ bool fs_core_encode(
     if (core->command_count > 0u) {
         WGPUComputePassDescriptor compute_desc = {
             .nextInChain = NULL,
-            .label = "FS Compute Pass",
+            .label = { .data = "FS Compute Pass", .length = 15 },
             .timestampWrites = NULL
         };
         WGPUComputePassEncoder compute_pass = wgpuCommandEncoderBeginComputePass(encoder, &compute_desc);
@@ -4315,22 +4340,32 @@ bool fs_core_encode(
         wgpuComputePassEncoderEnd(compute_pass);
     }
 
-    WGPUTextureView color_view = target_view;
-    WGPUTextureView resolve_view = NULL;
-    if (core->render_sample_count > 1u && core->msaa_color_view) {
-        color_view = core->msaa_color_view;
-        resolve_view = target_view;
+    // Always render to scene_texture (RGBA8Unorm) — the main render pipeline is created
+    // with scene_texture's format. Use presentation_pipeline to copy to canvas swap chain.
+    FS_EffectResources* fx = fs_core_get_effects_resources(core);
+    FS_FilterChain* active_chain = NULL;
+    bool effects_active = false;
+    if (fx && fx->enabled && fx->scene_view) {
+        FS_InternalState* st = fs_state(core);
+        if (st && st->filter_chain && st->filter_chain->head) {
+            active_chain = st->filter_chain;
+            effects_active = true;
+        }
     }
+    (void)effects_active;
+
+    // Render to scene_texture (RGBA8Unorm) always — matches main pipeline format
+    WGPUTextureView scene_view = fx ? fx->scene_view : NULL;
     WGPURenderPassColorAttachment color = {
-        .view = color_view,
-        .resolveTarget = resolve_view,
+        .view = scene_view ? scene_view : target_view,
+        .resolveTarget = NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
         .clearValue = {.r = clear_r, .g = clear_g, .b = clear_b, .a = clear_a}
     };
     WGPURenderPassDescriptor render_desc = {
         .nextInChain = NULL,
-        .label = "FS Render Pass",
+        .label = { .data = "FS Render Pass", .length = 14 },
         .colorAttachmentCount = 1,
         .colorAttachments = &color,
         .depthStencilAttachment = NULL,
@@ -4343,6 +4378,7 @@ bool fs_core_encode(
         fs_mark_context_lost(core);
         return false;
     }
+    wgpuRenderPassEncoderSetViewport(pass, 0.0f, 0.0f, (float)core->width, (float)core->height, 0.0f, 1.0f);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, core->render_bg, 0, NULL);
     if (core->command_count > 0u) {
         const uint64_t draw_vertices = (uint64_t)(core->command_count * 6u);
@@ -4377,6 +4413,73 @@ bool fs_core_encode(
         }
     }
     wgpuRenderPassEncoderEnd(pass);
+
+    // Execute filter pipeline if effects are active
+    // Filter pipeline reads from scene_texture (RGBA8Unorm) -> applies filters via ping-pong -> writes back to scene_texture
+    // Then presentation_pipeline copies scene_texture -> canvas (with format conversion)
+    if (effects_active && active_chain && fx && fx->scene_texture) {
+        if (!fs_filter_chain_execute(core, encoder, fx->scene_texture, target_view, active_chain)) {
+            fprintf(stderr, "[FS] Filter chain execution failed\n");
+        }
+        // Present the filtered result: presentation_pipeline samples scene_texture -> canvas
+        if (fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
+            WGPURenderPassColorAttachment pres_att = {
+                .view = target_view,
+                .resolveTarget = NULL,
+                .loadOp = WGPULoadOp_Clear,
+                .storeOp = WGPUStoreOp_Store,
+                .clearValue = {0.0f, 0.0f, 0.0f, 0.0f}
+            };
+            WGPURenderPassDescriptor pres_desc = {
+                .nextInChain = NULL,
+                .label = { .data = "FS Presentation Copy", .length = 20 },
+                .colorAttachmentCount = 1,
+                .colorAttachments = &pres_att,
+                .depthStencilAttachment = NULL,
+                .occlusionQuerySet = NULL,
+                .timestampWrites = NULL
+            };
+            WGPURenderPassEncoder pres_pass = wgpuCommandEncoderBeginRenderPass(encoder, &pres_desc);
+            if (pres_pass) {
+                wgpuRenderPassEncoderSetViewport(pres_pass, 0.0f, 0.0f, (float)core->width, (float)core->height, 0.0f, 1.0f);
+                wgpuRenderPassEncoderSetPipeline(pres_pass, fx->presentation_pipeline);
+                wgpuRenderPassEncoderSetBindGroup(pres_pass, 0, fx->presentation_scene_bg, 0, NULL);
+                wgpuRenderPassEncoderDraw(pres_pass, 3, 1, 0, 0);
+                wgpuRenderPassEncoderEnd(pres_pass);
+                wgpuRenderPassEncoderRelease(pres_pass);
+            }
+        }
+    } else {
+        // No effects: copy scene_texture -> canvas using presentation_pipeline
+        if (fx && fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
+            WGPURenderPassColorAttachment pres_att = {
+                .view = target_view,
+                .resolveTarget = NULL,
+                .loadOp = WGPULoadOp_Clear,
+                .storeOp = WGPUStoreOp_Store,
+                .clearValue = {0.0f, 0.0f, 0.0f, 0.0f}
+            };
+            WGPURenderPassDescriptor pres_desc = {
+                .nextInChain = NULL,
+                .label = { .data = "FS Presentation Copy", .length = 20 },
+                .colorAttachmentCount = 1,
+                .colorAttachments = &pres_att,
+                .depthStencilAttachment = NULL,
+                .occlusionQuerySet = NULL,
+                .timestampWrites = NULL
+            };
+            WGPURenderPassEncoder pres_pass = wgpuCommandEncoderBeginRenderPass(encoder, &pres_desc);
+            if (pres_pass) {
+                wgpuRenderPassEncoderSetViewport(pres_pass, 0.0f, 0.0f, (float)core->width, (float)core->height, 0.0f, 1.0f);
+                wgpuRenderPassEncoderSetPipeline(pres_pass, fx->presentation_pipeline);
+                wgpuRenderPassEncoderSetBindGroup(pres_pass, 0, fx->presentation_scene_bg, 0, NULL);
+                wgpuRenderPassEncoderDraw(pres_pass, 3, 1, 0, 0);
+                wgpuRenderPassEncoderEnd(pres_pass);
+                wgpuRenderPassEncoderRelease(pres_pass);
+            }
+        }
+    }
+
     if (target_texture) {
         if (!fs_encode_canvas_readback_copy(core, encoder, target_texture)) {
             core->canvas_shadow_serial = 0u;
@@ -4785,6 +4888,28 @@ bool fs_core_load_font_file(FS_Core* core, const char* path) {
         return false;
     }
     void* loaded = st->font_backend->load_font_file(path);
+    if (!loaded) {
+        return false;
+    }
+    st->fonts[st->font_count++] = loaded;
+    return true;
+}
+
+bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size) {
+    if (!core || !data || size == 0) {
+        return false;
+    }
+    FS_InternalState* st = fs_state(core);
+    if (!st) {
+        return false;
+    }
+    if (!st->font_backend || !st->font_backend->load_font_memory) {
+        return false;
+    }
+    if (st->font_count >= FS_MAX_FONT_FALLBACKS) {
+        return false;
+    }
+    void* loaded = st->font_backend->load_font_memory(data, size);
     if (!loaded) {
         return false;
     }

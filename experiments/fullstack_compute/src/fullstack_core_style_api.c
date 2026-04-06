@@ -1,4 +1,5 @@
 #include "fullstack_core_private.h"
+#include "fullstack_filters.h"
 #include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -752,6 +753,40 @@ bool fs_style_get_dash(
         return true;
     }
     const uint32_t copy_count = (count < max_segments) ? count : max_segments;
-    memcpy(out_segments, st->style_dash_segments, (size_t)copy_count * sizeof(float));
     return true;
+}
+
+bool fs_style_set_filter(FS_Core* core, const char* filter_string) {
+    FS_InternalState* st = fs_state(core);
+    if (!st) {
+        return false;
+    }
+    // Destroy existing chain
+    fs_filter_chain_destroy(st->filter_chain);
+    st->filter_chain = NULL;
+
+    // Parse new filter string (returns empty chain for "none" or empty string)
+    if (!filter_string || filter_string[0] == '\0' ||
+        fs_filter_string_is_none(filter_string)) {
+        return true;
+    }
+
+    st->filter_chain = fs_filter_chain_parse(filter_string);
+    return st->filter_chain != NULL;
+}
+
+bool fs_style_get_filter(const FS_Core* core, char* buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0) {
+        return false;
+    }
+    buffer[0] = '\0';
+    const FS_InternalState* st = (const FS_InternalState*)(core ? core->internal_state : NULL);
+    if (!st || !st->filter_chain || !fs_filter_chain_get_head(st->filter_chain)) {
+        // Return "none" if no filter
+        if (buffer_size >= 5) {
+            memcpy(buffer, "none", 5);
+        }
+        return true;
+    }
+    return fs_filter_chain_to_string(st->filter_chain, buffer, buffer_size);
 }

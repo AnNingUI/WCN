@@ -1580,4 +1580,212 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 );
 
+// ============================================================================
+// Fullstack Effects WGSL Shaders
+// ============================================================================
+
+// Gaussian Blur: H + V compute shaders (separably applied to shadow/texture)
+static const char* FS_EFFECTS_GAUSSIAN_BLUR_WGSL = WGSL_CODE(
+struct GaussianUniforms {
+    kernel_size: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
+
+@group(0) @binding(0) var gaussian_input: texture_2d<f32>;
+@group(0) @binding(1) var gaussian_output: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<uniform> gaussian_uniforms: GaussianUniforms;
+@group(0) @binding(3) var<storage, read> gaussian_weights: array<f32>;
+
+@compute @workgroup_size(256, 1, 1)
+fn gaussian_blur_h(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let tex_size = textureDimensions(gaussian_input);
+    let coord = vec2<i32>(gid.xy);
+    if (coord.x >= i32(tex_size.x) || coord.y >= i32(tex_size.y)) { return; }
+    var result = vec4<f32>(0.0);
+    let radius = i32(gaussian_uniforms.kernel_size) / 2;
+    for (var i: i32 = 0; i < i32(gaussian_uniforms.kernel_size); i = i + 1) {
+        let offset_x = i - radius;
+        let sc = clamp(coord + vec2<i32>(offset_x, 0), vec2<i32>(0), vec2<i32>(tex_size) - vec2<i32>(1));
+        result = result + textureLoad(gaussian_input, sc, 0) * gaussian_weights[i];
+    }
+    textureStore(gaussian_output, coord, result);
+}
+
+@compute @workgroup_size(1, 256, 1)
+fn gaussian_blur_v(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let tex_size = textureDimensions(gaussian_input);
+    let coord = vec2<i32>(gid.xy);
+    if (coord.x >= i32(tex_size.x) || coord.y >= i32(tex_size.y)) { return; }
+    var result = vec4<f32>(0.0);
+    let radius = i32(gaussian_uniforms.kernel_size) / 2;
+    for (var i: i32 = 0; i < i32(gaussian_uniforms.kernel_size); i = i + 1) {
+        let offset_y = i - radius;
+        let sc = clamp(coord + vec2<i32>(0, offset_y), vec2<i32>(0), vec2<i32>(tex_size) - vec2<i32>(1));
+        result = result + textureLoad(gaussian_input, sc, 0) * gaussian_weights[i];
+    }
+    textureStore(gaussian_output, coord, result);
+}
+);
+
+// Filter compute shader
+static const char* FS_EFFECTS_FILTER_WGSL = WGSL_CODE(
+struct FilterUniforms {
+    filter_type: u32,
+    param1: f32,
+    param2: f32,
+    param3: f32,
+    param4: f32,
+};
+
+@group(0) @binding(0) var filter_src: texture_2d<f32>;
+@group(0) @binding(1) var filter_dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<uniform> filter_uniforms: FilterUniforms;
+
+fn rgb2lum(rgb: vec3<f32>) -> f32 { return dot(rgb, vec3<f32>(0.299, 0.587, 0.114)); }
+
+fn hue_rotate(rgb: vec3<f32>, deg: f32) -> vec3<f32> {
+    let a = radians(deg);
+    let c = cos(a); let s = sin(a);
+    let r = vec3<f32>(0.299+0.701*c+0.168*s, 0.587-0.587*c+0.330*s, 0.114-0.114*c-0.497*s);
+    let g = vec3<f32>(0.299-0.299*c-0.328*s, 0.587+0.413*c+0.035*s, 0.114-0.114*c+0.292*s);
+    let b = vec3<f32>(0.299-0.300*c+1.250*s, 0.587-0.588*c-1.050*s, 0.114+0.886*c-0.203*s);
+    return vec3<f32>(dot(rgb,r), dot(rgb,g), dot(rgb,b));
+}
+
+fn sepia_rgb(rgb: vec3<f32>, amt: f32) -> vec3<f32> {
+    let s = mat3x3<f32>(0.393,0.349,0.272, 0.769,0.686,0.534, 0.189,0.168,0.131) * rgb;
+    return mix(rgb, s, amt);
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn filter_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let ts = textureDimensions(filter_src);
+    let c = vec2<i32>(gid.xy);
+    if (c.x >= i32(ts.x) || c.y >= i32(ts.y)) { return; }
+    var col = textureLoad(filter_src, c, 0);
+    var res: vec4<f32> = col;
+    switch filter_uniforms.filter_type {
+        case 1u: { res = vec4<f32>(col.rgb * filter_uniforms.param1, col.a); }
+        case 2u: { res = vec4<f32>((col.rgb - vec3<f32>(0.5)) * filter_uniforms.param1 + vec3<f32>(0.5), col.a); }
+        case 3u: { let g = mix(col.rgb, vec3<f32>(rgb2lum(col.rgb)), clamp(filter_uniforms.param1,0.0,1.0)); res = vec4<f32>(g, col.a); }
+        case 4u: { res = vec4<f32>(hue_rotate(col.rgb, filter_uniforms.param1), col.a); }
+        case 5u: { res = vec4<f32>(mix(col.rgb, vec3<f32>(1.0)-col.rgb, clamp(filter_uniforms.param1,0.0,1.0)), col.a); }
+        case 6u: { res = vec4<f32>(col.rgb, col.a * clamp(filter_uniforms.param1,0.0,1.0)); }
+        case 7u: { let lum = rgb2lum(col.rgb); res = vec4<f32>(mix(vec3<f32>(lum), col.rgb, filter_uniforms.param1), col.a); }
+        case 8u: { res = vec4<f32>(sepia_rgb(col.rgb, clamp(filter_uniforms.param1,0.0,1.0)), col.a); }
+        default: { res = col; }
+    }
+    textureStore(filter_dst, c, clamp(res, vec4<f32>(0.0), vec4<f32>(1.0)));
+}
+);
+
+// Fullscreen quad vertex shader (shared by all render passes)
+static const char* FS_EFFECTS_VERT_WGSL = WGSL_CODE(
+@vertex fn fs_vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    // Overdrawn triangle technique: covers the entire clip space [-1, 1]
+    // Vertices: (-1, -1), (3, -1), (-1, 3)
+    var x = f32(vi & 1u) * 4.0 - 1.0; // vi=0->-1, vi=1->3, vi=2->-1
+    var y = f32(vi >> 1u) * 4.0 - 1.0; // vi=0->-1, vi=1->-1, vi=2->3
+    return vec4<f32>(x, y, 0.0, 1.0);
+}
+);
+
+// Passthrough copy fragment shader
+static const char* FS_EFFECTS_FILTER_COPY_WGSL = WGSL_CODE(
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+@fragment fn filter_copy_fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let ts = vec2<f32>(textureDimensions(tex));
+    let uv = pos.xy / ts;
+    return textureSample(tex, samp, uv);
+}
+);
+
+// Shadow composite: samples shadow texture at offset
+static const char* FS_EFFECTS_SHADOW_COMPOSITE_WGSL = WGSL_CODE(
+struct ShadowUniforms {
+    color: vec4<f32>,
+    offset: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var shadow_tex: texture_2d<f32>;
+@group(0) @binding(1) var shadow_samp: sampler;
+@group(0) @binding(2) var<uniform> shadow_uni: ShadowUniforms;
+@fragment fn shadow_fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let ts = vec2<f32>(textureDimensions(shadow_tex));
+    let uv = pos.xy / ts;
+    let off = shadow_uni.offset / ts;
+    let sv = textureSample(shadow_tex, shadow_samp, uv - off);
+    return shadow_uni.color * sv.a;
+}
+);
+
+// Drop-shadow filter: composite blurred shadow + original content
+static const char* FS_EFFECTS_DROP_SHADOW_WGSL = WGSL_CODE(
+struct DSUniforms {
+    color: vec4<f32>,
+    offset: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var ds_blurred: texture_2d<f32>;
+@group(0) @binding(1) var ds_original: texture_2d<f32>;
+@group(0) @binding(2) var ds_samp: sampler;
+@group(0) @binding(3) var<uniform> ds_uni: DSUniforms;
+@fragment fn drop_shadow_fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let ts = vec2<f32>(textureDimensions(ds_blurred));
+    let uv = pos.xy / ts;
+    let off = ds_uni.offset / ts;
+    let blurred = textureSample(ds_blurred, ds_samp, uv - off);
+    let orig = textureSample(ds_original, ds_samp, uv);
+    let sc = ds_uni.color * blurred.a;
+    let out_a = orig.a + sc.a * (1.0 - orig.a);
+    var out_rgb: vec3<f32>;
+    if (out_a > 0.0001) {
+        out_rgb = (orig.rgb * orig.a + sc.rgb * sc.a * (1.0 - orig.a)) / out_a;
+    } else {
+        out_rgb = orig.rgb;
+    }
+    return vec4<f32>(clamp(out_rgb, vec3<f32>(0.0), vec3<f32>(1.0)), max(out_a, 0.0));
+}
+);
+
+// Drop-shadow filter: ALL-COMPUTE pipeline
+// Reads blurred shadow (src_shadow) + original scene (src_original), writes composite to dst.
+// Uses 4 bindings: shadow_tex, original_tex, dst_tex, uniform_buffer.
+// textureLoad for reads (no sampler needed), textureStore for write.
+// This avoids WebGPU's COLOR_TARGET vs RESOURCE conflict in render passes.
+static const char* FS_EFFECTS_DROP_SHADOW_C_WGSL = WGSL_CODE(
+struct DSUniforms {
+    color: vec4<f32>,
+    offset: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var shadow_tex: texture_2d<f32>;
+@group(0) @binding(1) var original_tex: texture_2d<f32>;
+@group(0) @binding(2) var dst_tex: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var<uniform> ds_uni: DSUniforms;
+
+@compute @workgroup_size(8, 8, 1)
+fn drop_shadow_c_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let ts = vec2<i32>(textureDimensions(shadow_tex));
+    let c = gid.xy;
+    if (c.x >= u32(ts.x) || c.y >= u32(ts.y)) { return; }
+    let ts_f = vec2<f32>(ts);
+    let off = vec2<i32>(ds_uni.offset);
+    let blurred = textureLoad(shadow_tex, vec2<i32>(c) - off, 0);
+    let orig = textureLoad(original_tex, vec2<i32>(c), 0);
+    let sc = ds_uni.color * blurred.a;
+    let out_a = orig.a + sc.a * (1.0 - orig.a);
+    var out_rgb: vec3<f32>;
+    if (out_a > 0.0001) {
+        out_rgb = (orig.rgb * orig.a + sc.rgb * sc.a * (1.0 - orig.a)) / out_a;
+    } else {
+        out_rgb = orig.rgb;
+    }
+    textureStore(dst_tex, vec2<i32>(c), vec4<f32>(clamp(out_rgb, vec3<f32>(0.0), vec3<f32>(1.0)), max(out_a, 0.0)));
+}
+);
+
 #endif

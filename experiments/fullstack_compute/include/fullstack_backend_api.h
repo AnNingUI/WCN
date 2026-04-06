@@ -63,6 +63,7 @@ typedef struct FS_FontVerticalMetrics {
 typedef struct FS_FontBackend {
     const char* name;
     void* (*load_font_file)(const char* path);
+    void* (*load_font_memory)(const uint8_t* data, size_t size);
     void (*destroy_font)(void* font_handle);
     bool (*get_glyph_sdf)(
         void* font_handle,

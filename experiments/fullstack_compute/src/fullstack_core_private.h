@@ -4,6 +4,8 @@
 #include "fullstack_core.h"
 #include "fullstack_backend_api.h"
 #include "fullstack_core_gpu_layout.h"
+#include "fullstack_effects.h"
+#include "fullstack_filters.h"
 
 #define FS_IMAGE_ATLAS_SIZE 2048u
 #define FS_IMAGE_ATLAS_MAX_LAYERS 4u
@@ -26,12 +28,19 @@
 #define FS_IMAGE_KEY_GLYPH_MASK ((1u << FS_IMAGE_KEY_GLYPH_BITS) - 1u)
 #define FS_MAX_FONT_FALLBACKS 8u
 #define FS_RENDER_MSAA_SAMPLES 4u
-#define FS_SHADOW_BLUR_MAX 15.0f
+#define FS_SHADOW_BLUR_MAX 95.0f
 #define FS_SHADOW_SEPARABLE_THRESHOLD 5.0f
+#define FS_SHADOW_GPU_THRESHOLD 4.0f
 #define FS_SHADOW_SEPARABLE_STEP_SCALE 0.55f
 #define FS_LINEAR_GRADIENT_MAX_STOPS 16u
 #define FS_RADIAL_GRADIENT_MAX_STOPS 16u
 #define FS_CONIC_GRADIENT_MAX_STOPS 16u
+// FS_GAUSSIAN_KERNEL_MAX_SIZE is defined in fullstack_filters.h
+#define FS_GAUSSIAN_BLUR_RADIUS_MAX 95.0f
+#define FS_EFFECT_FLAG_SHADOW_ENABLED 0x1u
+#define FS_EFFECT_FLAG_SHADOW_SEPARABLE 0x2u
+#define FS_SHADOW_DEFAULT_OFFSET_X 2.0f
+#define FS_SHADOW_DEFAULT_OFFSET_Y 2.0f
 
 typedef struct FS_GlyphEntry {
     uint32_t glyph_key;
@@ -265,6 +274,7 @@ typedef struct FS_StyleSnapshot {
     float* dash_segments;
     uint32_t dash_count;
     float dash_offset;
+    FS_FilterChain* filter_chain;
 } FS_StyleSnapshot;
 
 typedef struct FS_StateSnapshot {
@@ -393,6 +403,7 @@ typedef struct FS_InternalState {
     float* style_dash_segments;
     uint32_t style_dash_count;
     float style_dash_offset;
+    FS_FilterChain* filter_chain;
 } FS_InternalState;
 
 typedef struct FS_PendingTextureUpload {
@@ -411,6 +422,9 @@ typedef struct FS_MapReadbackContext {
     volatile uint32_t done;
     volatile uint32_t success;
 } FS_MapReadbackContext;
+
+// Forward declaration (opaque type, defined in fullstack_effects.h)
+typedef struct FS_EffectResources FS_EffectResources;
 
 struct FS_Core {
     WGPUDevice device;
@@ -537,6 +551,7 @@ struct FS_Core {
     uint32_t clip_frame_index;
     uint32_t clip_layer_reuse_reserve;
     FS_ContextAttributes context_attributes;
+    FS_EffectResources* effects;
 
     FS_Command* commands;
     FS_CommandStateGPU* command_states;
@@ -863,5 +878,9 @@ FS_ImageSmoothingQuality fs_style_get_image_smoothing_quality(const FS_Core* cor
 void fs_style_clear_dash(FS_Core* core);
 bool fs_style_set_dash(FS_Core* core, const float* segments, uint32_t segment_count, float offset);
 bool fs_style_get_dash(const FS_Core* core, float* out_segments, uint32_t max_segments, uint32_t* out_count, float* out_offset);
+
+// CSS filter API
+bool fs_style_set_filter(FS_Core* core, const char* filter_string);
+bool fs_style_get_filter(const FS_Core* core, char* buffer, size_t buffer_size);
 
 #endif

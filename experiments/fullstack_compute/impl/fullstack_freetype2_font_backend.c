@@ -1095,6 +1095,46 @@ static void* fs_ft2_load_font_file(const char* path) {
     return handle;
 }
 
+static void* fs_ft2_load_font_memory(const uint8_t* data, size_t size) {
+    if (!data || size == 0) {
+        return NULL;
+    }
+    if (!fs_ft2_library_acquire()) {
+        return NULL;
+    }
+
+    FT_Face face = NULL;
+    if (FT_New_Memory_Face(g_ft_library, data, (FT_Long)size, 0, &face) != 0) {
+        fs_ft2_library_release();
+        return NULL;
+    }
+    if (face->charmaps && face->num_charmaps > 0) {
+        if (FT_Select_Charmap(face, FT_ENCODING_UNICODE) != 0) {
+            for (int i = 0; i < face->num_charmaps; ++i) {
+                if (face->charmaps[i] && face->charmaps[i]->encoding == FT_ENCODING_UNICODE) {
+                    (void)FT_Set_Charmap(face, face->charmaps[i]);
+                    break;
+                }
+            }
+        }
+    }
+
+    FS_FT2FaceHandle* handle = (FS_FT2FaceHandle*)calloc(1, sizeof(FS_FT2FaceHandle));
+    if (!handle) {
+        FT_Done_Face(face);
+        fs_ft2_library_release();
+        return NULL;
+    }
+    handle->face = face;
+#ifdef FS_HAS_HARFBUZZ
+    handle->hb_font = hb_ft_font_create_referenced(face);
+    if (handle->hb_font) {
+        hb_ft_font_set_load_flags(handle->hb_font, FT_LOAD_DEFAULT);
+    }
+#endif
+    return handle;
+}
+
 static void fs_ft2_destroy_font(void* font_handle) {
     FS_FT2FaceHandle* handle = (FS_FT2FaceHandle*)font_handle;
     if (!handle) {
@@ -1520,6 +1560,7 @@ static void fs_ft2_free_glyph_pixels(uint8_t* pixels) {
 static const FS_FontBackend g_ft2_font_backend = {
     .name = "freetype2",
     .load_font_file = fs_ft2_load_font_file,
+    .load_font_memory = fs_ft2_load_font_memory,
     .destroy_font = fs_ft2_destroy_font,
     .get_glyph_sdf = fs_ft2_get_glyph_sdf,
     .get_glyph_sdf_by_index = fs_ft2_get_glyph_sdf_by_index,

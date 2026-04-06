@@ -95,6 +95,7 @@ static const char* scene_mode_name(int mode) {
         case 0: return "MAIN";
         case 1: return "MDN CLIP EXAMPLES";
         case 2: return "W3C API COVERAGE";
+        case 3: return "FILTERS & SHADOWS";
         default: return "MAIN";
     }
 }
@@ -424,7 +425,8 @@ int main(void) {
 
     FS_Core* core = fs_glfw_backend_core(&backend);
     printf("Rule clip view toggle: press V to cycle RAW / CLIPPED / COMPARE\n");
-    printf("Scene toggle: press M to cycle MAIN / MDN CLIP EXAMPLES / W3C API COVERAGE\n");
+    printf("Scene toggle: press M to cycle MAIN / MDN CLIP EXAMPLES / W3C API COVERAGE / FILTERS & SHADOWS\n");
+    printf("Filter controls (FILTERS scene): press F to cycle effects\n");
     printf("Smoothing demo controls (W3C page): press I to toggle enabled, K to cycle quality\n");
     printf("Scroll: use mouse wheel / touchpad to pan page content\n");
     fs_core_set_image_backend(core, fs_get_stb_image_backend());
@@ -528,15 +530,17 @@ int main(void) {
     int prev_m_state = GLFW_RELEASE;
     int prev_i_state = GLFW_RELEASE;
     int prev_k_state = GLFW_RELEASE;
+    int prev_f_state = GLFW_RELEASE;
     int prev_lmb_state = GLFW_RELEASE;
     bool smoothing_demo_enabled = true;
     FS_ImageSmoothingQuality smoothing_demo_quality = FS_IMAGE_SMOOTHING_QUALITY_HIGH;
     float scroll_design_x = 0.0f;
     float scroll_design_y = 0.0f;
-    float scene_content_h_design[3] = {940.0f, 1180.0f, 2400.0f};
+    float scene_content_h_design[4] = {940.0f, 1180.0f, 2400.0f, 900.0f};
     float miter_slider_value = 4.0f;
     bool miter_slider_dragging = false;
     bool clip_stress_enabled = true;
+    int demo_filter_index = 0;  // 0=none, 1=brightness, 2=contrast, 3=grayscale, 4=hue-rotate, 5=invert, 6=opacity, 7=saturate, 8=sepia, 9=blur, 10=drop-shadow
     uint64_t gatec_hist_est[GATE_C_WINDOW_FRAMES] = {0};
     uint64_t gatec_hist_waste[GATE_C_WINDOW_FRAMES] = {0};
     uint32_t gatec_hist_fail[GATE_C_WINDOW_FRAMES] = {0};
@@ -592,10 +596,23 @@ int main(void) {
         prev_v_state = v_state;
         int m_state = glfwGetKey(backend.window, GLFW_KEY_M);
         if (m_state == GLFW_PRESS && prev_m_state != GLFW_PRESS) {
-            scene_mode = (scene_mode + 1) % 3;
+            scene_mode = (scene_mode + 1) % 4;
             printf("Scene mode: %s\n", scene_mode_name(scene_mode));
         }
         prev_m_state = m_state;
+        int f_state = glfwGetKey(backend.window, GLFW_KEY_F);
+        if (f_state == GLFW_PRESS && prev_f_state != GLFW_PRESS) {
+            demo_filter_index = (demo_filter_index + 1) % 11;
+            {
+                static const char* names[11] = {
+                    "", "brightness(1.5)", "contrast(1.8)", "grayscale(1)",
+                    "hue-rotate(90deg)", "invert(1)", "opacity(0.7)", "saturate(2.0)",
+                    "sepia(0.8)", "blur(4px)", "drop-shadow(8px 8px 6px rgba(30,60,120,0.6))",
+                };
+                printf("Filter: %s\n", names[demo_filter_index]);
+            }
+        }
+        prev_f_state = f_state;
         int i_state = glfwGetKey(backend.window, GLFW_KEY_I);
         if (i_state == GLFW_PRESS && prev_i_state != GLFW_PRESS) {
             smoothing_demo_enabled = !smoothing_demo_enabled;
@@ -655,7 +672,7 @@ int main(void) {
         scroll_design_x -= wheel_dx * (scroll_step_px * inv_s);
         scroll_design_y -= wheel_dy * (scroll_step_px * inv_s);
         const float design_content_w = 1280.0f;
-        const float design_content_h = scene_content_h_design[(scene_mode >= 0 && scene_mode < 3) ? scene_mode : 0];
+        const float design_content_h = scene_content_h_design[(scene_mode >= 0 && scene_mode < 4) ? scene_mode : 0];
         const float visible_design_w = (float)backend.width * inv_s;
         const float visible_design_h = (float)backend.height * inv_s;
         const float scroll_margin_screen_px = 20.0f;
@@ -1456,6 +1473,196 @@ int main(void) {
                 }
             }
 
+            goto submit_frame;
+        }
+
+        // --- Scene 3: FILTERS & SHADOWS ---
+        if (scene_mode == 3) {
+            // Title bar
+            fs_cmd_rect(core, 0.0f, 0.0f, (float)backend.width, LS(52.0f), 0.0f, rgba8(10, 18, 36, 230));
+            fs_cmd_rect_stroke(core, 0.0f, 0.0f, (float)backend.width, LS(52.0f), 0.0f, LS(1.5f), rgba8(80, 160, 255, 80));
+            if (font_ready) {
+                static const char* names[11] = {
+                    "none", "brightness(1.5)", "contrast(1.8)", "grayscale(1)",
+                    "hue-rotate(90deg)", "invert(1)", "opacity(0.7)", "saturate(2.0)",
+                    "sepia(0.8)", "blur(4px)", "drop-shadow(8px 8px 6px rgba(30,60,120,0.6))",
+                };
+                char buf[256];
+                snprintf(buf, sizeof(buf), "GPU CSS Filter Pipeline  |  [%d/10]  %s  |  Press F to cycle",
+                    demo_filter_index, names[demo_filter_index]);
+                fs_cmd_text_utf8(core, LS(20.0f), LS(16.0f), LS(13.0f), buf, rgba8(200, 220, 255, 255), (float)backend.width - LS(40.0f));
+            }
+
+            // Footer bar
+            fs_cmd_rect(core, 0.0f, (float)backend.height - LS(32.0f), (float)backend.width, LS(32.0f), 0.0f, rgba8(8, 14, 28, 200));
+            if (font_ready) {
+                fs_cmd_text_utf8(core, LS(20.0f), (float)backend.height - LS(20.0f), LS(10.0f),
+                    "brightness | contrast | grayscale | hue-rotate | invert | opacity | saturate | sepia | blur | drop-shadow",
+                    rgba8(120, 160, 200, 200), (float)backend.width - LS(40.0f));
+            }
+
+            // Draw 4x2 grid of test cards
+            // Each card: dark bg rect + colorful content shapes
+            // The filter applies to ALL canvas content drawn in this scene
+            const float grid_start_y = LS(68.0f);
+            const float card_w = (design_w * s - LS(80.0f)) / 4.0f;
+            const float card_h = card_w * 0.78f;
+            const float card_gap_x = LS(16.0f);
+            const float card_gap_y = LS(16.0f);
+
+            for (int ci = 0; ci < 8; ci++) {
+                int col = ci % 4;
+                int row = ci / 4;
+                float cx = LX((float)col * (card_w / s + card_gap_x / s) + card_gap_x / s);
+                float cy = LY(grid_start_y / s + (float)row * (card_h / s + card_gap_y / s));
+                float cw = card_w;
+                float ch = card_h;
+
+                // Card background colors
+                const uint32_t card_bg = rgba8(
+                    (uint8_t)(22 + ci * 2), (uint8_t)(34 + ci), (uint8_t)(56 + ci * 2), 200);
+                const uint32_t card_accent1 = rgba8(
+                    (uint8_t)(255 - ci * 25), (uint8_t)(100 + ci * 20), (uint8_t)(80 + ci * 20), 255);
+                const uint32_t card_accent2 = rgba8(
+                    (uint8_t)(80 + ci * 20), (uint8_t)(180 - ci * 10), (uint8_t)(255 - ci * 20), 255);
+
+                // Card background
+                fs_cmd_rect(core, cx, cy, cw, ch, LS(8.0f), card_bg);
+                fs_cmd_rect_stroke(core, cx, cy, cw, ch, LS(8.0f), LS(1.5f), rgba8(80, 140, 220, 100));
+
+                // Content: inner area
+                float ix = cx + LS(8.0f);
+                float iy = cy + LS(8.0f);
+                float iw = cw - LS(16.0f);
+                float ih = ch - LS(16.0f) - LS(16.0f);  // leave space for label
+
+                switch (ci) {
+                    case 0: {
+                        // Checkerboard 4x4
+                        int N = 4;
+                        for (int r = 0; r < N; r++) {
+                            for (int c2 = 0; c2 < N; c2++) {
+                                uint32_t ccc = ((r + c2) % 2 == 0) ? card_accent1 : card_accent2;
+                                float rx = ix + iw * c2 / (float)N;
+                                float ry = iy + ih * r / (float)N;
+                                float rw = iw / (float)N + 0.5f;
+                                float rh = ih / (float)N + 0.5f;
+                                fs_cmd_rect(core, rx, ry, rw, rh, 0.0f, ccc);
+                            }
+                        }
+                        break;
+                    }
+                    case 1: {
+                        // Circle overlap rect
+                        fs_cmd_rect(core, ix, iy, iw, ih, LS(6.0f), card_accent1);
+                        float ccx2 = ix + iw * 0.6f;
+                        float ccy2 = iy + ih * 0.4f;
+                        float cr2 = fminf(iw, ih) * 0.38f;
+                        demo_path_circle(core, ccx2, ccy2, cr2);
+                        fs_style_set_fill_color(core, card_accent2);
+                        fs_fill(core);
+                        break;
+                    }
+                    case 2: {
+                        // Bars
+                        for (int b = 0; b < 4; b++) {
+                            float t = (float)b / 3.0f;
+                            uint8_t rr = (uint8_t)(((card_accent1 >> 24) & 0xFF) * (1 - t) + ((card_accent2 >> 24) & 0xFF) * t);
+                            uint8_t gg = (uint8_t)(((card_accent1 >> 16) & 0xFF) * (1 - t) + ((card_accent2 >> 16) & 0xFF) * t);
+                            uint8_t bb = (uint8_t)(((card_accent1 >> 8) & 0xFF) * (1 - t) + ((card_accent2 >> 8) & 0xFF) * t);
+                            uint8_t aa = (uint8_t)(((card_accent1 >> 0) & 0xFF) * (1 - t) + ((card_accent2 >> 0) & 0xFF) * t);
+                            uint32_t barc = ((uint32_t)rr << 24) | ((uint32_t)gg << 16) | ((uint32_t)bb << 8) | aa;
+                            float barx = ix + iw * t;
+                            float barw = iw / 3.0f + 1.0f;
+                            fs_cmd_rect(core, barx, iy, barw, ih, 0.0f, barc);
+                        }
+                        break;
+                    }
+                    case 3: {
+                        // Triangle path
+                        fs_path_begin(core);
+                        fs_path_move_to(core, ix + iw * 0.5f, iy);
+                        fs_path_line_to(core, ix + iw, iy + ih);
+                        fs_path_line_to(core, ix, iy + ih);
+                        fs_path_close(core);
+                        fs_style_set_fill_color(core, card_accent1);
+                        fs_fill(core);
+                        break;
+                    }
+                    case 4: {
+                        // Bezier curves
+                        fs_style_set_line_width(core, LS(3.5f));
+                        float bx0 = ix, by0 = iy + ih * 0.75f;
+                        float bcx = ix + iw * 0.55f, bcy = iy + ih * 0.15f;
+                        float bx1 = ix + iw, by1 = iy + ih * 0.25f;
+                        fs_cmd_bezier_quad(core, bx0, by0, bcx, bcy, bx1, by1, 0.0f, card_accent1);
+                        float bx2 = ix, by2 = iy + ih * 0.55f;
+                        float bcx2 = ix + iw * 0.5f, bcy2 = iy + ih * 0.85f;
+                        float bx3 = ix + iw * 0.7f, by3 = iy + ih * 0.1f;
+                        fs_cmd_bezier_quad(core, bx2, by2, bcx2, bcy2, bx3, by3, 0.0f, card_accent2);
+                        fs_style_set_line_width(core, LS(1.0f));
+                        break;
+                    }
+                    case 5: {
+                        // Two overlapping circles
+                        demo_path_circle(core, ix + iw * 0.35f, iy + ih * 0.4f, fminf(iw, ih) * 0.35f);
+                        fs_style_set_fill_color(core, card_accent1);
+                        fs_fill(core);
+                        demo_path_circle(core, ix + iw * 0.65f, iy + ih * 0.6f, fminf(iw, ih) * 0.3f);
+                        fs_style_set_fill_color(core, card_accent2);
+                        fs_fill(core);
+                        break;
+                    }
+                    case 6: {
+                        // Hexagon
+                        fs_path_begin(core);
+                        float pcx = ix + iw * 0.5f, pcy = iy + ih * 0.5f;
+                        float pr = fminf(iw, ih) * 0.4f;
+                        for (int v = 0; v < 6; v++) {
+                            float a = (float)v * 3.14159f * 2.0f / 6.0f - 3.14159f * 0.5f;
+                            float px = pcx + cosf(a) * pr;
+                            float py = pcy + sinf(a) * pr;
+                            if (v == 0) fs_path_move_to(core, px, py);
+                            else fs_path_line_to(core, px, py);
+                        }
+                        fs_path_close(core);
+                        fs_style_set_fill_color(core, card_accent1);
+                        fs_fill(core);
+                        fs_style_set_stroke_color(core, card_accent2);
+                        fs_style_set_line_width(core, LS(2.5f));
+                        fs_stroke(core, LS(2.5f));
+                        fs_style_set_line_width(core, LS(1.0f));
+                        break;
+                    }
+                    case 7: {
+                        // Star of overlapping circles
+                        float scx = ix + iw * 0.5f, scy = iy + ih * 0.5f;
+                        float sr = fminf(iw, ih) * 0.18f;
+                        for (int p = 0; p < 5; p++) {
+                            float pa = (float)p * 3.14159f * 2.0f / 5.0f - 3.14159f * 0.5f;
+                            demo_path_circle(core, scx + cosf(pa) * sr * 0.6f, scy + sinf(pa) * sr * 0.6f, sr);
+                            uint8_t r = (uint8_t)(180 + p * 15);
+                            uint8_t g = (uint8_t)(80 + p * 35);
+                            uint8_t b = (uint8_t)(255 - p * 25);
+                            fs_style_set_fill_color(core, (r << 24) | (g << 16) | (b << 8) | 220u);
+                            fs_fill(core);
+                        }
+                        break;
+                    }
+                }
+
+                // Card label at bottom
+                if (font_ready) {
+                    static const char* labels[8] = {
+                        "Checkerboard", "Circle+Rect", "Color Bars", "Triangle",
+                        "Bezier", "Overlaps", "Hexagon", "Star",
+                    };
+                    fs_cmd_text_utf8(core, cx + LS(6.0f), cy + ch - LS(14.0f), LS(8.5f),
+                        labels[ci], rgba8(160, 200, 240, 180), cw - LS(12.0f));
+                }
+            }
+
+            scene_content_h_design[3] = grid_start_y / s + 2.0f * (card_h / s + card_gap_y / s) + LS(48.0f) / s;
             goto submit_frame;
         }
 
@@ -3082,6 +3289,23 @@ int main(void) {
 #undef LS
 
 submit_frame:
+        // Apply CSS filter for FILTERS & SHADOWS scene via public API
+        {
+            static const char* k_filter_strings[11] = {
+                "",   // 0: none
+                "brightness(1.5)",
+                "contrast(1.8)",
+                "grayscale(1)",
+                "hue-rotate(90deg)",
+                "invert(1)",
+                "opacity(0.7)",
+                "saturate(2.0)",
+                "sepia(0.8)",
+                "blur(4px)",
+                "drop-shadow(8px 8px 6px rgba(30,60,120,0.6))",
+            };
+            fs_style_set_filter(core, (scene_mode == 3) ? k_filter_strings[demo_filter_index] : "");
+        }
         prev_lmb_state = lmb_state;
         if (!fs_glfw_backend_present(&backend, 0.08f, 0.10f, 0.14f, 1.0f)) {
             fprintf(stderr, "Frame encoding/present failed\n");
