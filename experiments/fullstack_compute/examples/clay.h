@@ -1,7 +1,5 @@
 // VERSION: 0.14
 
-#include <stdio.h>
-
 /*
     NOTE: In order to use this library you must define
     the following macro in exactly one file, _before_ including clay.h:
@@ -2049,28 +2047,21 @@ void Clay__OpenElement(void) {
 
 void Clay__OpenElementWithId(Clay_ElementId elementId) {
     Clay_Context* context = Clay_GetCurrentContext();
-    fprintf(stderr, ">>> OPENEL-1\n"); fflush(stderr);
     if (context->layoutElements.length == context->layoutElements.capacity - 1 || context->booleanWarnings.maxElementsExceeded) {
         context->booleanWarnings.maxElementsExceeded = true;
         return;
     }
-    fprintf(stderr, ">>> OPENEL-2\n"); fflush(stderr);
     Clay_LayoutElement layoutElement = CLAY__DEFAULT_STRUCT;
     layoutElement.id = elementId.id;
     Clay_LayoutElement * openLayoutElement = Clay_LayoutElementArray_Add(&context->layoutElements, layoutElement);
-    fprintf(stderr, ">>> OPENEL-3 arr_ptr=%p\n", (void*)openLayoutElement); fflush(stderr);
     Clay__int32_tArray_Add(&context->openLayoutElementStack, context->layoutElements.length - 1);
-    fprintf(stderr, ">>> OPENEL-4\n"); fflush(stderr);
     Clay__AddHashMapItem(elementId, openLayoutElement);
-    fprintf(stderr, ">>> OPENEL-5\n"); fflush(stderr);
     Clay__StringArray_Add(&context->layoutElementIdStrings, elementId.stringId);
-    fprintf(stderr, ">>> OPENEL-6\n"); fflush(stderr);
     if (context->openClipElementStack.length > 0) {
         Clay__int32_tArray_Set(&context->layoutElementClipElementIds, context->layoutElements.length - 1, Clay__int32_tArray_GetValue(&context->openClipElementStack, (int)context->openClipElementStack.length - 1));
     } else {
         Clay__int32_tArray_Set(&context->layoutElementClipElementIds, context->layoutElements.length - 1, 0);
     }
-    fprintf(stderr, ">>> OPENEL-7 done\n"); fflush(stderr);
 }
 
 void Clay__OpenTextElement(Clay_String text, Clay_TextElementConfig textConfig) {
@@ -4049,13 +4040,9 @@ void Clay_SetQueryScrollOffsetFunction(Clay_Vector2 (*queryScrollOffsetFunction)
 
 CLAY_WASM_EXPORT("Clay_SetLayoutDimensions")
 void Clay_SetLayoutDimensions(Clay_Dimensions dimensions) {
-    fprintf(stderr, ">>> SETDIM-1\n"); fflush(stderr);
     Clay_Context* context = Clay_GetCurrentContext();
-    fprintf(stderr, ">>> SETDIM-2 ctx=%p\n", (void*)context); fflush(stderr);
     context->rootResizedLastFrame = !Clay__FloatEqual(context->layoutDimensions.width, dimensions.width) || !Clay__FloatEqual(context->layoutDimensions.height, dimensions.height);
-    fprintf(stderr, ">>> SETDIM-3\n"); fflush(stderr);
     Clay_GetCurrentContext()->layoutDimensions = dimensions;
-    fprintf(stderr, ">>> SETDIM-4 done\n"); fflush(stderr);
 }
 
 CLAY_WASM_EXPORT("Clay_SetPointerState")
@@ -4327,11 +4314,8 @@ void Clay_UpdateScrollContainers(bool enableDragScrolling, Clay_Vector2 scrollDe
 
 CLAY_WASM_EXPORT("Clay_BeginLayout")
 void Clay_BeginLayout(void) {
-    fprintf(stderr, ">>> BEGINLAYOUT-1\n"); fflush(stderr);
     Clay_Context* context = Clay_GetCurrentContext();
-    fprintf(stderr, ">>> BEGINLAYOUT-2 ctx=%p\n", (void*)context); fflush(stderr);
     Clay__InitializeEphemeralMemory(context);
-    fprintf(stderr, ">>> BEGINLAYOUT-3\n"); fflush(stderr);
     context->generation++;
     context->dynamicElementIndex = 0;
     // Set up the root container that covers the entire window
@@ -4339,19 +4323,13 @@ void Clay_BeginLayout(void) {
     if (context->debugModeEnabled) {
         rootDimensions.width -= (float)Clay__debugViewWidth;
     }
-    fprintf(stderr, ">>> BEGINLAYOUT-4 root=%fx%f\n", rootDimensions.width, rootDimensions.height); fflush(stderr);
     context->booleanWarnings = CLAY__INIT(Clay_BooleanWarnings) CLAY__DEFAULT_STRUCT;
-    fprintf(stderr, ">>> BEGINLAYOUT-5\n"); fflush(stderr);
     Clay__OpenElementWithId(CLAY_ID("Clay__RootContainer"));
-    fprintf(stderr, ">>> BEGINLAYOUT-6\n"); fflush(stderr);
     Clay__ConfigureOpenElement(CLAY__INIT(Clay_ElementDeclaration) {
         .layout = { .sizing = {CLAY_SIZING_FIXED((rootDimensions.width)), CLAY_SIZING_FIXED(rootDimensions.height)} }
     });
-    fprintf(stderr, ">>> BEGINLAYOUT-7\n"); fflush(stderr);
     Clay__int32_tArray_Add(&context->openLayoutElementStack, 0);
-    fprintf(stderr, ">>> BEGINLAYOUT-8\n"); fflush(stderr);
     Clay__LayoutElementTreeRootArray_Add(&context->layoutElementTreeRoots, CLAY__INIT(Clay__LayoutElementTreeRoot) { .layoutElementIndex = 0 });
-    fprintf(stderr, ">>> BEGINLAYOUT-9\n"); fflush(stderr);
 }
 
 void Clay__CloneElementsWithExitTransition() {

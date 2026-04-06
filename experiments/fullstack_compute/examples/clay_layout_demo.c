@@ -97,14 +97,7 @@ static Clay_Dimensions fsclay_measure_text(
     Clay_TextElementConfig* config,
     void* userData
 ) {
-    static int call_count = 0;
     (void)userData;
-    call_count++;
-    if (call_count <= 5) {
-        fprintf(stderr, "MEASURE[%d]: len=%d fontSize=%d\n",
-            call_count, text.length, config ? config->fontSize : -1);
-        fflush(stderr);
-    }
     if (!g_measure_core || !text.chars || text.length <= 0) {
         return (Clay_Dimensions){ 0, 0 };
     }
@@ -116,17 +109,8 @@ static Clay_Dimensions fsclay_measure_text(
     FS_TextMetrics metrics = {0};
     float font_size = (float)(config ? config->fontSize : 14);
     if (!fs_measure_text_utf8(g_measure_core, font_size, buf, 0.0f, &metrics)) {
-        if (call_count <= 5) {
-            fprintf(stderr, "MEASURE[%d]: fs_measure FAILED, fallback\n", call_count);
-            fflush(stderr);
-        }
         float w = (float)text.length * font_size * 0.6f;
         return (Clay_Dimensions){ w, font_size };
-    }
-    if (call_count <= 5) {
-        fprintf(stderr, "MEASURE[%d]: ok w=%.1f h=%.1f\n", call_count,
-            metrics.width, metrics.em_height_ascent + metrics.em_height_descent);
-        fflush(stderr);
     }
     return (Clay_Dimensions){
         metrics.width,
@@ -278,18 +262,13 @@ int main(void) {
 
     /* ── Clay arena ── */
     uint32_t clay_mem_size = Clay_MinMemorySize();
-    fprintf(stderr, "DBG: Clay_MinMemorySize=%u bytes\n", clay_mem_size); fflush(stderr);
-    fprintf(stderr, "DBG: allocating clay_mem...\n"); fflush(stderr);
     void* clay_mem = calloc(1, clay_mem_size);
     if (!clay_mem) {
         fs_glfw_backend_shutdown(&backend);
         return 1;
     }
-    fprintf(stderr, "DBG: clay_mem=%p, creating arena...\n", clay_mem); fflush(stderr);
     Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(clay_mem_size, clay_mem);
     (void)arena;
-    fprintf(stderr, "DBG: Clay_Initialize...\n"); fflush(stderr);
-    /* MUST call Clay_Initialize first — sets Clay__currentContext which all other Clay APIs depend on */
     Clay_Context* clay_ctx = Clay_Initialize(arena, (Clay_Dimensions){1440, 900},
         CLAY__INIT(Clay_ErrorHandler){ clay_error_handler, NULL });
     if (!clay_ctx) {
@@ -298,11 +277,8 @@ int main(void) {
         fs_glfw_backend_shutdown(&backend);
         return 1;
     }
-    fprintf(stderr, "DBG: Clay_Initialize done, setting max elements...\n"); fflush(stderr);
     Clay_SetMaxElementCount(8192);
-    fprintf(stderr, "DBG: fsclay_init...\n"); fflush(stderr);
     fsclay_init(fsclay_measure_text, NULL);
-    fprintf(stderr, "DBG: fsclay_init done, starting loop\n"); fflush(stderr);
 
     /* ── Demo state ── */
     uint32_t frame = 0;
@@ -351,22 +327,15 @@ int main(void) {
         0x3B82F6FF, 0xA855F7FF, 0x10B981FF, 0xEC4899FF
     };
 
-    /* ── Tracing flag: print one line per loop iteration, then disable ── */
-    int loop_iter = 0;
-
     /* ═════════════════════════════════════════════════════════════════════
        Main loop
        ═════════════════════════════════════════════════════════════════════ */
     while (!fs_glfw_backend_should_close(&backend)) {
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: top\n", loop_iter); fflush(stderr); }
-
         fs_glfw_backend_poll_events();
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: poll_done\n", loop_iter); fflush(stderr); }
 
         /* Input */
         int win_w = 0, win_h = 0;
         glfwGetWindowSize(backend.window, &win_w, &win_h);
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: size=%dx%d\n", loop_iter, win_w, win_h); fflush(stderr); }
         float wd = 0, wh = 0;
         fs_glfw_backend_take_scroll_delta(&backend, &wd, &wh);
 
@@ -388,10 +357,8 @@ int main(void) {
         scroll_y += wh * 20.0f;
         if (scroll_y < 0.0f) scroll_y = 0.0f;
 
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: begin_commands\n", loop_iter); fflush(stderr); }
         /* ── Render start ── */
         fs_core_begin_commands(core);
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: begin_commands_done\n", loop_iter); fflush(stderr); }
 
         fs_transform_reset(core);
         fs_style_reset(core);
@@ -404,7 +371,6 @@ int main(void) {
         float off_x = ((lw - 1440.0f * scl) * 0.5f);
         float off_y = ((lh - 900.0f * scl) * 0.5f);
 
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: bg_rect\n", loop_iter); fflush(stderr); }
 
         /* ── Background + ambient glows ── */
         fs_cmd_rect(core, off_x, off_y, lw, lh, 0.0f, 0x080510FF);
@@ -429,11 +395,8 @@ int main(void) {
         }
 
         /* ── Clay layout ── */
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: Clay_SetLayoutDimensions\n", loop_iter); fflush(stderr); }
         Clay_SetLayoutDimensions((Clay_Dimensions){ lw, lh });
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: Clay_BeginLayout\n", loop_iter); fflush(stderr); }
         Clay_BeginLayout();
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: clay_elements\n", loop_iter); fflush(stderr); }
 
         /* ──── HEADER ──── */
         CLAY_AUTO_ID((Clay_ElementDeclaration){
@@ -870,444 +833,11 @@ int main(void) {
             }
         }
 
-        /*
-        ================================================================
-        CLAY elements skipped for debug — all commented out
-        ================================================================
-        */
+        /* ── End layout ── */
+        Clay_RenderCommandArray rcmds = Clay_EndLayout(0.0f);
+        fsclay_set_transform(off_x, off_y, scl);
+        fsclay_render_commands(core, &rcmds);
 
-        goto clay_skip; /* skip all CLAY macros below */
-
-        /* ──── HEADER ──── */
-        fprintf(stderr, ">>> HEADER\n"); fflush(stderr);
-        CLAY_AUTO_ID((Clay_ElementDeclaration){
-            .layout = {
-                .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(64) },
-                .padding = { (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD }
-            },
-            .backgroundColor = BG_SURFACE,
-            .border = {
-                .color = BORDER_SUBTLE,
-                .width = { 0, 0, 0, 1 }
-            }
-        }) {
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_FIXED(40), CLAY_SIZING_FIXED(40) }
-                },
-                .backgroundColor = ACC_CYAN,
-                .cornerRadius = { 8, 8, 8, 8 }
-            }) {}
-
-            CLAY_TEXT(CLAY_STRING("Aurora"), CLAY_TEXT_CONFIG({
-                .fontSize = (uint16_t)FS_TITLE,
-                .textColor = TEXT_PRIMARY,
-                .fontId = 0
-            }));
-
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(1) }
-                }
-            }) {}
-
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(40) },
-                    .padding = { (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM },
-                    .childGap = (uint16_t)SP_SM,
-                    .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }
-                },
-                .backgroundColor = BG_HOVER,
-                .cornerRadius = { 20, 20, 20, 20 },
-                .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-            }) {
-                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                    .layout = {
-                        .sizing = { CLAY_SIZING_FIXED(28), CLAY_SIZING_FIXED(28) }
-                    },
-                    .backgroundColor = ACC_PURPLE,
-                    .cornerRadius = { 14, 14, 14, 14 }
-                }) {}
-                CLAY_TEXT(CLAY_STRING("Admin"), CLAY_TEXT_CONFIG({
-                    .fontSize = (uint16_t)FS_SM,
-                    .textColor = TEXT_SECONDARY,
-                    .fontId = 0
-                }));
-            }
-        }
-
-        /* ──── BODY: sidebar + main ──── */
-        // float body_h = lh - 64.0f * scl;
-
-        /* ──── SIDEBAR ──── */
-        CLAY_AUTO_ID((Clay_ElementDeclaration){
-            .layout = {
-                .sizing = { CLAY_SIZING_FIXED(sidebar_w / scl), CLAY_SIZING_FIXED(body_h / scl) },
-                .padding = { (uint16_t)SP_MD, (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM },
-                .childGap = (uint16_t)SP_XS
-            },
-            .backgroundColor = BG_SURFACE,
-            .border = {
-                .color = BORDER_SUBTLE,
-                .width = { 0, 1, 0, 0 }
-            }
-        }) {
-            CLAY_TEXT(CLAY_STRING("Navigation"), CLAY_TEXT_CONFIG({
-                .fontSize = (uint16_t)FS_XS,
-                .textColor = TEXT_MUTED,
-                .fontId = 0
-            }));
-
-            for (int ni = 0; ni < 6; ni++) {
-                bool sel = (ni == 0);
-                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                    .layout = {
-                        .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(48) },
-                        .padding = { (uint16_t)SP_MD, 0, 0, 0 },
-                        .childGap = (uint16_t)SP_SM,
-                        .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }
-                    },
-                    .backgroundColor = sel ? BG_SELECTED : BG_CARD,
-                    .cornerRadius = { 8, 8, 8, 8 },
-                    .border = {
-                        .color = sel ? ACC_CYAN : BG_CARD,
-                        .width = { sel ? 3 : 0, 0, 0, 0 }
-                    }
-                }) {
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_FIXED(8), CLAY_SIZING_FIXED(8) }
-                        },
-                        .backgroundColor = sel ? ACC_CYAN : BG_GLASS,
-                        .cornerRadius = { 4, 4, 4, 4 }
-                    }) {}
-
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_FIXED(24), CLAY_SIZING_FIXED(24) }
-                        },
-                        .backgroundColor = GLOW_CYAN,
-                        .cornerRadius = { 12, 12, 12, 12 }
-                    }) {}
-
-                    {
-                        Clay_String nav_str = make_string(k_nav[ni]);
-                        CLAY_TEXT(nav_str, CLAY_TEXT_CONFIG({
-                            .fontSize = (uint16_t)FS_BODY,
-                            .textColor = sel ? ACC_CYAN : TEXT_SECONDARY,
-                            .fontId = 0
-                        }));
-                    }
-                }
-            }
-
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(32) }
-                }
-            }) {}
-
-            CLAY_TEXT(CLAY_STRING("v2.4.1 — Aurora OS"), CLAY_TEXT_CONFIG({
-                .fontSize = (uint16_t)FS_XS,
-                .textColor = TEXT_MUTED,
-                .fontId = 0
-            }));
-        }
-
-        /* ──── MAIN CONTENT ──── */
-        CLAY_AUTO_ID((Clay_ElementDeclaration){
-            .layout = {
-                .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(body_h / scl) },
-                .padding = { (uint16_t)SP_LG, (uint16_t)SP_LG, (uint16_t)SP_LG, (uint16_t)SP_LG },
-                .childGap = (uint16_t)SP_LG,
-                .childAlignment = { .x = CLAY_ALIGN_X_LEFT }
-            },
-            .backgroundColor = BG_DEEP
-        }) {
-            CLAY_TEXT(CLAY_STRING("Good evening, Alex."), CLAY_TEXT_CONFIG({
-                .fontSize = (uint16_t)FS_H1,
-                .textColor = TEXT_PRIMARY,
-                .fontId = 0
-            }));
-            CLAY_TEXT(CLAY_STRING("Here's what's happening with your projects today."), CLAY_TEXT_CONFIG({
-                .fontSize = (uint16_t)FS_BODY,
-                .textColor = TEXT_SECONDARY,
-                .fontId = 0
-            }));
-
-            /* ── STAT CARDS ROW ── */
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(100) },
-                    .childGap = (uint16_t)SP_MD,
-                    .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }
-                }
-            }) {
-                for (int si = 0; si < 4; si++) {
-                    uint32_t sc = k_stat_colors[si];
-                    (void)sc;
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(100) },
-                            .padding = { (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD },
-                            .childGap = (uint16_t)SP_XS
-                        },
-                        .backgroundColor = BG_CARD,
-                        .cornerRadius = { 12, 12, 12, 12 },
-                        .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-                    }) {
-                        CLAY_AUTO_ID((Clay_ElementDeclaration){
-                            .layout = {
-                                .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(24) },
-                                .childGap = (uint16_t)SP_SM,
-                                .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }
-                            }
-                        }) {
-                            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                                .layout = { .sizing = { CLAY_SIZING_FIXED(24), CLAY_SIZING_FIXED(24) } },
-                                .backgroundColor = GLOW_CYAN,
-                                .cornerRadius = { 12, 12, 12, 12 }
-                            }) {}
-
-                            {
-                                Clay_String delta_str = make_string(k_stat_deltas[si]);
-                                CLAY_TEXT(delta_str, CLAY_TEXT_CONFIG({
-                                    .fontSize = (uint16_t)FS_XS,
-                                    .textColor = ACC_GREEN,
-                                    .fontId = 0
-                                }));
-                            }
-                        }
-
-                        {
-                            Clay_String val_str = make_string(k_stat_values[si]);
-                            CLAY_TEXT(val_str, CLAY_TEXT_CONFIG({
-                                .fontSize = (uint16_t)FS_H1,
-                                .textColor = TEXT_PRIMARY,
-                                .fontId = 0
-                            }));
-                        }
-
-                        {
-                            Clay_String lbl_str = make_string(k_stat_labels[si]);
-                            CLAY_TEXT(lbl_str, CLAY_TEXT_CONFIG({
-                                .fontSize = (uint16_t)FS_XS,
-                                .textColor = TEXT_MUTED,
-                                .fontId = 0
-                            }));
-                        }
-
-                        float bar_pct = 0.6f + 0.3f * sinf((float)frame * 0.02f + (float)si * 1.57f);
-                        (void)bar_pct;
-                        CLAY_AUTO_ID((Clay_ElementDeclaration){
-                            .layout = {
-                                .sizing = { CLAY_SIZING_PERCENT(bar_pct), CLAY_SIZING_FIXED(3) }
-                            },
-                            .backgroundColor = ACC_CYAN,
-                            .cornerRadius = { 2, 2, 2, 2 }
-                        }) {}
-                    }
-                }
-            }
-
-            /* ── CHART + SIDEBAR ROW ── */
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(240) },
-                    .childGap = (uint16_t)SP_MD
-                }
-            }) {
-                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                    .layout = {
-                        .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(240) },
-                        .padding = { (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD },
-                        .childGap = (uint16_t)SP_XS
-                    },
-                    .backgroundColor = BG_CARD,
-                    .cornerRadius = { 12, 12, 12, 12 },
-                    .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-                }) {
-                    CLAY_TEXT(CLAY_STRING("Revenue Trend"), CLAY_TEXT_CONFIG({
-                        .fontSize = (uint16_t)FS_H2,
-                        .textColor = TEXT_PRIMARY,
-                        .fontId = 0
-                    }));
-                    CLAY_TEXT(CLAY_STRING("Last 10 periods"), CLAY_TEXT_CONFIG({
-                        .fontSize = (uint16_t)FS_XS,
-                        .textColor = TEXT_MUTED,
-                        .fontId = 0
-                    }));
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = { .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(160) } }
-                    }) {}
-                }
-
-                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                    .layout = {
-                        .sizing = { CLAY_SIZING_FIXED(260), CLAY_SIZING_FIXED(240) },
-                        .childGap = (uint16_t)SP_SM
-                    }
-                }) {
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_FIXED(260), CLAY_SIZING_FIXED(120) },
-                            .padding = { (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM },
-                            .childGap = (uint16_t)SP_XS
-                        },
-                        .backgroundColor = BG_CARD2,
-                        .cornerRadius = { 8, 8, 8, 8 },
-                        .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-                    }) {
-                        CLAY_TEXT(CLAY_STRING("Active Sessions"), CLAY_TEXT_CONFIG({
-                            .fontSize = (uint16_t)FS_SM,
-                            .textColor = TEXT_SECONDARY,
-                            .fontId = 0
-                        }));
-                        CLAY_AUTO_ID((Clay_ElementDeclaration){
-                            .layout = { .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(80) } }
-                        }) {}
-                    }
-
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_FIXED(260), CLAY_SIZING_FIXED(112) },
-                            .padding = { (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM, (uint16_t)SP_SM },
-                            .childGap = (uint16_t)SP_XS
-                        },
-                        .backgroundColor = BG_CARD,
-                        .cornerRadius = { 8, 8, 8, 8 },
-                        .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-                    }) {
-                        CLAY_TEXT(CLAY_STRING("Quick Actions"), CLAY_TEXT_CONFIG({
-                            .fontSize = (uint16_t)FS_SM,
-                            .textColor = TEXT_SECONDARY,
-                            .fontId = 0
-                        }));
-                        CLAY_AUTO_ID((Clay_ElementDeclaration){
-                            .layout = {
-                                .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(28) },
-                                .childGap = (uint16_t)SP_SM
-                            }
-                        }) {
-                            static const char* k_acts[] = { "New", "Share", "Export" };
-                            static const uint32_t k_act_cols[] = { 0xFFE500FF, 0xA855F7FF, 0xF59E0BFF };
-                            (void)k_acts; (void)k_act_cols;
-                            for (int ai = 0; ai < 3; ai++) {
-                                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                                    .layout = {
-                                        .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(28) },
-                                        .padding = { 4, 4, 4, 4 }
-                                    },
-                                    .backgroundColor = ACC_CYAN,
-                                    .cornerRadius = { 4, 4, 4, 4 }
-                                }) {
-                                    Clay_String act_str = make_string(k_acts[ai]);
-                                    CLAY_TEXT(act_str, CLAY_TEXT_CONFIG({
-                                        .fontSize = (uint16_t)FS_XS,
-                                        .textColor = BG_DEEP,
-                                        .fontId = 0
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            /* ── FEATURE CARDS ── */
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(140) },
-                    .childGap = (uint16_t)SP_MD
-                }
-            }) {
-                for (int fi = 0; fi < 4; fi++) {
-                    CLAY_AUTO_ID((Clay_ElementDeclaration){
-                        .layout = {
-                            .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(140) },
-                            .padding = { (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD, (uint16_t)SP_MD },
-                            .childGap = (uint16_t)SP_SM
-                        },
-                        .backgroundColor = BG_CARD,
-                        .cornerRadius = { 12, 12, 12, 12 },
-                        .border = { .color = BORDER_SUBTLE, .width = { 1, 1, 1, 1 } }
-                    }) {
-                        CLAY_AUTO_ID((Clay_ElementDeclaration){
-                            .layout = { .sizing = { CLAY_SIZING_FIXED(36), CLAY_SIZING_FIXED(36) } },
-                            .backgroundColor = GLOW_CYAN,
-                            .cornerRadius = { 8, 8, 8, 8 }
-                        }) {}
-
-                        {
-                            Clay_String title_str = make_string(k_feat_titles[fi]);
-                            CLAY_TEXT(title_str, CLAY_TEXT_CONFIG({
-                                .fontSize = (uint16_t)FS_H2,
-                                .textColor = TEXT_PRIMARY,
-                                .fontId = 0
-                            }));
-                        }
-
-                        {
-                            Clay_String desc_str = make_string(k_feat_descs[fi]);
-                            CLAY_TEXT(desc_str, CLAY_TEXT_CONFIG({
-                                .fontSize = (uint16_t)FS_SM,
-                                .textColor = TEXT_SECONDARY,
-                                .fontId = 0
-                            }));
-                        }
-
-                        CLAY_TEXT(CLAY_STRING("Learn more \xE2\x86\x92"), CLAY_TEXT_CONFIG({
-                            .fontSize = (uint16_t)FS_SM,
-                            .textColor = TEXT_ACCENT,
-                            .fontId = 0
-                        }));
-                    }
-                }
-            }
-
-            /* ── FOOTER ── */
-            CLAY_AUTO_ID((Clay_ElementDeclaration){
-                .layout = {
-                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(32) },
-                    .padding = { 0, (uint16_t)SP_SM, 0, (uint16_t)SP_SM },
-                    .childGap = (uint16_t)SP_SM,
-                    .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }
-                },
-                .backgroundColor = BG_SURFACE,
-                .border = { .color = BORDER_SUBTLE, .width = { 0, 0, 1, 0 } }
-            }) {
-                CLAY_TEXT(CLAY_STRING("\xE2\x97\x8F Connected   \xE2\x80\xA2 12 nodes online   \xE2\x80\xA2 Last sync: just now"), CLAY_TEXT_CONFIG({
-                    .fontSize = (uint16_t)FS_XS,
-                    .textColor = TEXT_MUTED,
-                    .fontId = 0
-                }));
-
-                CLAY_AUTO_ID((Clay_ElementDeclaration){
-                    .layout = { .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIXED(1) } }
-                }) {}
-
-                CLAY_TEXT(CLAY_STRING("Q/E: sidebar   |   Space: pause   |   Scroll: navigate"), CLAY_TEXT_CONFIG({
-                    .fontSize = (uint16_t)FS_XS,
-                    .textColor = TEXT_MUTED,
-                    .fontId = 0
-                }));
-            }
-        }
-
-        /*
-        ================================================================
-        End of CLAY elements
-        ================================================================
-        */
-
-        clay_skip:;
-        (void)k_stat_colors; (void)k_feat_colors; /* suppress unused warnings */
-
-        /* ── End layout (skipped) ── */
-        Clay_RenderCommandArray rcmds = {0};
-        (void)rcmds;
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: present\n", loop_iter); fflush(stderr); }
         {
             int rect_count = 0;
             float main_chart_x = 0, main_chart_y = 0, main_chart_w = 0, main_chart_h = 0;
@@ -1369,11 +899,8 @@ int main(void) {
         }
 
         /* ── Present ── */
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: present\n", loop_iter); fflush(stderr); }
         fs_glfw_backend_present(&backend, 0.02f, 0.03f, 0.08f, 1.0f);
-        if (loop_iter < 3) { fprintf(stderr, "LOOP-%d: present_done\n", loop_iter); fflush(stderr); }
         if (!paused) frame++;
-        loop_iter++;
     }
 
     fsclay_shutdown();

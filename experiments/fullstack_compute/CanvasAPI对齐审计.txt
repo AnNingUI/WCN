@@ -1,0 +1,506 @@
+WCN fullstack_compute — Canvas API 对齐审计总报告
+目标: fullstack_compute 公共 API 与 Canvas 2D Context 规范对齐度
+日期: 2026-04-06
+分支: experiment-cpu-to-gpgpu
+覆盖: k.md 覆盖文档核实 + 公共头文件 + 实现代码交叉验证
+方法: 4 路并行审计（Path/State/Clip / Text / Style/Filter / Pixel IO） + team-lead 主线补证
+团队成员: api-path（路径状态裁剪）、api-text（文字 API）、api-style（样式滤镜）、
+      api-pixel（像素 IO）、team-lead（主线补证）
+
+================================================================================
+
+执行摘要
+
+本报告对照 Canvas 2D Context 规范，核实 k.md 中声明的 API 覆盖状态是否与
+实际公共头文件（include/fullstack_core.h / fullstack_effects.h / fullstack_core_debug.h /
+fullstack_backend_api.h）和实现代码一致。
+
+结论总览：
+- 公共 API 函数声明与头文件一致，未发现未声明的公开函数
+- k.md 声明的 PARTIAL/WIRED/NOT IMPLEMENTED 状态与代码基本吻合，少量需修订
+- 最大缺口：drawImage 9 种重载完全缺失（仅间接暴露 upload/decode API）
+- canvas.toDataURL / canvas.toBlob 缺失
+- fs_core_create_image_data_rgba8 签名语义与 Canvas API 不同
+- strokeText 对 emoji/color glyph 不走 SDF stroke（已确认）
+- fontBoundingBoxAscent/Descent 字段缺失于 FS_TextMetrics
+
+================================================================================
+
+一、API 声明与头文件核对
+
+1.1 公共头文件清单
+
+include/fullstack_core.h         — 主公共 API 表面（FS_Core 透明，FS_Path2D 等 opaque）
+include/fullstack_effects.h      — 滤镜/高斯核/物理 shadow API
+include/fullstack_core_debug.h   — 裁剪调试/诊断 API
+include/fullstack_backend_api.h  — 后端回调接口（ImageBackend / FontBackend）
+src/fullstack_core_private.h     — 内部状态（包含 fs_style_set_filter 声明）
+
+1.2 声明一致性检查
+
+已核对的公共 API 函数（按 fullstack_core.h 行号）：
+
+| 行号 | 函数 | 声明存在 | 实现文件 |
+|------|------|----------|----------|
+| 162 | fs_linear_gradient_create | YES | fullstack_core_paint.c |
+| 165 | fs_radial_gradient_create | YES | fullstack_core_paint.c |
+| 168 | fs_conic_gradient_create | YES | fullstack_core_paint.c |
+| 171 | fs_pattern_create_image | YES | fullstack_core_paint.c |
+| 288 | fs_style_set_filter | YES | fullstack_core_style_api.c |
+| 370 | fs_path2d_create | YES | fullstack_core_path2d.c |
+| 395 | fs_clip_path2d | YES | fullstack_core_path2d.c |
+| 438 | fs_core_create_image_data_rgba8 | YES | fullstack_core_canvas.c |
+| 445 | fs_core_put_canvas_image_data_rgba8 | YES | fullstack_core_canvas.c |
+| 455 | fs_core_get_canvas_image_data_rgba8 | YES | fullstack_core_canvas.c |
+
+未发现未声明于公共头文件但存在于实现中的公开函数。
+
+================================================================================
+
+二、Path / State / Clip API 对齐（api-path 负责）
+
+2.1 Path2D 对象模型
+
+k.md 声明：PARTIAL（retained Path2D 可用）
+状态：已确认。所有生命周期/命令/组合 API 均已在 fullstack_core.h 中声明：
+
+| API | k.md 声明 | 公共头文件 | 实现 |
+|-----|-----------|------------|------|
+| fs_path2d_create | YES | fullstack_core.h:370 | fullstack_core_path2d.c |
+| fs_path2d_destroy | YES | fullstack_core.h:371 | fullstack_core_path2d.c |
+| fs_path2d_reset | YES | fullstack_core.h:372 | fullstack_core_path2d.c |
+| fs_path2d_move_to/line_to/... | YES | fullstack_core.h:373-394 | fullstack_core_path2d.c |
+| fs_path2d_add_path | YES | fullstack_core.h:393 | fullstack_core_path2d.c |
+| fs_path2d_add_path_with_transform | YES | fullstack_core.h:394 | fullstack_core_path2d.c |
+| fs_path_fill_path2d | YES | fullstack_core.h:397 | fullstack_core_path2d.c |
+| fs_path_stroke_path2d | YES | fullstack_core.h:398 | fullstack_core_path2d.c |
+| fs_clip_path2d | YES | fullstack_core.h:395 | fullstack_core_path2d.c |
+| fs_clip_path2d_with_fill_rule | YES | fullstack_core.h:396 | fullstack_core_path2d.c |
+| fs_is_point_in_path2d | YES | fullstack_core.h:399 | fullstack_core_text_api.c |
+| fs_is_point_in_path2d_with_fill_rule | YES | fullstack_core.h:400 | fullstack_core_text_api.c |
+| fs_is_point_in_stroke_path2d | YES | fullstack_core.h:401 | fullstack_core_text_api.c |
+
+结论：Path2D API 覆盖完整，k.md 描述准确。
+
+2.2 fs_path_fill GPU-only 失败路径（队友 api-path 修订）
+
+k.md 声明：GPU clip 失败时返回 false，无 CPU 恢复路径。
+k.md 原文："fs_path_fill is now strict GPU-only: SDF-based clip-mask solve in clip compute for edge AA." / "if GPU clip path creation fails, fs_path_fill now returns false (no CPU recovery path)."
+
+实际代码：fullstack_core.c:7018-7147+ 有完整 CPU 三角化 fallback 路径。
+k.md 比代码更严格；实际实现更健壮：
+  - 第 7030-7034 行：先尝试 GPU clip-mask job
+  - 第 7036 行起：GPU 失败后执行 CPU 三角扇区化回退
+
+fs_clip_path 执行路径也比 k.md 描述更复杂：
+  - axis-aligned rect fast-path (c:5927)
+  - axis-aligned roundRect fast-path (c:5946)
+  - GPU clip compute → AABB fallback (c:5903)
+
+对齐结论：k.md 描述偏严格；代码更健壮。两者差异不影响用户 API 行为（GPU 路径优先，失败时 CPU 透明回退）。
+
+2.3 裁剪失败诊断 API
+
+k.md 声明：FS_ClipFailureReason + FS_ClipDiagnostics + fs_core_get_clip_diagnostics
+状态：已确认，全部在 fullstack_core_debug.h 中声明。
+
+| API | 声明 | 实现 |
+|-----|------|------|
+| FS_ClipFailureReason enum | fullstack_core_debug.h:5-13 | — |
+| FS_ClipDiagnostics struct | fullstack_core_debug.h:15-34 | — |
+| fs_core_get_clip_diagnostics | fullstack_core_debug.h:36 | fullstack_core_clip_resources.c |
+| fs_core_set_clip_aa_mode | fullstack_core_debug.h:41 | fullstack_core_clip_resources.c |
+| fs_core_set_clip_cache_enabled | fullstack_core_debug.h:39 | fullstack_core_clip_resources.c |
+
+2.4 裁剪层策略
+
+k.md 声明：FS_CLIP_MASK_LAYERS 从 16 提升到 64；LRU 保护安全层重用；near-capacity 阈值策略。
+状态：FS_CLIP_MASK_LAYERS=64 在 fullstack_core_gpu_layout.h:7 已确认。
+fs_core_set_clip_layer_reuse_reserve 在 fullstack_core_debug.h:37 已声明。
+
+2.5 save/restore 与 clip 状态快照
+
+k.md 声明：save/restore 现在同时快照 clip 状态与 transform 状态。
+状态：fs_state_save/restore 在 fullstack_core.h:245-246 已声明。
+fs_clip_rect / fs_clip_path_with_fill_rule 在 fullstack_core.h:254-256 已声明。
+
+================================================================================
+
+三、Text API 对齐（api-text 负责）
+
+3.1 measureText FS_TextMetrics 完整性
+
+Canvas 2D 规范字段：
+- width ✅ (fullstack_core.h:141)
+- actualBoundingBoxLeft ✅ (fullstack_core.h:142)
+- actualBoundingBoxRight ✅ (fullstack_core.h:143)
+- actualBoundingBoxAscent ✅ (fullstack_core.h:144)
+- actualBoundingBoxDescent ✅ (fullstack_core.h:145)
+- emHeightAscent ✅ (fullstack_core.h:147)
+- emHeightDescent ✅ (fullstack_core.h:148)
+- fontBoundingBoxAscent ❌ 未实现
+- fontBoundingBoxDescent ❌ 未实现
+- glyphBoundingBoxAscent ❌ 未实现
+- glyphBoundingBoxDescent ❌ 未实现
+
+对齐差距：FS_TextMetrics 缺少 fontBoundingBox* 字段。
+实现：fs_measure_text_utf8 (fullstack_core_text_api.c:237) 仅计算 actualBoundingBox* 和 emHeight*。
+来源：k.md 第 281 行已标注"not full Canvas TextMetrics parity"，描述准确。
+
+3.2 strokeText 与 color glyph
+
+k.md 声明：strokeText 目前仅对 SDF 字形生效，color glyph (emoji) 不走 SDF stroke，在 stroke pass 中被跳过。
+状态：已确认。fs_cmd_stroke_text_utf8 (fullstack_core_text_api.c:451) 对 color glyph (RGBA8 格式) 不执行 SDF stroke 路径。
+实现位置：fullstack_core_text_api.c:549（fs_stroke_text_utf8 调用 fs_cmd_stroke_text_utf8）
+k.md 描述准确。
+
+3.3 fontVariantCaps
+
+k.md 声明：仅提供 ASCII small-caps 近似（lowercase→uppercase with 0.82x scale），其他 caps 变体接受但未完全区分。
+状态：已确认。fs_text_variant_map_codepoint (fullstack_core_style.c) 仅处理 ASCII small-caps。
+FS_FontVariantCaps enum（fullstack_core.h:112-120）定义了 7 种模式，但只有 SMALL_CAPS 有实际实现。
+k.md 描述准确。
+
+3.4 fontStretch
+
+k.md 声明：应用合成水平度量缩放（synthetic horizontal metric scaling），不是字形面选择。
+状态：已确认。fs_text_stretch_scale (fullstack_core_style.c) 对 ultra-condensed...ultra-expanded
+     应用 0.5~2.0 的数值缩放因子，不是真实字体面切换。
+k.md 描述准确。
+
+3.5 textAlign/textBaseline/direction/bidi
+
+已实现：k.md 描述的所有 5 种 textAlign、6 种 textBaseline、3 种 direction。
+direction=ltr/rtl 对 textAlign=start/end 锚点行为正确（已确认）。
+Bidi shaping（RTL 文字重排序）未实现，k.md 已标注"bidi shaping still out of scope"。
+
+3.6 textRendering 模式
+
+k.md 声明：4 种模式（auto/optimizeSpeed/optimizeLegibility/geometricPrecision）
+已确认：FS_TextRendering enum (fullstack_core.h:93-98) 有全部 4 种值。
+实现确认：
+  - optimizeSpeed → 禁用 pair-kerning（fullstack_core_style.c:fs_is_text_kerning_enabled）
+  - geometricPrecision → 禁用 text pixel-snap（fullstack_core_style.c:fs_is_text_geometric_precision）
+k.md 描述准确。
+
+3.7 letterSpacing / wordSpacing
+
+已实现：fullstack_core.h:304-307 声明了 getter/setter 对。
+k.md 未明确列出此项，但实现存在。
+
+3.8 drawImage 3 种签名（队友 api-text 修订）
+
+Canvas 2D 规范实际定义了 3 种 drawImage 签名（不是 9 种）：
+  1. drawImage(img, dx, dy)
+  2. drawImage(img, dx, dy, dw, dh)
+  3. drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+
+公共 API 中相关函数：
+  - fs_cmd_image (9 参数) → 对应第 3 种签名
+  - fs_cmd_image_handle (5 参数) → 对应第 2 种签名（atlas handle 版）
+
+当前状态：完全缺失（source rect 裁剪 / source/dest sub-rect 组合 / 多来源类型支持均无）。
+k.md 未声明此 API，非文档错误。
+
+对齐差距：HIGH — 无法从 img/video/bitmap 绘制；现有 API 仅 atlas-based 变通方案。
+
+================================================================================
+
+四、Style / Filter / Compositing 对齐（api-style 负责）
+
+4.1 globalCompositeOperation — 11 种混合模式
+
+Canvas 2D 规范定义了 12 种混合模式：
+source-over, source-atop, destination-over, destination-atop, source-in,
+destination-in, source-out, destination-out, lighter, copy, xor, xor（WebGL 额外：multiply, screen, overlay, darken, lighten, color-dodge, color-burn, hard-light, soft-light, difference, exclusion）
+
+k.md 声明：11 种（source-over / copy / lighter / destination-over /
+  source-in / source-out / destination-in / destination-out / xor / source-atop / destination-atop）
+状态：已确认。
+
+FS_RENDER_PIPELINE_COUNT=11 (fullstack_core_gpu_layout.h:6)
+fs_make_blend_state_for_pipeline (fullstack_core.c:1005-1135) 完整实现所有 11 种。
+enum FS_GlobalCompositeOperation (fullstack_core.h:50-62) 映射正确。
+
+对齐差距：MEDIUM — 缺少 multiply/screen/overlay/darken/lighten 等额外 WebGL blend 模式。
+
+4.2 shadowBlur — 软遮罩 vs 物理高斯
+
+k.md 声明：shadowBlur 当前实现为软遮罩扩展路径（不是物理准确的 Gaussian 卷积），
+  fs_effects_render_physical_shadow 是 stub。
+状态：已确认。
+  - shadow API 在 fullstack_core.h:269-287（shadowColor / shadowBlur / shadowOffset）
+  - fs_effects_render_physical_shadow 存在于 fullstack_effects.h:120 和 fullstack_effects.c:912
+  - 但主渲染路径（fs_core_encode）未调用此函数
+  - 当前 shadow 使用命令复制路径（shadow pass 先渲染，再渲染主场景）
+k.md 描述准确。
+
+4.3 filter API — 10 种 CSS 滤镜
+
+k.md 声明：brightness / contrast / grayscale / hue-rotate / invert / opacity /
+  saturate / sepia / blur / drop-shadow 共 10 种。
+状态：已确认。fs_style_set_filter (fullstack_core.h:288) 在 fullstack_core_style_api.c:759 实现。
+滤镜解析/fs_filter_chain_execute/fs_filter_chain_parse 均已确认存在。
+
+Bug fixes（k.md:534-550 所列 8 项）：
+  1. fs_vs_main 对角线分割 → 已修复（overdrawn triangle）
+  2. filter uniform buffer overwrite → 已修复（移除 B→A passthrough）
+  3. Double-copy texture conflict → 已修复（直接 copy result→scene）
+  4. Gaussian blur V-pass BG swap → 已修复
+  5. Drop-shadow dispatch 太小 → 已修复（扩展 offset）
+  6. Filter name 长度解析 → 已修复
+  7. Shader 修正（grayscale/sepia/hue-rotate） → 已修复
+  8. Drop-shadow px suffix → 已修复
+k.md 描述准确。
+
+4.4 gradient — grid-cell 采样
+
+k.md 声明：fill-path/fill-rect 可消费 gradient style 作为 grid-cell 采样绘制。
+状态：已确认。fs_draw_linear_gradient_rect_cells (fullstack_core_paint.c) 实现最多 64×64 网格单元。
+k.md 同时标注：text gradient 每字形中心采样（不是 fragment 级精度），
+  path stroke gradient 每 path segment/join 采样（不是 fragment 级精度）。
+k.md 描述准确。
+
+4.5 pattern — repeat 模式
+
+k.md 声明：repeat / repeat-x / repeat-y / no-repeat 已实现，setTransform 支持 a,b,c,d,e,f。
+状态：已确认。FS_PatternRepeat enum (fullstack_core.h:122-127) 有全部 4 种。
+fs_pattern_set_transform (fullstack_core.h:173) 接受 6 个仿射参数。
+fs_style_pattern_sample_rgba8 实现完整 per-fragment 采样 + inverse transform + repeat 模式。
+
+4.6 miterLimit bevel fallback
+
+k.md 声明：lineJoin=miter 有 miter tip 扩展与 limit clamp，超限时自动回退到 bevel。
+状态：已确认。fs_style_set_miter_limit (fullstack_core.h:263) 存在。
+miter/bevel fallback 逻辑在 fullstack_core_paint.c 的 stroke 路径实现。
+
+================================================================================
+
+五、Pixel IO / Context / Image API 对齐（api-pixel 负责）
+
+5.1 getImageData — readback 时机
+
+Canvas 2D 规范：getImageData(sx, sy, sw, sh) 返回指定区域的当前 canvas 数据，
+  读取发生在"立即调用时"（same-call semantics）。
+
+k.md 声明：readback 源是"最近一次提交/呈现的帧 copy"，不是 full browser same-call immediate parity。
+状态：已确认。
+  - fs_encode_canvas_readback_copy (fullstack_core_canvas.c:150) 复制 target_texture 全帧
+  - fs_core_get_canvas_image_data_rgba8 (fullstack_core.h:455) 先尝试从 readback buffer 刷新，
+    失败后回退到 canvas shadow
+  - readback 时机：在 fs_core_encode 末尾，滤镜链之后/presentation pass 之后
+  - 如果 filter chain 修改了 scene_texture，readback 得到的是 presentation 后的内容
+对齐差距：MEDIUM — 无法读取 filter 链中间状态；格式固定为 RGBA8；BGRA 处理路径存在但精度有限。
+k.md 描述准确。
+
+5.2 putImageData / createImageData
+
+Canvas 2D 规范：
+  - createImageData(width, height) → 返回 zero-initialized ImageData 对象
+  - putImageData(imageData, dx, dy) → 绘制到 canvas
+  - putImageData(imageData, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) → dirty rect 版本
+
+当前状态：
+  - fs_core_create_image_data_rgba8 (fullstack_core.h:438) 存在，但返回 bool 而非 ImageData 对象
+    实现：分配 zero-initialized RGBA8 缓冲区，通过 out_rgba_pixels / out_rgba_size 返回
+    语义差异：Canvas API createImageData 返回 ImageData 对象（有 width/height/data 属性）
+              fullstack_compute 版本是纯输出缓冲区创建
+  - fs_core_put_canvas_image_data_rgba8 (fullstack_core.h:445) 存在，但只有 (dst_x, dst_y, width, height) 版本
+    缺少 dirty rect 重载（sx, sy, sw, sh 参数）
+  - k.md:272 未明确提到 createImageData 的对象语义差异和 putImageData dirty rect 缺失
+
+对齐差距：MEDIUM — createImageData 语义不同（无 ImageData 对象）；putImageData 缺少 dirty rect 重载。
+
+5.3 canvas.toDataURL / canvas.toBlob
+
+Canvas 2D 规范：canvas.toDataURL(type, encoderOptions) 和 canvas.toBlob(callback, type, encoderOptions)
+是 Canvas 2D 的标准导出 API。
+
+当前状态：完全缺失。
+  grep 搜索结果：无 toDataURL / toBlob 相关实现（src/ 目录下零匹配）
+  k.md 未标注此项
+
+对齐差距：HIGH — 导出 API 缺失，k.md 未标注。
+
+5.4 context_lost 恢复
+
+Canvas 2D 规范：contextlost 事件触发后可尝试 context.reset() 并重新配置。
+
+k.md 声明："NOT implemented yet: full browser-parity context loss recovery lifecycle and event model"。
+状态：已确认。
+  - fs_core_is_context_lost (fullstack_core.h:197) 存在
+  - fs_core_get_context_attributes (fullstack_core.h:198) 返回固定后端能力
+  - 无 reset() / restoreFromLostContext() / contextlost 事件监听
+k.md 描述准确。
+
+================================================================================
+
+六、k.md 与代码不符合项
+
+以下 k.md 声明需要修订：
+
+修订 1 [MEDIUM] fs_style_set_filter 已在公共 API 声明
+k.md:288 标注 fs_style_set_filter 在公共 API surface 中。
+代码确认：fullstack_core.h:288 声明了 fs_style_set_filter 和 fs_style_get_filter。
+修订：k.md 应更新为"WIRED in public API"而非仅在 style section 描述。
+
+修订 2 [MEDIUM] drawImage 完全缺失，未在 k.md 中标注
+k.md 未明确列出 drawImage 的缺失状态。Canvas 2D 的 drawImage 有 9 种重载，
+当前仅间接暴露 upload/decode API，无等价入口。
+建议在 k.md "Image drawing" 节明确标注 "NOT implemented — use
+fs_core_upload_image/decode_* + fs_cmd_image for atlas-based workaround"。
+
+修订 3 [LOW] canvas.toDataURL / canvas.toBlob 缺失，未在 k.md 标注
+k.md 未列出 canvas.toDataURL 和 canvas.toBlob 的缺失。
+建议在 "Pixel IO / image data" 节补充 "NOT implemented: toDataURL, toBlob"。
+
+================================================================================
+
+七、Canvas 2D 规范覆盖矩阵
+
+按 Canvas 2D Context 2D 接口规范逐项核对：
+
+### 画布状态
+| 功能 | 规范状态 | 实现状态 | 差距 |
+|------|----------|----------|------|
+| canvas.toDataURL | REQUIRED | ❌ 未实现 | HIGH |
+| canvas.toBlob | REQUIRED | ❌ 未实现 | HIGH |
+| canvas.width/height 属性 | REQUIRED | ✅ 实现（resize 时设置） | — |
+| canvas.style | N/A（CSS） | ❌ 未实现 | — |
+| canvas.getContext('2d') | REQUIRED | N/A（API 层面） | — |
+| canvas.toDataURL(type, encoderOptions) | REQUIRED | ❌ 未实现 | HIGH |
+| canvas.convertToBlob | REQUIRED | ❌ 未实现 | HIGH |
+
+### 绘制状态
+| 功能 | 规范状态 | 实现状态 | 差距 |
+|------|----------|----------|------|
+| save/restore | REQUIRED | ✅ 实现 | — |
+| resetTransform | REQUIRED | ✅ 实现（fs_transform_reset） | — |
+| globalAlpha | REQUIRED | ✅ 实现 | — |
+| globalCompositeOperation（全部12种） | REQUIRED | 部分（11/12） | MEDIUM |
+| strokeStyle / fillStyle | REQUIRED | ✅ 实现 | — |
+| lineWidth / lineCap / lineJoin | REQUIRED | ✅ 实现 | — |
+| miterLimit | REQUIRED | ✅ 实现 | — |
+| lineDashOffset | REQUIRED | ✅ 实现（via fs_style_set_dash） | — |
+| shadowBlur / shadowColor / shadowOffsetX/Y | REQUIRED | ✅ 实现（软遮罩路径） | — |
+| filter | REQUIRED | ✅ 实现（CSS string 解析） | — |
+| font | REQUIRED | 部分（通过独立 API） | LOW |
+| textAlign / textBaseline | REQUIRED | ✅ 实现 | — |
+| textDirection | REQUIRED | ✅ 实现（Bidi shaping 除外） | LOW |
+
+### 绘制 API
+| 功能 | 规范状态 | 实现状态 | 差距 |
+|------|----------|----------|------|
+| clearRect | REQUIRED | ✅ 实现 | — |
+| fillRect / strokeRect | REQUIRED | ✅ 实现 | — |
+| fillText / strokeText / measureText | REQUIRED | ✅ 实现 | LOW |
+| arc / arcTo / ellipse / ellipseArc | REQUIRED | ✅ 实现 | — |
+| rect / roundRect | REQUIRED | ✅ 实现 | — |
+| moveTo / lineTo / quadraticCurveTo / bezierCurveTo | REQUIRED | ✅ 实现 | — |
+| closePath | REQUIRED | ✅ 实现 | — |
+| beginPath | REQUIRED | ✅ 实现（fs_path_begin） | — |
+| drawImage（全部 9 种重载） | REQUIRED | ❌ 未实现 | HIGH |
+| createLinearGradient | REQUIRED | ✅ 实现 | — |
+| createRadialGradient | REQUIRED | ✅ 实现 | — |
+| createConicGradient | REQUIRED | ✅ 实现 | — |
+| createPattern | REQUIRED | ✅ 实现 | — |
+| isPointInPath / isPointInStroke | REQUIRED | ✅ 实现 | — |
+| getTransform / setTransform | REQUIRED | ✅ 实现 | — |
+| rotate / scale / translate / transform | REQUIRED | ✅ 实现 | — |
+| clip | REQUIRED | ✅ 实现（GPU clip-mask） | LOW |
+| quadraticCurveTo / bezierCurveTo（path） | REQUIRED | ✅ 实现 | — |
+
+### ImageData / Pixel 操作
+| 功能 | 规范状态 | 实现状态 | 差距 |
+|------|----------|----------|------|
+| createImageData(width, height) | REQUIRED | 部分（无 ImageData 对象语义） | MEDIUM |
+| createImageData(imageData) | REQUIRED | ❌ 未实现 | MEDIUM |
+| putImageData(imageData, dx, dy) | REQUIRED | ✅ 实现 | LOW |
+| putImageData(imageData, dx, dy, dirty*) | REQUIRED | ❌ 未实现 | MEDIUM |
+| getImageData(sx, sy, sw, sh) | REQUIRED | 部分（时机/格式限制） | MEDIUM |
+| setTransform / getTransform | REQUIRED | ✅ 实现 | — |
+
+### Path2D（扩展 API）
+| 功能 | 规范状态 | 实现状态 | 差距 |
+|------|----------|----------|------|
+| Path2D 构造 / addPath / addPath(transform) | REQUIRED | ✅ 实现 | — |
+| 所有 path 命令 | REQUIRED | ✅ 实现 | — |
+
+================================================================================
+
+八、未列入 k.md 的实现发现
+
+以下 API 在代码中存在，但 k.md 未明确记录：
+
+8.1 [LOW] fs_style_get_filter — 获取当前 filter 字符串
+  fullstack_core.h:289 声明，但 k.md 增量更新中仅描述了 set，未描述 get。
+  实际存在。
+
+8.2 [LOW] fs_core_load_font_file / fs_core_load_font_memory
+  fullstack_core.h:465-466 声明。k.md 未列出字体加载 API。
+  相关：fs_core_register_image_font (fullstack_core.h:467) 字体注册 API 也存在但 k.md 未列出。
+
+8.3 [LOW] fs_core_get_image_backend_name / fs_core_get_font_backend_name
+  fullstack_core.h:498-499 声明。k.md 未列出。
+
+8.4 [LOW] fs_core_get_clip_diagnostics（诊断 API 完整性）
+  fullstack_core_debug.h:36 已实现完整的 per-frame 诊断：
+  dispatch_batches_this_frame、dispatch_waste_ratio、oriented_quad_commands_this_frame、
+  layer_reuses_this_frame 等。k.md 描述了该 API 但未列出完整字段清单。
+
+================================================================================
+
+九、对齐差距优先级
+
+P0（严重影响 Canvas 兼容性）
+  1. drawImage 9 种重载缺失 — 无法从 img/video/canvas/bitmap 绘制图像
+  2. canvas.toDataURL / canvas.toBlob 缺失 — 无法导出画布内容
+  3. getImageData 读取时机不正确 — filter 链内部状态无法读取
+
+P1（影响部分工作流）
+  4. globalCompositeOperation 缺少 multiply/screen/overlay 等 6 种额外 blend 模式
+  5. createImageData 语义差异 — 无 ImageData 对象，返回 bool + 输出缓冲区
+  6. putImageData 缺少 dirty rect 重载
+  7. strokeText 对 emoji/color glyph 不执行 stroke
+  8. FS_TextMetrics 缺少 fontBoundingBox* 字段
+  9. FS_TextMetrics 缺少 glyphBoundingBox* 字段
+ 10. Bidi text shaping（RTL 重排序）缺失
+
+P2（质量/边缘情况）
+ 11. fontVariantCaps 仅 small-caps 有实际效果
+ 12. fontStretch 是合成缩放不是字形面选择
+ 13. gradient text 采样是 per-glyph/per-segment 不是 per-fragment
+ 14. context_lost 恢复生命周期未实现
+
+================================================================================
+
+十、团队成员贡献
+
+api-path     — Path2D / State / Clip API 头文件核对
+api-text     — Text API 声明与实现一致性验证
+api-style    — Style / Filter / Compositing 实现核对
+api-pixel    — Pixel IO / Context / Image API 缺口识别
+team-lead    — 主线头文件遍历、FS_RENDER_PIPELINE_COUNT blend 验证、
+             drawImage / toDataURL / toBlob 缺口确认
+
+================================================================================
+
+Canvas API 对齐审计完成 — 2026-04-06
+格式参照安全审计.txt / 性能审计.txt 结构。
+--- 队友补充更正（2026-04-06 第二轮 ---
+
+## 更正 1：fs_path_fill 不是纯 GPU-only，有 CPU 三角化回退
+
+队友 api-path 审计发现：k.md:29-33 声明 fs_path_fill strict GPU-only no CPU recovery path，
+但实际代码 fullstack_core.c:7018-7147 有完整 CPU 三角扇区化回退路径（GPU 失败后透明回退到 CPU）。
+fs_clip_path 也有 axis-aligned rect fast-path、roundRect fast-path、GPU compute、AABB fallback 等多路径。
+结论：k.md 描述偏严格；代码实现更健壮。
+
+## 更正 2：drawImage 规范只有 3 种签名，不是 9 种
+
+队友 api-text 核实：Canvas 2D 规范实际定义了 3 种 drawImage 签名：
+  1. drawImage(img, dx, dy)
+  2. drawImage(img, dx, dy, dw, dh)
+  3. drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+公共 API 有 fs_cmd_image (9 参数) 和 fs_cmd_image_handle (5 参数) 两个相关函数。
+k.md 未声明 drawImage，不算文档错误（k.md 无此项声明）。
