@@ -38,6 +38,8 @@ add_executable(
     fullstack_compute_demo
     # ${FS_ROOT}/src/fullstack_core.replay.c
     ${FS_ROOT}/src/fullstack_core.c
+    ${FS_ROOT}/src/fullstack_effects.c
+    ${FS_ROOT}/src/fullstack_filters.c
     ${FS_ROOT}/src/fullstack_core_paint.c
     ${FS_ROOT}/src/fullstack_core_path2d.c
     ${FS_ROOT}/src/fullstack_core_transform.c
@@ -91,4 +93,120 @@ if(FREETYPE_FOUND)
     target_compile_definitions(fullstack_compute_demo PRIVATE FS_HAS_FREETYPE2=1)
     target_include_directories(fullstack_compute_demo PRIVATE ${FREETYPE_INCLUDE_DIRS})
     target_link_libraries(fullstack_compute_demo PRIVATE ${FREETYPE_LIBRARIES})
+endif()
+
+# ---------------------------------------------------------------------------
+# fs_text_layout_demo — Pretext-style DOM-free text layout
+# ---------------------------------------------------------------------------
+add_executable(
+    fs_text_layout_demo
+    ${FS_ROOT}/src/fullstack_core.c
+    ${FS_ROOT}/src/fullstack_effects.c
+    ${FS_ROOT}/src/fullstack_filters.c
+    ${FS_ROOT}/src/fullstack_core_paint.c
+    ${FS_ROOT}/src/fullstack_core_path2d.c
+    ${FS_ROOT}/src/fullstack_core_transform.c
+    ${FS_ROOT}/src/fullstack_core_util.c
+    ${FS_ROOT}/src/fullstack_core_atlas.c
+    ${FS_ROOT}/src/fullstack_core_upload.c
+    ${FS_ROOT}/src/fullstack_core_canvas.c
+    ${FS_ROOT}/src/fullstack_core_gpu_common.c
+    ${FS_ROOT}/src/fullstack_core_clip_resources.c
+    ${FS_ROOT}/src/fullstack_core_text_glyph.c
+    ${FS_ROOT}/src/fullstack_core_text_image_font.c
+    ${FS_ROOT}/src/fullstack_core_text_api.c
+    ${FS_ROOT}/src/fullstack_core_style_api.c
+    ${FS_ROOT}/src/fullstack_core_style.c
+    ${FS_ROOT}/impl/fullstack_stb_image_backend.c
+    ${FS_ROOT}/impl/fullstack_stb_font_backend.c
+    ${FS_ROOT}/impl/fullstack_stb_cbdt_parser.c
+    ${FS_ROOT}/impl/fullstack_freetype2_font_backend.c
+    ${FS_ROOT}/impl/fullstack_glfw_backend.c
+    ${FS_ROOT}/examples/fs_text_layout_demo.c
+)
+target_include_directories(
+    fs_text_layout_demo
+    PRIVATE
+    ${WCN_ROOT}/include
+    ${WCN_ROOT}/external/wgpu/include
+    ${WCN_ROOT}/external/stb/include
+    ${FS_ROOT}/include
+    ${FS_ROOT}/src
+    ${FS_ROOT}/impl
+)
+if(TARGET GLFW::GLFW)
+    target_link_libraries(fs_text_layout_demo PRIVATE GLFW::GLFW)
+elseif(GLFW_LIBRARIES)
+    target_include_directories(fs_text_layout_demo PRIVATE ${GLFW_INCLUDE_DIRS})
+    target_link_directories(fs_text_layout_demo PRIVATE ${GLFW_LINK_DIRS})
+    target_link_libraries(fs_text_layout_demo PRIVATE ${GLFW_LIBRARIES})
+else()
+    target_link_libraries(fs_text_layout_demo PRIVATE glfw)
+endif()
+target_link_libraries(fs_text_layout_demo PRIVATE ${WGPU_LIBRARY})
+if(NOT MSVC)
+    target_link_libraries(fs_text_layout_demo PRIVATE m)
+endif()
+if(FREETYPE_FOUND)
+    target_compile_definitions(fs_text_layout_demo PRIVATE FS_HAS_FREETYPE2=1)
+    target_include_directories(fs_text_layout_demo PRIVATE ${FREETYPE_INCLUDE_DIRS})
+    target_link_libraries(fs_text_layout_demo PRIVATE ${FREETYPE_LIBRARIES})
+endif()
+
+# ---------------------------------------------------------------------------
+# clay_layout_demo — Clay layout engine × WCN showcase
+# ---------------------------------------------------------------------------
+add_executable(
+    clay_layout_demo
+    ${FS_ROOT}/src/fullstack_core.c
+    ${FS_ROOT}/src/fullstack_effects.c
+    ${FS_ROOT}/src/fullstack_filters.c
+    ${FS_ROOT}/src/fullstack_core_paint.c
+    ${FS_ROOT}/src/fullstack_core_path2d.c
+    ${FS_ROOT}/src/fullstack_core_transform.c
+    ${FS_ROOT}/src/fullstack_core_util.c
+    ${FS_ROOT}/src/fullstack_core_atlas.c
+    ${FS_ROOT}/src/fullstack_core_upload.c
+    ${FS_ROOT}/src/fullstack_core_canvas.c
+    ${FS_ROOT}/src/fullstack_core_gpu_common.c
+    ${FS_ROOT}/src/fullstack_core_clip_resources.c
+    ${FS_ROOT}/src/fullstack_core_text_glyph.c
+    ${FS_ROOT}/src/fullstack_core_text_image_font.c
+    ${FS_ROOT}/src/fullstack_core_text_api.c
+    ${FS_ROOT}/src/fullstack_core_style_api.c
+    ${FS_ROOT}/src/fullstack_core_style.c
+    ${FS_ROOT}/impl/fullstack_stb_image_backend.c
+    ${FS_ROOT}/impl/fullstack_stb_font_backend.c
+    ${FS_ROOT}/impl/fullstack_stb_cbdt_parser.c
+    ${FS_ROOT}/impl/fullstack_freetype2_font_backend.c
+    ${FS_ROOT}/impl/fullstack_glfw_backend.c
+    ${FS_ROOT}/examples/clay_layout_demo.c
+)
+target_include_directories(
+    clay_layout_demo
+    PRIVATE
+    ${WCN_ROOT}/include
+    ${WCN_ROOT}/external/wgpu/include
+    ${WCN_ROOT}/external/stb/include
+    ${FS_ROOT}/include
+    ${FS_ROOT}/src
+    ${FS_ROOT}/impl
+)
+if(TARGET GLFW::GLFW)
+    target_link_libraries(clay_layout_demo PRIVATE GLFW::GLFW)
+elseif(GLFW_LIBRARIES)
+    target_include_directories(clay_layout_demo PRIVATE ${GLFW_INCLUDE_DIRS})
+    target_link_directories(clay_layout_demo PRIVATE ${GLFW_LINK_DIRS})
+    target_link_libraries(clay_layout_demo PRIVATE ${GLFW_LIBRARIES})
+else()
+    target_link_libraries(clay_layout_demo PRIVATE glfw)
+endif()
+target_link_libraries(clay_layout_demo PRIVATE ${WGPU_LIBRARY})
+if(NOT MSVC)
+    target_link_libraries(clay_layout_demo PRIVATE m)
+endif()
+if(FREETYPE_FOUND)
+    target_compile_definitions(clay_layout_demo PRIVATE FS_HAS_FREETYPE2=1)
+    target_include_directories(clay_layout_demo PRIVATE ${FREETYPE_INCLUDE_DIRS})
+    target_link_libraries(clay_layout_demo PRIVATE ${FREETYPE_LIBRARIES})
 endif()
