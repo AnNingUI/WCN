@@ -134,6 +134,14 @@ static Clay_Dimensions fsclay_measure_text(
     };
 }
 
+static void clay_error_handler(Clay_ErrorData error) {
+    fprintf(stderr, "Clay error type=%d: %.*s\n",
+        (int)error.errorType,
+        (int)error.errorText.length,
+        error.errorText.chars ? error.errorText.chars : "");
+    fflush(stderr);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Chart drawing — smooth bezier line + area fill
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -269,18 +277,21 @@ int main(void) {
     if (!font_ready) fprintf(stderr, "Warning: no font loaded\n");
 
     /* ── Clay arena ── */
+    uint32_t clay_mem_size = Clay_MinMemorySize();
+    fprintf(stderr, "DBG: Clay_MinMemorySize=%u bytes\n", clay_mem_size); fflush(stderr);
     fprintf(stderr, "DBG: allocating clay_mem...\n"); fflush(stderr);
-    void* clay_mem = calloc(1, 2 * 1024 * 1024);
+    void* clay_mem = calloc(1, clay_mem_size);
     if (!clay_mem) {
         fs_glfw_backend_shutdown(&backend);
         return 1;
     }
     fprintf(stderr, "DBG: clay_mem=%p, creating arena...\n", clay_mem); fflush(stderr);
-    Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(2 * 1024 * 1024, clay_mem);
+    Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(clay_mem_size, clay_mem);
     (void)arena;
     fprintf(stderr, "DBG: Clay_Initialize...\n"); fflush(stderr);
     /* MUST call Clay_Initialize first — sets Clay__currentContext which all other Clay APIs depend on */
-    Clay_Context* clay_ctx = Clay_Initialize(arena, (Clay_Dimensions){1440, 900}, (Clay_ErrorHandler){0});
+    Clay_Context* clay_ctx = Clay_Initialize(arena, (Clay_Dimensions){1440, 900},
+        CLAY__INIT(Clay_ErrorHandler){ clay_error_handler, NULL });
     if (!clay_ctx) {
         fprintf(stderr, "Clay_Initialize FAILED\n");
         free(clay_mem);

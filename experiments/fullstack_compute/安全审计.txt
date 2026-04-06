@@ -1,0 +1,278 @@
+WCN fullstack_compute — 红队安全评估总报告（统一版）
+目标: WebGPU 2D Canvas 渲染库
+日期: 2026-04-06
+分支: experiment-cpu-to-gpgpu
+覆盖: 当前代码基线 + 新增滤镜/效果系统 + 构建系统 + 首轮高危问题复核
+方法: 首轮总审计 + 最新 git 增量复核 + 4 份专项报告交叉校验
+
+================================================================================
+
+执行摘要
+
+本统一版替代首轮“100+ 问题”摘要，聚焦当前代码中仍可证明的 live 风险及其修复状态。
+
+结论:
+- 首轮 11 个核心问题中：已修复 6 个，部分缓解 2 个，仍存在或仍属架构空白 3 个。
+- 新增滤镜/效果系统没有带来已证实的 CPU 侧直接栈/堆溢出链，但引入了新的 GPU 写越界、GPU dispatch 上限、shader 越界读取、解析越界读和 DoS 风险。
+- 当前最需要立即处理的问题是:
+  1. physical-shadow 路径 256 字节 kernel 上传写入 252 字节 GPU buffer
+  2. filter/effects dispatch 维度缺少 WebGPU limits 检查
+  3. drop-shadow compute shader 越界 textureLoad
+  4. malformed filter token 解析越界读
+  5. canvas readback / imageData 缺少 taint/origin 隔离
+- 构建与供应链问题仍未解决：无编译器 hardening、无 sanitizer、根工程 GLOB_RECURSE、下载脚本无 hash 校验。
+
+备注:
+- 本版不沿用首轮“100+ 问题”的数量统计作为当前状态结论。
+- 首轮原始细分报告仍保存在 memory/ 目录，作为历史证据和补充材料。
+
+================================================================================
+
+一、当前 Live 高风险问题
+
+L-01 [HIGH] Filter malformed token parser OOB read
+文件: src/fullstack_filters.c:273-276
+根因: 解析到不含 '(' 的 token 时，代码执行 `p = name_start + name_len + 1`，可能把指针推进 '\0' 之后，再在下一轮 `while (*p ...)` 中解引用越界内存。
+影响: 畸形 filter 字符串可触发越界读或崩溃。
+PoC 思路: 传入以未知 token 结尾且无 '(' 的 filter 字符串。
+
+L-02 [HIGH] Physical shadow kernel upload 256 -> 252 GPU buffer overwrite
+文件: src/fullstack_effects.c:210-212, 923-930
+根因: gaussian kernel buffer 固定为 252 字节；当 kernel_size = 63 时，上传路径按 64 个 float 对齐，最终写入 256 字节。
+影响: WebGPU validation failure、GPU 数据损坏风险。
+备注: 这是当前实锤 live 问题；并非“CSS blur 直接 CPU 栈溢出”。
+
+L-03 [HIGH] Filter/effects dispatch dimension exceeds WebGPU limits
+文件: src/fullstack_filters.c:605-620, 685-687, 750-752
+根因: dispatchWorkgroups 维度完全由 core->width / core->height 推导，无 `maxComputeWorkgroupsPerDimension` 检查，也无全局 canvas 尺寸上限。
+影响: 极大尺寸 canvas 可触发 validation error，Windows 上可能进一步触发 TDR。
+PoC 思路: width / height >= 65536，或使 `(width + 7) / 8`、`(height + 7) / 8` 推至 65536。
+
+L-04 [HIGH] Drop-shadow compute shader OOB textureLoad
+文件: src/fullstack_shaders.h:1776-1778
+根因: `textureLoad(shadow_tex, vec2<i32>(c) - off, 0)` 对 offset 无边界裁剪。
+影响: 大偏移 drop-shadow 触发 GPU 未定义行为或 validation failure。
+PoC 思路: `drop-shadow(-100000px -100000px rgba(...))`。
+
+L-05 [HIGH] Canvas readback / imageData 缺少 taint/origin isolation
+文件: src/fullstack_core.c:4821-4873
+根因: `fs_core_get_canvas_image_data_rgba8()` 直接返回 shadow/readback 像素，代码中不存在 taint/origin/CORS 风格隔离、标记或拒绝路径。
+影响: 如果宿主允许外部来源像素进入同一 canvas，本库无法阻止读取。
+备注: 这是架构/信任边界问题；之前“已修复”的结论不成立。
+
+================================================================================
+
+二、当前 Live 中风险问题
+
+M-01 [MEDIUM] blur(0) 可能上传未初始化 kernel 数据
+文件: src/fullstack_effects.c:37-46, src/fullstack_filters.c:583-594
+根因: sigma = 0 时 kernel 计算失败，调用点未检查返回值便继续 memcpy / upload。
+影响: GPU 接收未初始化权重，输出结果不可预测。
+
+M-02 [MEDIUM] Filter chain 无长度上限导致 GPU DoS
+文件: src/fullstack_filters.c:225-237, 580-789
+根因: chain->count 无限增长；每个 blur / drop-shadow 都是整画布 GPU pass。
+影响: 可构造超长 filter 串耗尽 GPU 时间片、命令缓冲或驱动预算。
+
+M-03 [MEDIUM] Exponent parsing signed overflow -> INF / NaN propagation
+文件: src/fullstack_filters.c:83-95
+根因: `int exp_val = exp_val * 10 + digit` 无溢出检查。
+影响: 极长指数触发 UB，非有限值继续传播到 shader 参数。
+
+M-04 [MEDIUM] CPU command/state 双 realloc 仍非原子
+文件: src/fullstack_core.c:3300-3311
+根因: commands realloc 成功后立即写回 core；command_states realloc 失败时无回滚。
+影响: command / command_state capacity 脱同步，留下状态一致性风险。
+
+M-05 [MEDIUM] Ear clipping O(n^3) DoS 仍存在
+文件: src/fullstack_core_paint.c:1265-1327
+根因: `count * count * 2` guard 配合 O(n) 点包含检测，最坏复杂度仍高。
+影响: 大型 / 自交多边形可造成明显卡顿或冻结。
+
+M-06 [MEDIUM] Readback callback/轮询同步仍不可靠
+文件: src/fullstack_core_canvas.c:68-88
+根因: 固定 8 次 `wgpuDevicePoll` + 共享 done/success 标志的方案缺少强同步语义。
+影响: 高负载时可能出现读回失败、静默丢帧或行为不确定。
+
+M-07 [LOW-MEDIUM] Drop-shadow original input 绑定逻辑不一致
+文件: src/fullstack_filters.c:557-573, 661-668
+根因: 当前帧只明确把 scene copy 到 ping_pong_texture_a；drop-shadow 计算路径却把 original source 绑定到 ping_pong_texture_b。
+影响: 结果可能混入错误的中间结果或前序内容，属于完整性/正确性风险，不单独构成跨域泄漏结论。
+
+================================================================================
+
+三、构建与供应链问题
+
+S-01 [HIGH] 无编译器安全加固标志
+文件: experiments/fullstack_compute/CMakeLists.txt, WCN/CMakeLists.txt
+根因: 未启用 stack protector、FORTIFY、PIE/RELRO 等基本 hardening。
+影响: 一旦出现内存破坏，利用门槛更低。
+
+S-02 [HIGH] 无 ASAN / UBSAN / MSAN / TSAN 等 sanitizer
+文件: experiments/fullstack_compute/CMakeLists.txt, WCN/CMakeLists.txt
+根因: 本地/CI 构建均缺少 sanitizer 配置。
+影响: 内存错误与 UB 更容易带病进入发布构建。
+
+S-03 [HIGH] 根工程仍使用 GLOB_RECURSE 自动发现源码
+文件: WCN/CMakeLists.txt
+根因: `file(GLOB_RECURSE SOURCES "src/*.c")` 会把新增源码自动纳入构建。
+影响: 源码注入类供应链风险更高。
+备注: experiment 子工程的 CMakeLists.txt 已改为显式列出 fullstack_effects.c / fullstack_filters.c，这是正确方向。
+
+S-04 [HIGH] WGPU / STB 下载无 SHA-256 校验
+文件: external/download.ps1, external/download-stb.ps1
+根因: 下载后不验证二进制或头文件完整性。
+影响: 供应链篡改无法被构建流程发现。
+
+S-05 [MEDIUM] STB 仍从 master 分支下载，未固定 commit
+文件: external/download-stb.ps1
+根因: 依赖版本不可复现。
+影响: 新 clone / 新构建拿到的第三方代码可能不一致。
+
+S-06 [MEDIUM] 无代码签名 / 无可验证发布 provenance
+文件: 发布产物整体
+根因: 未见代码签名、SBOM、provenance 或 reproducible build 策略。
+影响: 下游无法验证二进制真实性与完整性。
+
+================================================================================
+
+四、首轮 11 个核心问题复核结果
+
+C-01 Canvas Shadow Realloc UAF
+状态: 已修复
+说明: 当前 `needed` 使用 size_t 乘法，realloc 结果先判空后落盘，原始 UAF 触发链已断。
+
+C-02 Upload Staging 压缩后旧指针
+状态: 已修复
+说明: 当前压缩路径使用 memmove，并重建 offset，对齐与容量检查也更完整。
+
+C-03 Vertex Count 32 位截断
+状态: 部分缓解
+说明: 实际爆炸面已明显下降，但仍存在 size_t -> uint32_t 截断点；不再建议作为独立 CRITICAL 叙述。
+
+C-04 Clip Edge GPU Dispatch 整数溢出
+状态: 已修复
+说明: 当前关键字节偏移已提升为 64 位计算，并新增范围检查。
+
+C-05 Render Shader Clip Parent Underflow
+状态: 已修复
+说明: 当前 shader 逻辑已避免 parent_bits = 0 时的无符号下溢。
+
+C-06 Canvas Readback 无跨域限制
+状态: 未修复 / 架构空白
+说明: 当前仍无 taint/origin 策略；此前“已修复”判断无效。
+
+C-07 Canvas Shadow 尺寸溢出
+状态: 已修复
+说明: 当前尺寸乘法已使用 size_t，原 32 位乘法溢出链已断。
+
+C-08 不安全 Realloc 模式（commands / states 脱同步）
+状态: 部分缓解
+说明: 扩容增长检查改善，但双 realloc 原子性问题仍在。
+
+C-09 Image Glyph 尺寸溢出
+状态: 已修复
+说明: 当前像素字节计算已提升到 size_t。
+
+C-10 三角剖分 O(n^3)
+状态: 仍存在
+说明: 复杂度没有本质变化，仍应作为 live DoS 问题保留。
+
+C-11 Readback 轮询/回调同步问题
+状态: 仍存在
+说明: 当前仍靠 fixed poll + shared flags。
+
+复核汇总:
+- 已修复: 6 个（C-01, C-02, C-04, C-05, C-07, C-09）
+- 部分缓解: 2 个（C-03, C-08）
+- 仍存在/架构空白: 3 个（C-06, C-10, C-11）
+
+================================================================================
+
+五、积极安全发现
+
+- 新增 filter / effects 代码未发现 system / exec / shell 调用。
+- 新增 filter / effects 代码未发现文件路径拼接或本地文件访问。
+- 新增 filter / effects 代码未发现硬编码凭证。
+- 新增 WGSL shader 仍为编译时常量字符串，无运行时拼接注入点。
+- experiment 子工程已显式列出 fullstack_effects.c / fullstack_filters.c，优于根工程的 GLOB_RECURSE。
+- 现有部分旧 CRITICAL 已被真正修复，说明代码基线相比首轮已有改进。
+
+================================================================================
+
+六、紧急修复优先级
+
+P0（立即修复）
+1. 修 physical-shadow kernel buffer 尺寸错配
+2. 为 filter/effects 加设备 limits 与 canvas 尺寸上限
+3. 为 canvas readback / imageData 引入 taint/origin 隔离策略
+4. 为 drop-shadow compute shader 增加越界保护
+
+P1（上线前修复）
+5. 修 malformed token parser OOB read
+6. 修 double realloc 原子性
+7. 为 filter chain 增加节点上限
+8. 修 blur(0) kernel 未初始化上传
+9. 修 exponent parse overflow / 非有限值输入
+10. 为三角剖分增加复杂度上限或替代算法
+11. 替换 readback 轮询同步方案
+
+P2（发布前修复）
+12. 添加 stack protector / FORTIFY / PIE / RELRO 等 hardening
+13. Debug / CI 构建启用 sanitizer
+14. 根工程移除 GLOB_RECURSE，改为显式文件列表
+15. 为 WGPU / STB 下载增加 SHA-256 验证
+16. 固定 STB 到明确 commit
+17. 补齐代码签名、SBOM、发布 provenance
+
+================================================================================
+
+七、信任边界
+
+本库责任范围（必须修复）:
+- Canvas readback / imageData 的 taint / origin 隔离
+- API 参数溢出与边界校验
+- GPU buffer / dispatch / shader uniform 越界防护
+- filter / effects 新路径的资源上限与错误处理
+
+嵌入方责任范围（必须文档化）:
+- 只在可信信任模型下暴露 imageData/readback 能力
+- 文件路径、字体、图像后端的输入验证
+- 命令频率限制与资源配额
+- 不共享不可信 FS_Core 实例
+- 配置 WGPU uncaptured error 回调与故障上报
+
+================================================================================
+
+八、威胁模型（更新版）
+
+攻击者              目标                     最可行攻击向量
+恶意网页           读取敏感 canvas 内容      imageData/readback 缺少 taint/origin 隔离
+恶意网页           GPU DoS / TDR             超大 canvas + filter/effects dispatch 超限
+恶意网页           触发 GPU 未定义行为       drop-shadow compute shader OOB textureLoad
+恶意网页           触发解析崩溃              malformed filter token OOB read
+恶意网页           标签页冻结                三角剖分 O(n^3) / 超长 filter chain
+供应链攻击者       植入后门                  根工程 GLOB_RECURSE / 无下载 hash 校验
+供应链攻击者       篡改 WebGPU 运行时        预编译 WGPU 二进制缺少完整性验证
+
+================================================================================
+
+九、报告索引
+
+报告              文件
+内存安全          memory/redteam_report_memory_safety.md
+输入验证          memory/redteam_report_input_validation.md
+GPU安全           memory/redteam_report_gpu_security.md
+加密与线程        memory/redteam_report_crypto_threading.md
+错误与信息泄漏    memory/redteam_report_error_info.md
+架构与攻击面      memory/redteam_report_architecture.md
+供应链与构建      memory/redteam_report_supply_chain.md
+几何与路径        memory/redteam_report_geometry.md
+CRITICAL复核      memory/redteam_report_critical_recheck.md
+滤镜系统          memory/redteam_report_filter_system.md
+效果系统          memory/redteam_report_effects_system.md
+
+================================================================================
+
+统一版结论完成 — 2026-04-06
+本版本是当前代码基线的权威审计摘要；如与首轮旧结论冲突，以本版为准。
