@@ -268,7 +268,11 @@ static uint32_t fsclay_render_commands(FS_Core* core, const Clay_RenderCommandAr
             case CLAY_RENDER_COMMAND_TYPE_IMAGE: {
                 Clay_ImageRenderData* d = &cmd->renderData.image;
                 float radius = fsclay_s(fsclay_corner_max(d->cornerRadius));
-                uint32_t tint = fsclay_color(d->backgroundColor);
+                Clay_Color tint_color = d->backgroundColor;
+                if (tint_color.a <= 0.0f) {
+                    tint_color = (Clay_Color){255.0f, 255.0f, 255.0f, 255.0f};
+                }
+                uint32_t tint = fsclay_color(tint_color);
                 /* If imageData is an FS_ImageHandle*, draw it */
                 if (d->imageData) {
                     fs_cmd_image_handle(core, bx, by, bw, bh,
