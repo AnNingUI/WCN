@@ -261,6 +261,33 @@ bool fs_glfw_backend_init(FS_GlfwBackend* backend, uint32_t width, uint32_t heig
         return false;
     }
     backend->surface_format = caps.formats[0];
+    /*
+     * Temporary color-space compatibility patch.
+     *
+     * Why this exists:
+     * - The current WCN path renders the scene into RGBA8Unorm intermediate textures
+     *   and then presents via a fullscreen copy pass.
+     * - When the swapchain/surface is configured as *UnormSrgb, the final output becomes
+     *   visibly brighter than the intended UI colors.
+     * - A minimal validation confirmed that forcing the final surface format to the non-sRGB
+     *   variant restores the expected colors.
+     *
+     * So for now we intentionally downgrade sRGB surface formats to non-sRGB here to keep
+     * the current renderer visually correct.
+     *
+     * TODO(full color-space unification): remove this patch after the whole pipeline is made
+     * color-space consistent end-to-end. That future work should include at least:
+     * 1. Decide and document whether scene_texture / ping-pong textures store linear or sRGB data.
+     * 2. Make render shaders, filter passes, and presentation pass agree on that contract.
+     * 3. Audit premultiplied-alpha behavior together with the chosen color space.
+     * 4. Revisit presentation shader/pipeline so swapchain *UnormSrgb targets are handled
+     *    intentionally instead of by implicit passthrough.
+     */
+    if (backend->surface_format == WGPUTextureFormat_BGRA8UnormSrgb) {
+        backend->surface_format = WGPUTextureFormat_BGRA8Unorm;
+    } else if (backend->surface_format == WGPUTextureFormat_RGBA8UnormSrgb) {
+        backend->surface_format = WGPUTextureFormat_RGBA8Unorm;
+    }
     wgpuSurfaceCapabilitiesFreeMembers(caps);
     if (!fs_reconfigure_surface(backend, width, height)) {
         fs_glfw_backend_shutdown(backend);

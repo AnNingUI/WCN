@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 project(wcn_fullstack_compute_experiment C)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(FS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})

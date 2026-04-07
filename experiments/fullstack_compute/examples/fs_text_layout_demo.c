@@ -94,21 +94,22 @@ static uint32_t hsv2rgb(float h, float s, float v) {
    PALETTE — Cyberpunk / Pretext-style
    ================================================================ */
 
-enum {
-    PAL_BG_DARK   = 0x0D1117FFu,
-    PAL_BG_MID    = 0x161B22FFu,
-    PAL_BG_LIGHT  = 0x21262DFFu,
-    PAL_ACCENT_1  = 0x58A6FFu,  /* Pretext blue   */
-    PAL_ACCENT_2  = 0x79C0FFu,  /* Light blue     */
-    PAL_ACCENT_3  = 0xFF7B72u,  /* Coral          */
-    PAL_ACCENT_4  = 0x7EE787u,  /* Green          */
-    PAL_ACCENT_5  = 0xFFA657u,  /* Orange         */
-    PAL_ACCENT_6  = 0xD2A8FFu,  /* Purple         */
-    PAL_TEXT      = 0xC9D1D9u,
-    PAL_TEXT_DIM  = 0x8B949Eu,
-    PAL_GLOW      = 0x1F6FEBFFu,
-    PAL_GRID_LINE = 0x30363DFFu,
-};
+#define RGBA8_CONST(r, g, b, a) \
+    ((((uint32_t)(a)) << 24u) | (((uint32_t)(b)) << 16u) | (((uint32_t)(g)) << 8u) | ((uint32_t)(r)))
+
+static const uint32_t PAL_BG_DARK   = RGBA8_CONST(0x0D, 0x11, 0x17, 0xFF);
+static const uint32_t PAL_BG_MID    = RGBA8_CONST(0x16, 0x1B, 0x22, 0xFF);
+static const uint32_t PAL_BG_LIGHT  = RGBA8_CONST(0x21, 0x26, 0x2D, 0xFF);
+static const uint32_t PAL_ACCENT_1  = RGBA8_CONST(0x58, 0xA6, 0xFF, 0xFF);  /* Pretext blue   */
+static const uint32_t PAL_ACCENT_2  = RGBA8_CONST(0x79, 0xC0, 0xFF, 0xFF);  /* Light blue     */
+static const uint32_t PAL_ACCENT_3  = RGBA8_CONST(0xFF, 0x7B, 0x72, 0xFF);  /* Coral          */
+static const uint32_t PAL_ACCENT_4  = RGBA8_CONST(0x7E, 0xE7, 0x87, 0xFF);  /* Green          */
+static const uint32_t PAL_ACCENT_5  = RGBA8_CONST(0xFF, 0xA6, 0x57, 0xFF);  /* Orange         */
+static const uint32_t PAL_ACCENT_6  = RGBA8_CONST(0xD2, 0xA8, 0xFF, 0xFF);  /* Purple         */
+static const uint32_t PAL_TEXT      = RGBA8_CONST(0xC9, 0xD1, 0xD9, 0xFF);
+static const uint32_t PAL_TEXT_DIM  = RGBA8_CONST(0x8B, 0x94, 0x9E, 0xFF);
+static const uint32_t PAL_GLOW      = RGBA8_CONST(0x1F, 0x6F, 0xEB, 0xFF);
+static const uint32_t PAL_GRID_LINE = RGBA8_CONST(0x30, 0x36, 0x3D, 0xFF);
 
 /* ================================================================
    SCENE DEFINITIONS
@@ -208,7 +209,8 @@ typedef struct {
     float          scale;        /* uniform scale */
     float          fbw, fbh;     /* actual framebuffer */
     float          mouse_x, mouse_y;
-    float          mouse_drag_x; /* last drag x */
+    float          mouse_drag_x; /* drag start x */
+    float          mouse_drag_width; /* width at drag start */
     bool           mouse_down;
     bool           slow_mo;
     double         total_time;
@@ -262,20 +264,8 @@ static GameState g_state;
    ================================================================ */
 
 static void draw_bg_gradient(FS_Core* core) {
-    /* Simulate gradient with layered rects */
-    /* Gradient using FIXED design-space steps so color stays consistent across window sizes.
-     * Design space is 1280x720, we draw 16 gradient bands in design coords. */
-    int steps = 16;
-    float design_h = DEMO_DH;          /* 720 — fixed design height */
-    float step_dy = design_h / (float)steps;  /* 45 in design space */
-    for (int i = 0; i < steps; i++) {
-        float t = (float)i / (float)(steps - 1);
-        uint32_t c = lerp_color(0x0D1117FFu, 0x161B22FFu, t);
-        /* Draw in actual pixel space, covering the full framebuffer */
-        float y_px = g_state.scale * i * step_dy;
-        float h_px  = g_state.scale * step_dy + 0.5f;  /* +0.5f to avoid gaps */
-        fs_cmd_rect(core, 0, y_px, g_state.fbw, h_px, 0, c);
-    }
+    /* Simple solid dark background */
+    fs_cmd_rect(core, 0, 0, g_state.fbw, g_state.fbh, 0, PAL_BG_DARK);
 }
 
 static void draw_grid(FS_Core* core, float spacing) {
@@ -311,6 +301,83 @@ static void draw_container_shape(FS_Core* core, float cx, float cy, float rw, fl
     fs_path_close(core);
     fs_path_fill(core, fill);
     fs_path_stroke(core, stroke_w, stroke);
+}
+
+static void draw_wrapped_prepared_text(FS_Core* core, const FS_PreparedText* prep,
+                                      float x, float top_y, float font_size,
+                                      float max_width, uint32_t color, float max_height) {
+    if (!core || !prep || !prep->text_copy || max_width <= 0.0f || font_size <= 0.0f) return;
+
+    float line_height = font_size * ((prep->ctx && prep->ctx->line_height > 0.0f) ? prep->ctx->line_height : 1.5f);
+    float baseline_offset = font_size * 0.85f;
+    if (prep->ctx && prep->ctx->font_size_px > 0.0f) {
+        baseline_offset = prep->ctx->ascent * (font_size / prep->ctx->font_size_px);
+    }
+
+    const char* ptr = prep->text_copy;
+    uint32_t line_idx = 0u;
+    while (*ptr != '\0') {
+        float line_top = top_y + (float)line_idx * line_height;
+        if (max_height > 0.0f && (line_top + line_height - top_y) > max_height) {
+            break;
+        }
+
+        const char* line_start = ptr;
+        const char* line_end = ptr;
+        const char* last_break = NULL;
+        float width = 0.0f;
+
+        while (*ptr != '\0') {
+            if (*ptr == '\n' || *ptr == '\r') {
+                line_end = ptr;
+                while (*ptr == '\n' || *ptr == '\r') ptr++;
+                break;
+            }
+
+            const char* cp_start = ptr;
+            uint32_t cp = 0u;
+            if (!fs_text_layout_decode_utf8(&ptr, &cp)) {
+                cp = '?';
+                ptr = cp_start + 1;
+            }
+
+            float char_w = fs_text_layout_measure_codepoint(prep->ctx, cp);
+            if (width > 0.0f && (width + char_w) > max_width) {
+                if (last_break) {
+                    line_end = last_break;
+                    ptr = last_break;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                }
+                break;
+            }
+
+            width += char_w;
+            line_end = ptr;
+            if (cp == ' ' || cp == '\t') {
+                last_break = ptr;
+            }
+        }
+
+        if (line_end <= line_start) {
+            if (*ptr == '\0') break;
+            line_end = ptr;
+        }
+
+        while (line_end > line_start && (line_end[-1] == ' ' || line_end[-1] == '\t')) {
+            line_end--;
+        }
+
+        size_t len = (size_t)(line_end - line_start);
+        if (len > 1023u) len = 1023u;
+        if (len > 0u) {
+            char line_buf[1024];
+            memcpy(line_buf, line_start, len);
+            line_buf[len] = '\0';
+            fs_cmd_text_utf8(core, x, line_top + baseline_offset, font_size, line_buf, color, max_width);
+        }
+
+        line_idx++;
+    }
 }
 
 static void draw_text_line(FS_Core* core, FS_TextLayout* ctx, FS_PreparedText* prep,
@@ -376,24 +443,31 @@ static void draw_perf_bar(FS_Core* core, float x, float y, float w, float h,
     }
 }
 
-static void draw_scene_label(FS_Core* core, const char* scene_name, const char* desc,
+static void draw_scene_label(FS_Core* core, bool font_ready, const char* scene_name, const char* desc,
                              float x, float y, float w) {
-    printf("  draw_scene_label: '%s' at (%.0f, %.0f)\n", scene_name, x, y);
-    fs_cmd_text_utf8(core, x, y, LX(14.0f), scene_name, PAL_TEXT, w);
-    fs_cmd_text_utf8(core, x, y + LX(18.0f), LX(11.0f), desc, PAL_TEXT_DIM, w);
+    /* Opaque background behind label so text is never covered */
+    fs_cmd_rect(core, x - LX(4.0f), y - LX(2.0f), w + LX(8.0f), LX(40.0f),
+                0, 0x80000000u);
+    /* Scene name — cyan accent */
+    if (font_ready) {
+        fs_cmd_text_utf8(core, x, y + LX(2.0f), LX(16.0f), scene_name,
+                        PAL_ACCENT_1, w);
+        fs_cmd_text_utf8(core, x, y + LX(20.0f), LX(11.0f), desc,
+                        PAL_TEXT_DIM, w);
+    }
 }
 
-static void draw_stats(FS_Core* core, float x, float y) {
-    printf("  draw_stats at (%.0f, %.0f)\n", x, y);
+static void draw_stats(FS_Core* core, bool font_ready, float x, float y) {
+    if (!font_ready) return;
     char fps_str[64];
     snprintf(fps_str, sizeof(fps_str), "FPS: %.1f  |  Layout: %.3f ms  |  Frame: %llu",
              g_state.fps, g_state.layout_time_ms, (unsigned long long)g_state.frame_count);
     fs_cmd_text_utf8(core, x, y, LX(11.0f), fps_str, PAL_TEXT_DIM, LX(400.0f));
 }
 
-static void draw_controls(FS_Core* core, float x, float y) {
-    printf("  draw_controls at (%.0f, %.0f)\n", x, y);
-    const char* controls = "1-8: scenes  |  Drag: resize  |  R: reset  |  C: clear cache  |  S: slow-mo  |  I: info";
+static void draw_controls(FS_Core* core, bool font_ready, float x, float y) {
+    if (!font_ready) return;
+    const char* controls = "1-8 scenes  |  Drag: resize  |  R: reset  |  C: clear cache  |  S: slow-mo  |  I: info";
     fs_cmd_text_utf8(core, x, y, LX(10.0f), controls, PAL_TEXT_DIM, LX(600.0f));
 }
 
@@ -503,7 +577,6 @@ static void render_scene_title(FS_Core* core, bool font_ready) {
 }
 
 static void render_scene_basic(FS_Core* core, bool font_ready) {
-    printf("render_scene_basic CALLED font_ready=%d\n", font_ready);
     draw_bg_gradient(core);
 
     float margin = LX(60.0f);
@@ -512,61 +585,49 @@ static void render_scene_basic(FS_Core* core, bool font_ready) {
     float content_w = g_state.container_width - LX(20.0f);
     float content_h = g_state.fbh - LY(160.0f);
 
-    /* DEBUG: green box around scene label area */
-    fs_cmd_rect(core, content_x, content_y, LX(400.0f), LY(50.0f), 0, rgba8(0, 255, 0, 128));
-
-    draw_scene_label(core, "BASIC WRAP", "Word-wrap with pure arithmetic — no DOM reflow",
+    draw_scene_label(core, font_ready, "BASIC WRAP", "Word-wrap with pure arithmetic — no DOM reflow",
                      content_x, content_y, LX(400.0f));
-    /* DEBUG: blue box around stats area */
-    fs_cmd_rect(core, content_x, content_y + LY(28.0f), LX(400.0f), LY(16.0f), 0, rgba8(0, 0, 255, 128));
-    draw_stats(core, content_x, content_y + LY(28.0f));
-    /* DEBUG: purple box around controls */
-    fs_cmd_rect(core, content_x, g_state.fbh - LY(36.0f), LX(600.0f), LY(16.0f), 0, rgba8(255, 0, 255, 128));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, content_x, content_y + LY(28.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
     float text_y = content_y + LY(60.0f);
     float font_size = LX(14.0f);
 
-
-    /* Show multiple text blocks with different widths */
     int count = 4;
     float row_h = (content_h - LY(20.0f)) / (float)count;
     float widths[] = { content_w * 0.25f, content_w * 0.5f,
                         content_w * 0.75f, content_w * 1.0f };
-    const char* texts[] = { k_text_basic, k_text_lorem, k_text_basic, k_text_lorem };
 
     for (int i = 0; i < count; i++) {
-        float row_x = content_x + LX(10.0f) + (float)(i % 2) * LX(10.0f);
+        float row_x = content_x + LX(10.0f);
         float row_y = text_y + (float)i * row_h;
 
-        /* DEBUG: visible red box at the text area */
-        float text_area_x = row_x + LX(6.0f);
-        float text_area_y = row_y + LX(12.0f);
-        float text_area_w = widths[i] - LX(12.0f);
-        float text_area_h = row_h - LX(20.0f);
-        fs_cmd_rect(core, text_area_x, text_area_y, text_area_w, text_area_h, 0, 0xFF000080u); /* red debug */
-
-        uint32_t box_fill = (i % 2 == 0) ? 0x1C2128FFu : 0x1A1F26FFu;
+        uint32_t box_fill = (i % 2 == 0) ? 0xFF28211Cu : 0xFF261F1Au;
         draw_container(core, row_x, row_y, widths[i], row_h - LX(8.0f),
                        box_fill, PAL_GRID_LINE, 6.0f, 1.0f);
 
-        /* Draw text with width indicator */
-        char width_str[32];
-        snprintf(width_str, sizeof(width_str), "W=%.0f", widths[i]);
-        fs_cmd_text_utf8(core, row_x + LX(6.0f), row_y + LX(12.0f),
-                        LX(9.0f), width_str, PAL_TEXT_DIM, widths[i] - LX(12.0f));
+        if (font_ready) {
+            char width_str[32];
+            snprintf(width_str, sizeof(width_str), "W=%.0f", widths[i]);
+            fs_cmd_text_utf8(core, row_x + LX(6.0f), row_y + LY(12.0f),
+                            LX(10.0f), width_str, PAL_TEXT_DIM, widths[i] - LX(12.0f));
 
-        /* Use fullstack_core's native text rendering with measured width */
-        FS_LayoutResult r = {0};
-        float text_baseline = row_y + LX(14.0f) + font_size * 0.85f;
-        float max_w = widths[i] - LX(12.0f);
+            const FS_PreparedText* prep = NULL;
+            if (i < 2) {
+                prep = g_state.preps[i];
+            } else {
+                prep = g_state.preps[(i % 2 == 0) ? 0 : 1];
+            }
 
-        /* Render with max_width constraint */
-        fs_cmd_text_utf8(core, row_x + LX(6.0f), text_baseline,
-                        font_size, texts[i], PAL_TEXT, max_w);
+            float text_top = row_y + LY(18.0f);
+            float max_w = widths[i] - LX(12.0f);
+            float max_h = (row_h - LX(8.0f)) - LY(24.0f);
+            draw_wrapped_prepared_text(core, prep,
+                                       row_x + LX(6.0f), text_top,
+                                       font_size, max_w, PAL_TEXT, max_h);
+        }
     }
 
-    /* Width indicator bar */
     float bar_x = g_state.container_width + LX(5.0f);
     float bar_y = text_y;
     float bar_h = text_y + (float)count * row_h - bar_y - LY(8.0f);
@@ -582,10 +643,10 @@ static void render_scene_cjk(FS_Core* core, bool font_ready) {
     float content_y = LY(80.0f);
     float content_w = g_state.container_width - LX(20.0f);
 
-    draw_scene_label(core, "CJK & MIXED", "Chinese, Japanese, Korean — same API, same performance",
+    draw_scene_label(core, font_ready, "CJK & MIXED", "Chinese, Japanese, Korean — same API, same performance",
                      content_x, content_y, LX(600.0f));
-    draw_stats(core, content_x, content_y + LY(28.0f));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, content_x, content_y + LY(28.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
 
     /* Multi-column layout for different scripts */
@@ -594,41 +655,26 @@ static void render_scene_cjk(FS_Core* core, bool font_ready) {
     float col_h = g_state.fbh - col_y - LY(60.0f);
 
     const char* titles[] = { "简体中文", "日本語", "한글 + English" };
-    const char* texts[] = {
-        "春天到了，万物复苏。\n"
-        "东京的夜空下，樱花飘落如雪。\n"
-        "这是一个多行文本布局的演示，\n"
-        "展示中文字符的精确测量。\n"
-        "无需 DOM 访问即可获得\n"
-        "精确的文本高度和宽度。",
-
-        "こんにちは世界！\n"
-        "これはテキストレイアウトの\n"
-        "デモです。\n"
-        "日本語の文字も正確に\n"
-        "測定できます。\n"
-        "DOM アクセスなしで OK。",
-
-        "안녕하세요! Hello!\n"
-        "Korean and English mixed.\n"
-        "한글 텍스트 레이아웃\n"
-        "테스트 중입니다.\n"
-        "CJK unified support\n"
-        "for all scripts."
-    };
     uint32_t colors[] = { PAL_ACCENT_3, PAL_ACCENT_6, PAL_ACCENT_4 };
+    const FS_PreparedText* preps[] = {
+        g_state.preps[8],
+        g_state.preps[9],
+        g_state.preps[10]
+    };
 
     for (int i = 0; i < 3; i++) {
         float cx = content_x + (float)i * (col_w + LX(10.0f));
 
         /* Column box */
-        uint32_t box_fill = lerp_color(0x1C2128FFu, colors[i], 0.05f);
+        uint32_t box_fill = lerp_color(0xFF28211Cu, colors[i], 0.05f);
         draw_container(core, cx, col_y, col_w, col_h, box_fill, colors[i],
                        8.0f, 1.5f);
 
         /* Title */
-        fs_cmd_text_utf8(core, cx + LX(10.0f), col_y + LX(18.0f),
-                        LX(13.0f), titles[i], colors[i], col_w - LX(20.0f));
+        if (font_ready) {
+            fs_cmd_text_utf8(core, cx + LX(10.0f), col_y + LX(18.0f),
+                            LX(13.0f), titles[i], colors[i], col_w - LX(20.0f));
+        }
 
         /* Separator */
         fs_cmd_line(core, cx + LX(10.0f), col_y + LX(24.0f),
@@ -636,17 +682,23 @@ static void render_scene_cjk(FS_Core* core, bool font_ready) {
                     1.0f, lerp_color(colors[i], PAL_GRID_LINE, 0.5f));
 
         /* Text */
-        float text_x = cx + LX(10.0f);
-        float text_y_pos = col_y + LX(32.0f);
-        float font_sz = LX(12.0f);
-        fs_cmd_text_utf8(core, text_x, text_y_pos, font_sz,
-                        texts[i], PAL_TEXT, col_w - LX(20.0f));
+        if (font_ready) {
+            float text_x = cx + LX(10.0f);
+            float text_top = col_y + LX(28.0f);
+            float font_sz = LX(12.0f);
+            float max_w = col_w - LX(20.0f);
+            float max_h = col_h - LX(38.0f);
+            draw_wrapped_prepared_text(core, preps[i], text_x, text_top,
+                                       font_sz, max_w, PAL_TEXT, max_h);
+        }
     }
 
     /* Bottom note */
-    fs_cmd_text_utf8(core, content_x, g_state.fbh - LY(60.0f), LX(11.0f),
-                    "All three columns measured without DOM access — pure Unicode block analysis",
-                    PAL_TEXT_DIM, content_w);
+    if (font_ready) {
+        fs_cmd_text_utf8(core, content_x, g_state.fbh - LY(60.0f), LX(11.0f),
+                        "All three columns measured without DOM access — pure Unicode block analysis",
+                        PAL_TEXT_DIM, content_w);
+    }
 }
 
 static void render_scene_variable(FS_Core* core, bool font_ready) {
@@ -657,14 +709,14 @@ static void render_scene_variable(FS_Core* core, bool font_ready) {
     float rw = g_state.variable_width * g_state.scale;
     float rh = g_state.fbh * 0.55f * g_state.scale;
 
-    draw_scene_label(core, "VARIABLE WIDTH", "Trapezoid container — each line has different max-width",
+    draw_scene_label(core, font_ready, "VARIABLE WIDTH", "Trapezoid container — each line has different max-width",
                      LX(60.0f), LY(30.0f), LX(500.0f));
-    draw_stats(core, LX(60.0f), LY(58.0f));
-    draw_controls(core, LX(60.0f), g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, LX(60.0f), LY(58.0f));
+    draw_controls(core, font_ready, LX(60.0f), g_state.fbh - LY(36.0f));
 
     /* Draw the trapezoid container */
     float taper = sinf(g_state.shape_time * 0.8f) * 0.3f;
-    uint32_t box_fill = 0x1C2128FFu;
+    uint32_t box_fill = 0xFF28211Cu;
     uint32_t box_stroke = PAL_ACCENT_2;
 
     /* Trapezoid path */
@@ -729,50 +781,52 @@ static void render_scene_perf(FS_Core* core, bool font_ready) {
     float content_w = g_state.container_width - LX(20.0f);
     float content_h = g_state.fbh - LY(160.0f);
 
-    draw_scene_label(core, "PERFORMANCE", "Layout without re-measurement — the key to 300x speedup",
+    draw_scene_label(core, font_ready, "PERFORMANCE", "Layout without re-measurement — the key to 300x speedup",
                      content_x, content_y, LX(500.0f));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
 
     /* FPS display — large */
-    char fps_big[64];
-    snprintf(fps_big, sizeof(fps_big), "%.0f", g_state.fps);
-    uint32_t fps_color = (g_state.fps >= 55.0f) ? PAL_ACCENT_4 :
-                         (g_state.fps >= 30.0f) ? PAL_ACCENT_5 : PAL_ACCENT_3;
-    fs_cmd_text_utf8(core, content_x + LX(200.0f), content_y + LX(60.0f),
-                    LX(72.0f), fps_big, fps_color, LX(200.0f));
-    fs_cmd_text_utf8(core, content_x + LX(280.0f), content_y + LX(70.0f),
-                    LX(18.0f), "FPS", PAL_TEXT_DIM, LX(80.0f));
+    if (font_ready) {
+        char fps_big[64];
+        snprintf(fps_big, sizeof(fps_big), "%.0f", g_state.fps);
+        uint32_t fps_color = (g_state.fps >= 55.0f) ? PAL_ACCENT_4 :
+                             (g_state.fps >= 30.0f) ? PAL_ACCENT_5 : PAL_ACCENT_3;
+        fs_cmd_text_utf8(core, content_x + LX(200.0f), content_y + LX(60.0f),
+                        LX(72.0f), fps_big, fps_color, LX(200.0f));
+        fs_cmd_text_utf8(core, content_x + LX(280.0f), content_y + LX(70.0f),
+                        LX(18.0f), "FPS", PAL_TEXT_DIM, LX(80.0f));
 
-    /* Layout time */
-    char layout_str[64];
-    snprintf(layout_str, sizeof(layout_str), "Layout: %.4f ms", g_state.layout_time_ms);
-    fs_cmd_text_utf8(core, content_x + LX(10.0f), content_y + LX(110.0f),
-                    LX(13.0f), layout_str, PAL_TEXT, LX(200.0f));
+        /* Layout time */
+        char layout_str[64];
+        snprintf(layout_str, sizeof(layout_str), "Layout: %.4f ms", g_state.layout_time_ms);
+        fs_cmd_text_utf8(core, content_x + LX(10.0f), content_y + LX(110.0f),
+                        LX(13.0f), layout_str, PAL_TEXT, LX(200.0f));
+    }
 
     /* Comparison bars */
     float bar_y = content_y + LX(140.0f);
     float bar_max_w = content_w - LX(200.0f);
     float bar_h = LX(28.0f);
     float bar_gap = LX(8.0f);
-
-    /* DOM simulation bar (100ms baseline) */
     float dom_time = 100.0f; /* typical DOM measureText time */
     float pretext_time = (float)g_state.layout_time_ms;
     float pretext_est_time = 0.3f; /* estimated pretext-style time */
 
-    draw_perf_bar(core, content_x + LX(100.0f), bar_y, bar_max_w, bar_h,
-                   dom_time, 110.0f, 0x2D1117FFu, PAL_ACCENT_3,
-                   "DOM measureText");
+    if (font_ready) {
+        draw_perf_bar(core, content_x + LX(100.0f), bar_y, bar_max_w, bar_h,
+                       dom_time, 110.0f, RGBA8_CONST(0x2D, 0x11, 0x17, 0xFF), PAL_ACCENT_3,
+                       "DOM measureText");
 
-    draw_perf_bar(core, content_x + LX(100.0f), bar_y + bar_h + bar_gap, bar_max_w, bar_h,
-                   pretext_est_time, 110.0f, 0x0D2817FFu, PAL_ACCENT_4,
-                   "fs_text_layout (est.)");
+        draw_perf_bar(core, content_x + LX(100.0f), bar_y + bar_h + bar_gap, bar_max_w, bar_h,
+                       pretext_est_time, 110.0f, RGBA8_CONST(0x0D, 0x28, 0x17, 0xFF), PAL_ACCENT_4,
+                       "fs_text_layout (est.)");
 
-    draw_perf_bar(core, content_x + LX(100.0f), bar_y + 2.0f * (bar_h + bar_gap), bar_max_w, bar_h,
-                   pretext_time > 10.0f ? pretext_time : pretext_est_time, 110.0f,
-                   0x0D1A28FFu, PAL_ACCENT_1,
-                   "Current render");
+        draw_perf_bar(core, content_x + LX(100.0f), bar_y + 2.0f * (bar_h + bar_gap), bar_max_w, bar_h,
+                       pretext_time > 10.0f ? pretext_time : pretext_est_time, 110.0f,
+                       RGBA8_CONST(0x0D, 0x1A, 0x28, 0xFF), PAL_ACCENT_1,
+                       "Current render");
+    }
 
     /* Speedup ratio */
     float speedup = (dom_time > 0.001f) ? (dom_time / (pretext_time > 0.001f ? pretext_time : pretext_est_time)) : 1.0f;
@@ -782,16 +836,20 @@ static void render_scene_perf(FS_Core* core, bool font_ready) {
     float sy = bar_y + 3.0f * (bar_h + bar_gap) + LX(20.0f);
     float sp = sinf(g_state.total_time * 4.0f) * 0.1f + 0.9f;
     uint32_t spc = lerp_color(PAL_ACCENT_4, PAL_ACCENT_1, 1.0f - sp);
-    fs_cmd_text_utf8(core, sx, sy, LX(20.0f), speedup_str, spc, bar_max_w);
+    if (font_ready) {
+        fs_cmd_text_utf8(core, sx, sy, LX(20.0f), speedup_str, spc, bar_max_w);
+    }
 
     /* Metrics */
-    char iter_str[64];
-    snprintf(iter_str, sizeof(iter_str), "Iterations: %llu  |  Time: %.3f ms  |  Est. savings: %.2f ms per frame",
-             (unsigned long long)g_state.perf_iterations,
-             g_state.layout_time_ms,
-             (dom_time - pretext_time) * 0.001f);
-    fs_cmd_text_utf8(core, content_x + LX(10.0f), g_state.fbh - LY(60.0f),
-                    LX(11.0f), iter_str, PAL_TEXT_DIM, content_w);
+    if (font_ready) {
+        char iter_str[64];
+        snprintf(iter_str, sizeof(iter_str), "Iterations: %llu  |  Time: %.3f ms  |  Est. savings: %.2f ms per frame",
+                 (unsigned long long)g_state.perf_iterations,
+                 g_state.layout_time_ms,
+                 (dom_time - pretext_time) * 0.001f);
+        fs_cmd_text_utf8(core, content_x + LX(10.0f), g_state.fbh - LY(60.0f),
+                        LX(11.0f), iter_str, PAL_TEXT_DIM, content_w);
+    }
 
     /* Animated particles showing "no blocking" */
     float particle_y = sy + LX(50.0f);
@@ -812,10 +870,10 @@ static void render_scene_emoji(FS_Core* core, bool font_ready) {
     float content_y = LY(80.0f);
     float content_w = g_state.container_width - LX(20.0f);
 
-    draw_scene_label(core, "EMOJI GALLERY", "Emoji clusters measured without DOM — zero reflow",
+    draw_scene_label(core, font_ready, "EMOJI GALLERY", "Emoji clusters measured without DOM — zero reflow",
                      content_x, content_y, LX(500.0f));
-    draw_stats(core, content_x, content_y + LY(28.0f));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, content_x, content_y + LY(28.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
 
     /* Emoji grid */
@@ -855,26 +913,30 @@ static void render_scene_emoji(FS_Core* core, bool font_ready) {
 
         /* Cell background */
         float pulse = sinf(g_state.total_time * 2.0f + (float)i * 0.7f) * 0.15f + 0.85f;
-        uint32_t cell_fill = lerp_color(0x1C2128FFu, hsv2rgb((float)i / 12.0f, 0.4f, 0.15f), 0.3f);
+        uint32_t cell_fill = lerp_color(0xFF28211Cu, hsv2rgb((float)i / 12.0f, 0.4f, 0.15f), 0.3f);
         draw_container(core, ex + LX(4.0f), ey + LX(4.0f), cell_w - LX(8.0f), cell_h - LX(8.0f),
                        cell_fill, PAL_GRID_LINE, 6.0f, 1.0f);
 
         /* Emoji char */
-        char ec[8] = {0};
-        memcpy(ec, emoji_texts[i], 5);
         float ex_pos = ex + cell_w * 0.5f - LX(14.0f);
-        fs_cmd_text_utf8(core, ex_pos, ey + cell_h * 0.35f + font_sz,
-                        font_sz * pulse, ec, PAL_TEXT, cell_w - LX(20.0f));
+        if (font_ready) {
+            fs_cmd_text_utf8(core, ex_pos, ey + cell_h * 0.35f + font_sz,
+                            font_sz * pulse, emoji_texts[i], PAL_TEXT, cell_w - LX(20.0f));
+        }
 
         /* Label */
-        fs_cmd_text_utf8(core, ex + cell_w * 0.5f - LX(30.0f), ey + cell_h - LX(16.0f),
-                        LX(9.0f), emoji_labels[i], PAL_TEXT_DIM, LX(60.0f));
+        if (font_ready) {
+            fs_cmd_text_utf8(core, ex + cell_w * 0.5f - LX(30.0f), ey + cell_h - LX(16.0f),
+                            LX(9.0f), emoji_labels[i], PAL_TEXT_DIM, LX(60.0f));
+        }
     }
 
     /* Description */
-    fs_cmd_text_utf8(core, content_x, g_state.fbh - LY(60.0f), LX(11.0f),
-                    "Emoji detection via Unicode range analysis — accurate cluster widths, no pixel probing",
-                    PAL_TEXT_DIM, content_w);
+    if (font_ready) {
+        fs_cmd_text_utf8(core, content_x, g_state.fbh - LY(60.0f), LX(11.0f),
+                        "Emoji detection via Unicode range analysis — accurate cluster widths, no pixel probing",
+                        PAL_TEXT_DIM, content_w);
+    }
 }
 
 static void render_scene_dynamic(FS_Core* core, bool font_ready) {
@@ -885,10 +947,10 @@ static void render_scene_dynamic(FS_Core* core, bool font_ready) {
     float content_w = g_state.container_width - LX(20.0f);
     float content_h = g_state.fbh - LY(160.0f);
 
-    draw_scene_label(core, "DYNAMIC RESIZE", "prepare() once — layout() forever — no re-measurement",
+    draw_scene_label(core, font_ready, "DYNAMIC RESIZE", "prepare() once — layout() forever — no re-measurement",
                      content_x, content_y, LX(500.0f));
-    draw_stats(core, content_x, content_y + LY(28.0f));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, content_x, content_y + LY(28.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
 
     /* Animated container width */
@@ -896,22 +958,27 @@ static void render_scene_dynamic(FS_Core* core, bool font_ready) {
     float ch = content_h - LY(20.0f);
 
     /* Container with resize handle */
-    uint32_t box_fill = 0x1C2128FFu;
+    uint32_t box_fill = 0xFF28211Cu;
     draw_container(core, content_x + LX(20.0f), content_y + LY(60.0f),
                    cw, ch, box_fill, PAL_ACCENT_1, 8.0f, 2.0f);
 
     /* Width indicator */
-    char width_str[32];
-    snprintf(width_str, sizeof(width_str), "Width: %.0f px", cw);
-    fs_cmd_text_utf8(core, content_x + LX(30.0f), content_y + LY(72.0f),
-                    LX(11.0f), width_str, PAL_TEXT_DIM, LX(200.0f));
+    if (font_ready) {
+        char width_str[32];
+        snprintf(width_str, sizeof(width_str), "Width: %.0f px", cw);
+        fs_cmd_text_utf8(core, content_x + LX(30.0f), content_y + LY(72.0f),
+                        LX(11.0f), width_str, PAL_TEXT_DIM, LX(200.0f));
 
-    /* Text */
-    float text_x = content_x + LX(30.0f);
-    float text_y = content_y + LY(95.0f);
-    float font_sz = LX(14.0f);
-    fs_cmd_text_utf8(core, text_x, text_y, font_sz,
-                    k_text_long, PAL_TEXT, cw - LX(20.0f));
+        /* Text */
+        float text_x = content_x + LX(30.0f);
+        float text_top = content_y + LY(82.0f);
+        float font_sz = LX(14.0f);
+        float text_w = cw - LX(20.0f);
+        float text_h = ch - LY(32.0f);
+        draw_wrapped_prepared_text(core, g_state.preps[5],
+                                   text_x, text_top,
+                                   font_sz, text_w, PAL_TEXT, text_h);
+    }
 
     /* Scrollbar */
     float scroll_x = content_x + LX(20.0f) + cw + LX(5.0f);
@@ -954,10 +1021,10 @@ static void render_scene_multilang(FS_Core* core, bool font_ready) {
     float content_y = LY(80.0f);
     float content_w = g_state.container_width - LX(20.0f);
 
-    draw_scene_label(core, "MULTI-LANGUAGE", "LTR, RTL, CJK — same prepare() / layout() API",
+    draw_scene_label(core, font_ready, "MULTI-LANGUAGE", "LTR, RTL, CJK — same prepare() / layout() API",
                      content_x, content_y, LX(500.0f));
-    draw_stats(core, content_x, content_y + LY(28.0f));
-    draw_controls(core, content_x, g_state.fbh - LY(36.0f));
+    draw_stats(core, font_ready, content_x, content_y + LY(28.0f));
+    draw_controls(core, font_ready, content_x, g_state.fbh - LY(36.0f));
 
 
     float row_y = content_y + LY(65.0f);
@@ -982,38 +1049,49 @@ static void render_scene_multilang(FS_Core* core, bool font_ready) {
     };
     uint32_t lang_colors[] = { PAL_ACCENT_1, PAL_ACCENT_6, PAL_ACCENT_3, PAL_ACCENT_5 };
     float lang_heights[] = { 1.0f, 1.0f, 1.5f, 1.5f };
+    const FS_PreparedText* lang_preps[] = {
+        g_state.preps[6],
+        g_state.preps[7],
+        g_state.preps[8],
+        g_state.preps[9]
+    };
 
     for (int i = 0; i < 4; i++) {
         float ry = row_y + (float)i * (row_h + row_gap);
-        uint32_t box_fill = lerp_color(0x1C2128FFu, lang_colors[i], 0.05f);
+        uint32_t box_fill = lerp_color(0xFF28211Cu, lang_colors[i], 0.05f);
 
         /* Row container */
         draw_container(core, content_x, ry, content_w, row_h * lang_heights[i],
                        box_fill, lang_colors[i], 6.0f, 1.0f);
 
-        /* Language label */
-        fs_cmd_text_utf8(core, content_x + LX(10.0f), ry + LX(14.0f),
-                        LX(10.0f), lang_names[i], lang_colors[i], LX(200.0f));
+        /* Language label, text, and measure indicator */
+        if (font_ready) {
+            fs_cmd_text_utf8(core, content_x + LX(10.0f), ry + LX(14.0f),
+                            LX(10.0f), lang_names[i], lang_colors[i], LX(200.0f));
 
-        /* Separator */
-        fs_cmd_line(core, content_x + LX(10.0f), ry + LX(20.0f),
-                    content_x + content_w - LX(10.0f), ry + LX(20.0f),
-                    1.0f, lerp_color(lang_colors[i], PAL_GRID_LINE, 0.6f));
+            /* Separator */
+            fs_cmd_line(core, content_x + LX(10.0f), ry + LX(20.0f),
+                        content_x + content_w - LX(10.0f), ry + LX(20.0f),
+                        1.0f, lerp_color(lang_colors[i], PAL_GRID_LINE, 0.6f));
 
-        /* Text */
-        float tx = content_x + LX(10.0f);
-        float ty = ry + LX(26.0f);
-        float font_sz = LX(12.0f);
-        float max_w = content_w - LX(20.0f);
-        fs_cmd_text_utf8(core, tx, ty, font_sz, lang_texts[i], PAL_TEXT, max_w);
-
-        /* Measure indicator */
-        FS_LayoutResult r = fs_text_layout_layout(NULL, max_w);
-        char measure_str[32];
-        snprintf(measure_str, sizeof(measure_str), "%ux%.0f",
-                 r.line_count, r.height);
-        fs_cmd_text_utf8(core, content_x + content_w - LX(80.0f), ry + LX(14.0f),
-                        LX(9.0f), measure_str, PAL_TEXT_DIM, LX(70.0f));
+            /* Text */
+            float tx = content_x + LX(10.0f);
+            float text_top = ry + LX(26.0f);
+            float font_sz = LX(12.0f);
+            float max_w = content_w - LX(20.0f);
+            float max_h = row_h * lang_heights[i] - LX(30.0f);
+            if (i == 1) {
+                fs_state_save(core);
+                fs_style_set_text_direction(core, FS_TEXT_DIRECTION_RTL);
+                fs_style_set_text_align(core, FS_TEXT_ALIGN_RIGHT);
+                draw_wrapped_prepared_text(core, lang_preps[i], tx + max_w, text_top,
+                                           font_sz, max_w, PAL_TEXT, max_h);
+                fs_state_restore(core);
+            } else {
+                draw_wrapped_prepared_text(core, lang_preps[i], tx, text_top,
+                                           font_sz, max_w, PAL_TEXT, max_h);
+            }
+        }
     }
 }
 
@@ -1038,11 +1116,20 @@ static void prepare_all_texts(void) {
     g_state.prep_count = 0;
 
     const char* texts[] = { k_text_basic, k_text_lorem, k_text_cjk, k_text_emoji,
-                             k_text_arabic, k_text_long };
-    const char* labels[] = { "Basic", "Lorem", "CJK", "Emoji", "Arabic", "Long" };
+                             k_text_arabic, k_text_long,
+                             "The art of text layout is precision. Character widths matter. Word breaks define rhythm.",
+                             "فن تخطيط النص هو الدقة. عرض الأحرف مهم. فواصل الكلمات تحدد الإيقاع。",
+                             "文本布局的艺术在於精確。字符寬度至關重要。單詞斷開定義節奏。",
+                             "テキストレイアウトの芸術は精密さにあります。文字幅が重要です。単語の切れ目がリズムを定義します。",
+                             "안녕하세요! Hello! Korean and English mixed. 한글 텍스트 레이아웃 테스트 중입니다." };
+    const char* labels[] = { "Basic", "Lorem", "CJK", "Emoji", "Arabic", "Long",
+                             "MultiLang English", "MultiLang Arabic", "MultiLang Chinese", "MultiLang Japanese",
+                             "CJK Korean" };
+    const float sizes[] = { 14.0f, 14.0f, 12.0f, 14.0f, 14.0f, 14.0f,
+                            12.0f, 12.0f, 12.0f, 12.0f, 12.0f };
 
-    for (int i = 0; i < 6 && g_state.prep_count < MAX_PREP_ITEMS; i++) {
-        FS_TextLayout* ctx = fs_text_layout_create("Inter", 14.0f, 1.5f);
+    for (int i = 0; i < 11 && g_state.prep_count < MAX_PREP_ITEMS; i++) {
+        FS_TextLayout* ctx = fs_text_layout_create("Inter", sizes[i], 1.5f);
         if (!ctx) continue;
         FS_PreparedText* prep = fs_text_layout_prepare(ctx, texts[i]);
         if (prep) {
@@ -1075,8 +1162,6 @@ static void switch_scene(SceneID scene) {
     g_state.prev_scene = g_state.scene;
     g_state.scene = scene;
     g_state.scene_changed = true;
-    g_state.transition = 1.0f;
-    g_state.transition_target = 0.0f;
     g_state.auto_anim_width = false;
     g_state.scroll_y = 0.0f;
     g_state.scroll_target = 0.0f;
@@ -1085,12 +1170,6 @@ static void switch_scene(SceneID scene) {
 static void update_scene(void) {
     double t = g_state.total_time;
     double dt = g_state.frame_dt;
-
-    /* Transition fade */
-    if (g_state.transition > 0.0f) {
-        g_state.transition -= (float)(dt * 4.0f);
-        if (g_state.transition < 0.0f) g_state.transition = 0.0f;
-    }
 
     /* Scene-specific animation */
     switch (g_state.scene) {
@@ -1145,15 +1224,17 @@ int main(void) {
 
     bool font_ready = false;
     fs_core_set_font_backend(core, fs_get_freetype2_font_backend());
-    const char* font_paths[] = {
-        "C:\\Windows\\Fonts\\seguiemj.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
+        const char* font_paths[] = {
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/meiryo.ttc",
+        "C:/Windows/Fonts/malgun.ttf",
+        "C:/Windows/Fonts/seguiemj.ttf",
     };
     for (size_t fi = 0; fi < ARRAY_COUNT(font_paths); fi++) {
         if (fs_core_load_font_file(core, font_paths[fi])) {
             font_ready = true;
-            break;
         }
     }
     printf("Font loaded: %s\n", font_ready ? "yes" : "no");
@@ -1220,11 +1301,12 @@ int main(void) {
         int lmb = glfwGetMouseButton(backend.window, GLFW_MOUSE_BUTTON_LEFT);
         if (lmb == GLFW_PRESS) {
             if (!g_state.mouse_down) {
-                g_state.mouse_drag_x = mx;
+                g_state.mouse_drag_x = (float)mx;
+                g_state.mouse_drag_width = g_state.container_width;
             }
             g_state.mouse_down = true;
-            float dx = (float)(mx - g_state.mouse_drag_x);
-            g_state.container_width = DEMO_DW * 0.3f + (float)fabs(dx);
+            float dx = (float)mx - g_state.mouse_drag_x;
+            g_state.container_width = g_state.mouse_drag_width + dx;
             if (g_state.container_width < DEMO_DW * 0.1f) g_state.container_width = DEMO_DW * 0.1f;
             if (g_state.container_width > DEMO_DW * 0.95f) g_state.container_width = DEMO_DW * 0.95f;
             g_state.container_width_target = g_state.container_width;
@@ -1302,12 +1384,6 @@ int main(void) {
             default:              render_scene_title(core, font_ready); break;
         }
 
-        /* Transition overlay */
-        if (g_state.transition > 0.0f) {
-            uint32_t tc = lerp_color(0x0D1117FFu, PAL_BG_MID, 1.0f - g_state.transition);
-            fs_cmd_rect(core, 0, 0, g_state.fbw, g_state.fbh, 0, tc);
-        }
-
         /* Scene tabs */
         if (font_ready && g_state.show_info) {
             float tab_y = g_state.fbh - LY(20.0f);
@@ -1315,7 +1391,7 @@ int main(void) {
                 float tw = LX(60.0f);
                 float tx = LX(10.0f) + (float)i * (tw + LX(4.0f));
                 uint32_t tc = (i == g_state.scene) ? PAL_ACCENT_1 : PAL_BG_LIGHT;
-                uint32_t fc = (i == g_state.scene) ? 0x0D1117FFu : PAL_TEXT_DIM;
+                uint32_t fc = (i == g_state.scene) ? 0xFF17110Du : PAL_TEXT_DIM;
                 char key_str[4] = { '1' + (char)i, '\0' };
                 if (i == 9) { key_str[0] = '0'; key_str[1] = '\0'; }
                 if (i > 9) continue;

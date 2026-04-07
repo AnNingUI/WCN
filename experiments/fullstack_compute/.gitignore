@@ -36,3 +36,4 @@ tmp
 test-script/*
 
 build_*/*
+build*/*
