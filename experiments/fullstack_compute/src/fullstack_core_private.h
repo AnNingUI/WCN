@@ -246,6 +246,8 @@ typedef struct FS_StyleSnapshot {
     uint8_t text_rendering;
     uint8_t font_stretch;
     uint8_t font_variant_caps;
+    float font_size_px;
+    char font_family[64];
     float letter_spacing;
     float word_spacing;
     uint8_t image_smoothing_enabled;
@@ -366,6 +368,8 @@ typedef struct FS_InternalState {
     uint8_t style_text_rendering;
     uint8_t style_font_stretch;
     uint8_t style_font_variant_caps;
+    float style_font_size_px;
+    char style_font_family[64];
     float style_letter_spacing;
     float style_word_spacing;
     uint8_t style_image_smoothing_enabled;

@@ -73,6 +73,7 @@ set(FS_CORE_SOURCES
     ${FS_ROOT}/src/fullstack_core_text_api.c
     ${FS_ROOT}/src/fullstack_core_style_api.c
     ${FS_ROOT}/src/fullstack_core_style.c
+    ${FS_ROOT}/src/fullstack_effects.c
     ${FS_ROOT}/src/fullstack_filters.c
 )
 
@@ -93,6 +94,9 @@ set(FS_INCLUDE_DIRS
     ${FS_ROOT}/src
     ${FS_ROOT}/impl
 )
+
+# Put all executables in the build root, not in the examples/ subdirectory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # ---------------------------------------------------------------------------
 # fullstack_compute_demo
@@ -129,6 +133,17 @@ target_include_directories(fs_text_layout_demo ${FS_INCLUDE_DIRS})
 fs_example_link(fs_text_layout_demo)
 
 # ---------------------------------------------------------------------------
+# fs_text_layout Obstacle Wrap Demo — slot-based flow layout
+# ---------------------------------------------------------------------------
+add_executable(fs_text_layout_obstacle_wrap_demo
+    ${FS_CORE_SOURCES}
+    ${FS_BACKEND_SOURCES}
+    ${FS_EXAMPLES_ROOT}/fs_text_layout_obstacle_wrap_demo.c
+)
+target_include_directories(fs_text_layout_obstacle_wrap_demo ${FS_INCLUDE_DIRS})
+fs_example_link(fs_text_layout_obstacle_wrap_demo)
+
+# ---------------------------------------------------------------------------
 # Clay Layout Demo
 # ---------------------------------------------------------------------------
 add_executable(clay_layout_demo
@@ -138,3 +153,50 @@ add_executable(clay_layout_demo
 )
 target_include_directories(clay_layout_demo ${FS_INCLUDE_DIRS})
 fs_example_link(clay_layout_demo)
+
+# ---------------------------------------------------------------------------
+# ui_demo — C++ UI library demo (taffy + fullstack_compute)
+# ---------------------------------------------------------------------------
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_executable(ui_demo
+    ${FS_CORE_SOURCES}
+    ${FS_BACKEND_SOURCES}
+    ${FS_EXAMPLES_ROOT}/ui_demo.cpp
+)
+target_include_directories(ui_demo
+    PRIVATE
+    ${WCN_ROOT}/include
+    ${WCN_ROOT}/external/wgpu/include
+    ${WCN_ROOT}/external/stb/include
+    ${FS_ROOT}/include
+    ${FS_ROOT}/src
+    ${FS_ROOT}/impl
+    ${FS_ROOT}/examples
+)
+target_compile_definitions(ui_demo PRIVATE TAFFY_FLEXBOX TAFFY_GRID TAFFY_BLOCK_LAYOUT TAFFY_CONTENT_SIZE)
+fs_example_link(ui_demo)
+target_link_libraries(ui_demo PRIVATE ${CMAKE_DL_LIBS})
+
+# ---------------------------------------------------------------------------
+# transition_demo — GPU page-transition engine demo (multiple pages + WGSL)
+# ---------------------------------------------------------------------------
+add_executable(transition_demo
+    ${FS_CORE_SOURCES}
+    ${FS_BACKEND_SOURCES}
+    ${FS_EXAMPLES_ROOT}/transition_demo.cpp
+)
+target_include_directories(transition_demo
+    PRIVATE
+    ${WCN_ROOT}/include
+    ${WCN_ROOT}/external/wgpu/include
+    ${WCN_ROOT}/external/stb/include
+    ${FS_ROOT}/include
+    ${FS_ROOT}/src
+    ${FS_ROOT}/impl
+    ${FS_ROOT}/examples
+)
+target_compile_definitions(transition_demo PRIVATE TAFFY_FLEXBOX TAFFY_GRID TAFFY_BLOCK_LAYOUT TAFFY_CONTENT_SIZE)
+fs_example_link(transition_demo)
+target_link_libraries(transition_demo PRIVATE ${CMAKE_DL_LIBS})

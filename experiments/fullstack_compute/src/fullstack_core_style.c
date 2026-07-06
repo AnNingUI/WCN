@@ -86,6 +86,8 @@ bool fs_style_snapshot_capture(FS_StyleSnapshot* dst, const FS_InternalState* st
     dst->text_rendering = st->style_text_rendering;
     dst->font_stretch = st->style_font_stretch;
     dst->font_variant_caps = st->style_font_variant_caps;
+    dst->font_size_px = st->style_font_size_px;
+    memcpy(dst->font_family, st->style_font_family, sizeof(dst->font_family));
     dst->letter_spacing = st->style_letter_spacing;
     dst->word_spacing = st->style_word_spacing;
     dst->image_smoothing_enabled = st->style_image_smoothing_enabled;
@@ -141,6 +143,8 @@ void fs_style_snapshot_apply(FS_InternalState* st, FS_StyleSnapshot* src) {
     st->style_text_rendering = src->text_rendering;
     st->style_font_stretch = src->font_stretch;
     st->style_font_variant_caps = src->font_variant_caps;
+    st->style_font_size_px = src->font_size_px;
+    memcpy(st->style_font_family, src->font_family, sizeof(st->style_font_family));
     st->style_letter_spacing = src->letter_spacing;
     st->style_word_spacing = src->word_spacing;
     st->style_image_smoothing_enabled = src->image_smoothing_enabled;
@@ -207,6 +211,8 @@ void fs_style_reset_state(FS_InternalState* st) {
     st->style_text_rendering = (uint8_t)FS_TEXT_RENDERING_AUTO;
     st->style_font_stretch = (uint8_t)FS_FONT_STRETCH_NORMAL;
     st->style_font_variant_caps = (uint8_t)FS_FONT_VARIANT_CAPS_NORMAL;
+    st->style_font_size_px = 16.0f;
+    st->style_font_family[0] = '\0';
     st->style_letter_spacing = 0.0f;
     st->style_word_spacing = 0.0f;
     st->style_image_smoothing_enabled = 1u;
@@ -563,4 +569,48 @@ bool fs_style_copy_pattern(FS_StylePattern* dst, const FS_Pattern* src) {
         }
     }
     return true;
+}
+
+bool fs_style_set_font(FS_Core* core, const char* font_family, float font_size_px) {
+    FS_InternalState* st = fs_state(core);
+    if (!st) {
+        return false;
+    }
+    if (font_size_px <= 0.0f) {
+        font_size_px = 16.0f;
+    }
+    st->style_font_size_px = font_size_px;
+    if (font_family) {
+        size_t len = strlen(font_family);
+        if (len >= sizeof(st->style_font_family)) {
+            len = sizeof(st->style_font_family) - 1u;
+        }
+        memcpy(st->style_font_family, font_family, len);
+        st->style_font_family[len] = '\0';
+    } else {
+        st->style_font_family[0] = '\0';
+    }
+    return true;
+}
+
+bool fs_style_get_font_family(const FS_Core* core, char* buffer, size_t buffer_size) {
+    FS_InternalState* st = fs_state((FS_Core*)core);
+    if (!st || !buffer || buffer_size == 0u) {
+        return false;
+    }
+    size_t len = strlen(st->style_font_family);
+    if (len >= buffer_size) {
+        len = buffer_size - 1u;
+    }
+    memcpy(buffer, st->style_font_family, len);
+    buffer[len] = '\0';
+    return true;
+}
+
+float fs_style_get_font_size(const FS_Core* core) {
+    FS_InternalState* st = fs_state((FS_Core*)core);
+    if (!st) {
+        return 16.0f;
+    }
+    return st->style_font_size_px;
 }

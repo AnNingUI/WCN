@@ -110,10 +110,13 @@ static bool fs_cmd_text_utf8_internal(
     float stroke_width,
     uint32_t style_color_mode
 ) {
-    if (!core || !utf8 || font_size_px <= 0.0f) {
+    if (!core || !utf8) {
         return false;
     }
     FS_InternalState* st = fs_state(core);
+    if (font_size_px <= 0.0f) {
+        font_size_px = (st && st->style_font_size_px > 0.0f) ? st->style_font_size_px : 16.0f;
+    }
     const FS_Transform2D* text_transform = st ? &st->current_transform : NULL;
     float line_advance = font_size_px * 1.25f;
     fs_resolve_text_vertical_metrics(st, font_size_px, NULL, NULL, &line_advance);
@@ -458,7 +461,7 @@ bool fs_cmd_stroke_text_utf8(
     float max_width,
     float stroke_width
 ) {
-    if (!core || !utf8 || font_size_px <= 0.0f) {
+    if (!core || !utf8) {
         return false;
     }
     FS_InternalState* st = fs_state(core);
@@ -565,12 +568,15 @@ bool fs_measure_text_utf8(
     float max_width,
     FS_TextMetrics* out_metrics
 ) {
-    if (!core || !utf8 || font_size_px <= 0.0f || !out_metrics) {
+    if (!core || !utf8 || !out_metrics) {
         return false;
     }
     FS_InternalState* st = fs_state(core);
     if (!st) {
         return false;
+    }
+    if (font_size_px <= 0.0f) {
+        font_size_px = (st->style_font_size_px > 0.0f) ? st->style_font_size_px : 16.0f;
     }
     memset(out_metrics, 0, sizeof(*out_metrics));
 

@@ -58,6 +58,48 @@ typedef struct FS_LayoutLine FS_LayoutLine;
 typedef struct FS_LayoutCursor FS_LayoutCursor;
 
 /* ================================================================
+   SLOT-BASED FLOW LAYOUT TYPES
+   For obstacle-aware and irregular-shape text routing.
+   ================================================================ */
+
+/**
+ * One usable horizontal interval (slot) on a scanline.
+ * Used by obstacle-wrap and multi-column flow layouts.
+ */
+typedef struct FS_LayoutSlot {
+    float x0;   /**< left edge in pixels          */
+    float x1;   /**< right edge in pixels         */
+} FS_LayoutSlot;
+
+/**
+ * One laid-out text fragment placed into one slot.
+ * One logical baseline may emit multiple fragments.
+ */
+typedef struct FS_LayoutFragment {
+    const char* text_start;    /**< pointer into original string         */
+    size_t      byte_len;      /**< byte length of this fragment        */
+    float       x0;             /**< left edge in pixels                 */
+    float       x1;             /**< right edge in pixels                */
+    float       baseline_y;     /**< baseline y position                 */
+    float       width;          /**< measured text width                 */
+    uint32_t    segment_from;   /**< first segment index in this fragment */
+    uint32_t    segment_to;     /**< one-past-last segment index         */
+    uint32_t    slot_index;     /**< which slot this fragment filled     */
+} FS_LayoutFragment;
+
+/**
+ * Cursor for slot-based flow layout.
+ * Tracks full-text progression across many baselines and slots.
+ * Separate from FS_LayoutCursor (which is for single-width line iteration).
+ */
+typedef struct FS_LayoutFlowCursor {
+    uint32_t segment_idx;       /**< current segment index                */
+    float    segment_offset_x;  /**< x offset within current segment (px) */
+    bool     at_paragraph_break; /**< true if just hit a hard break     */
+    bool     finished;          /**< true when all text has been consumed */
+} FS_LayoutFlowCursor;
+
+/* ================================================================
    CONFIGURATION
    ================================================================ */
 
@@ -403,6 +445,77 @@ uint32_t fs_text_layout_count_codepoints(const char* text);
  * Get byte length of a UTF-8 codepoint.
  */
 size_t fs_text_layout_utf8_char_len(char c);
+
+/* ================================================================
+   SLOT-BASED FLOW LAYOUT APIs
+   Obstacle-aware and irregular-shape text routing.
+   These enable Pretext-style text flow around geometric obstacles.
+   ================================================================ */
+
+/**
+ * Initialize a flow cursor for slot-based layout.
+ * Call once per full-page relayout.
+ *
+ * @param cursor  Uninitialized cursor to set up
+ */
+void fs_text_layout_flow_cursor_init(FS_LayoutFlowCursor* cursor);
+
+/**
+ * Check if all text has been consumed by the flow layout.
+ *
+ * @param prep    Prepared text
+ * @param cursor  Current flow cursor
+ * @return        true if finished, false if more text remains
+ */
+bool fs_text_layout_flow_finished(const FS_PreparedText* prep,
+                                  const FS_LayoutFlowCursor* cursor);
+
+/**
+ * Fill one horizontal slot with as much text as possible.
+ *
+ * Continues from the current flow cursor position.
+ * Stops at a natural break opportunity, a hard newline, or when
+ * the slot is exhausted. Updates the cursor after each call.
+ *
+ * @param prep      Prepared text
+ * @param cursor    Input/output: current flow cursor (will be advanced)
+ * @param slot_x0   Left edge of the available slot
+ * @param slot_x1   Right edge of the available slot
+ * @param baseline_y  Baseline y position for this fragment
+ * @param out_frag  Output: fragment descriptor (filled on success)
+ * @return           true if any text was placed, false if slot is empty
+ */
+bool fs_text_layout_layout_into_slot(
+    const FS_PreparedText* prep,
+    FS_LayoutFlowCursor*   cursor,
+    float                  slot_x0,
+    float                  slot_x1,
+    float                  baseline_y,
+    FS_LayoutFragment*    out_frag);
+
+/**
+ * Lay out one baseline across multiple slots.
+ *
+ * Consumes slots from left to right, continuing text across them.
+ * Respects hard newlines and paragraph breaks.
+ *
+ * @param prep           Prepared text
+ * @param cursor         Input/output: flow cursor (will be advanced)
+ * @param slots          Array of available slots for this baseline
+ * @param slot_count     Number of slots
+ * @param baseline_y     Baseline y position for this row
+ * @param out_frags     Output buffer for fragments
+ * @param max_frags     Capacity of out_frags
+ * @return               Number of fragments emitted
+ */
+uint32_t fs_text_layout_layout_line_slots(
+    const FS_PreparedText* prep,
+    FS_LayoutFlowCursor*   cursor,
+    const FS_LayoutSlot*  slots,
+    uint32_t              slot_count,
+    float                 baseline_y,
+    FS_LayoutFragment*    out_frags,
+    uint32_t              max_frags);
 
 #ifdef __cplusplus
 }
@@ -1283,6 +1396,169 @@ size_t fs_text_layout_utf8_char_len(char c) {
     if ((uc & 0xF0) == 0xE0) return 3;
     if ((uc & 0xF8) == 0xF0) return 4;
     return 1;
+}
+
+/* ================================================================
+   SLOT-BASED FLOW LAYOUT — IMPLEMENTATION
+   ================================================================ */
+
+void fs_text_layout_flow_cursor_init(FS_LayoutFlowCursor* cursor) {
+    if (!cursor) return;
+    cursor->segment_idx = 0;
+    cursor->segment_offset_x = 0.0f;
+    cursor->at_paragraph_break = false;
+    cursor->finished = false;
+}
+
+bool fs_text_layout_flow_finished(const FS_PreparedText* prep,
+                                  const FS_LayoutFlowCursor* cursor) {
+    if (!prep || !cursor) return true;
+    return cursor->finished;
+}
+
+bool fs_text_layout_layout_into_slot(
+    const FS_PreparedText* prep,
+    FS_LayoutFlowCursor*   cursor,
+    float                  slot_x0,
+    float                  slot_x1,
+    float                  baseline_y,
+    FS_LayoutFragment*    out_frag) {
+    if (!prep || !cursor || !out_frag) return false;
+    if (cursor->finished) return false;
+
+    const float available_w = slot_x1 - slot_x0;
+    if (available_w <= 0.0f) return false;
+
+    const uint32_t frag_from = cursor->segment_idx;
+    const char* frag_text_start = NULL;
+    if (frag_from < prep->segment_count) {
+        frag_text_start = prep->segments[frag_from].text;
+    } else {
+        cursor->finished = true;
+        return false;
+    }
+
+    float used_w = 0.0f;
+    size_t total_bytes = 0;
+    uint32_t seg_end = frag_from;
+
+    uint32_t last_break_seg_end = frag_from;
+    float last_break_used_w = 0.0f;
+    size_t last_break_total_bytes = 0;
+    bool has_break_point = false;
+    bool hit_paragraph_break = false;
+
+    while (seg_end < prep->segment_count) {
+        FS_TextSegment* seg = &prep->segments[seg_end];
+
+        /* Zero-width newline forces a paragraph break and is consumed. */
+        if (seg->byte_len == 0) {
+            hit_paragraph_break = true;
+            seg_end++;
+            break;
+        }
+
+        if (used_w + seg->width > available_w) {
+            if (has_break_point) {
+                seg_end = last_break_seg_end;
+                used_w = last_break_used_w;
+                total_bytes = last_break_total_bytes;
+            }
+            break;
+        }
+
+        used_w += seg->width;
+        total_bytes += seg->byte_len;
+        seg_end++;
+
+        if (seg->is_space || seg->is_cjk || seg->is_emoji) {
+            last_break_seg_end = seg_end;
+            last_break_used_w = used_w;
+            last_break_total_bytes = total_bytes;
+            has_break_point = true;
+        }
+    }
+
+    /* Long-word fallback: allow one fitting segment even without a break point. */
+    if (total_bytes == 0 && seg_end == frag_from && frag_from < prep->segment_count) {
+        FS_TextSegment* seg = &prep->segments[frag_from];
+        if (seg->byte_len > 0 && seg->width <= available_w) {
+            used_w = seg->width;
+            total_bytes = seg->byte_len;
+            seg_end = frag_from + 1;
+        }
+    }
+
+    /* Paragraph break at line start: consume newline and move to next baseline. */
+    if (total_bytes == 0 && hit_paragraph_break) {
+        cursor->segment_idx = seg_end;
+        cursor->segment_offset_x = 0.0f;
+        cursor->at_paragraph_break = true;
+        if (cursor->segment_idx >= prep->segment_count) {
+            cursor->finished = true;
+        }
+        return false;
+    }
+
+    if (total_bytes == 0) {
+        return false;
+    }
+
+    out_frag->text_start   = frag_text_start;
+    out_frag->byte_len     = total_bytes;
+    out_frag->x0           = slot_x0;
+    out_frag->x1           = slot_x0 + used_w;
+    out_frag->baseline_y   = baseline_y;
+    out_frag->width        = used_w;
+    out_frag->segment_from = frag_from;
+    out_frag->segment_to   = seg_end;
+
+    cursor->segment_idx = seg_end;
+    cursor->segment_offset_x = 0.0f;
+    cursor->at_paragraph_break = hit_paragraph_break;
+
+    if (cursor->segment_idx >= prep->segment_count) {
+        cursor->finished = true;
+    }
+
+    return true;
+}
+
+uint32_t fs_text_layout_layout_line_slots(
+    const FS_PreparedText* prep,
+    FS_LayoutFlowCursor*   cursor,
+    const FS_LayoutSlot*  slots,
+    uint32_t              slot_count,
+    float                 baseline_y,
+    FS_LayoutFragment*    out_frags,
+    uint32_t              max_frags) {
+    if (!prep || !cursor || !slots || !out_frags) return 0;
+
+    /* After a paragraph break, skip remaining slots on this baseline */
+    if (cursor->at_paragraph_break) {
+        cursor->at_paragraph_break = false;
+        return 0;
+    }
+
+    uint32_t emitted = 0;
+    for (uint32_t i = 0; i < slot_count && emitted < max_frags; i++) {
+        if (cursor->finished) break;
+
+        FS_LayoutFragment* f = &out_frags[emitted];
+        f->slot_index = i;
+
+        if (fs_text_layout_layout_into_slot(prep, cursor,
+                slots[i].x0, slots[i].x1, baseline_y, f)) {
+            emitted++;
+        }
+
+        /* After paragraph break, stop consuming further slots */
+        if (cursor->at_paragraph_break) {
+            cursor->at_paragraph_break = false;
+            break;
+        }
+    }
+    return emitted;
 }
 
 #endif /* FS_TEXT_LAYOUT_IMPLEMENTATION */

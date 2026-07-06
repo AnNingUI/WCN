@@ -19,3 +19,8 @@ compile_commands.json
 .lookme/*
 .dev_docs/*
 .ace-tool/
+.omc/*
+memory
+Draft
+Task
+*.tmp
