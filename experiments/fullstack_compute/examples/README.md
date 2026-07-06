@@ -6,3 +6,6 @@
 
 ## Fs Text Layout Demo 
 ![Fs Text Layout Demo](../assets/md/fs_text_layout_demo.gif)
+
+## Router Shader Transition Demo
+![Router Shader Transition Demo](../assets/md/router_shader_transition_demo.gif)
