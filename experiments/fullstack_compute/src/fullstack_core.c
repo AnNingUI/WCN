@@ -4745,21 +4745,9 @@ bool fs_core_put_canvas_image_data_rgba8(
         memcpy(dst, src, copy_row_bytes);
     }
 
-    const size_t blit_size = (size_t)clip_w * (size_t)clip_h * 4u;
-    uint8_t* blit = (uint8_t*)malloc(blit_size);
-    if (!blit) {
-        return false;
-    }
-    for (uint32_t row = 0u; row < clip_h; ++row) {
-        const uint8_t* src = rgba_pixels + ((size_t)(src_y + row) * src_row_bytes) + (size_t)src_x * 4u;
-        uint8_t* dst = blit + (size_t)row * copy_row_bytes;
-        memcpy(dst, src, copy_row_bytes);
-    }
-
     FS_ImageHandle handle;
-    bool ok = fs_ensure_canvas_image_data_handle(core, clip_w, clip_h, &handle);
+    bool ok = fs_ensure_canvas_image_data_handle(core, width, height, &handle);
     if (!ok) {
-        free(blit);
         return false;
     }
     ok = fs_queue_write_texture_2d(
@@ -4768,20 +4756,21 @@ bool fs_core_put_canvas_image_data_rgba8(
         handle.layer,
         handle.atlas_x,
         handle.atlas_y,
-        clip_w,
-        clip_h,
-        blit,
+        width,
+        height,
+        rgba_pixels,
         4u
     );
-    free(blit);
     if (!ok) {
         return false;
     }
 
-    const float uv_x = handle.uv_min[0];
-    const float uv_y = handle.uv_min[1];
-    const float uv_w = handle.uv_max[0] - handle.uv_min[0];
-    const float uv_h = handle.uv_max[1] - handle.uv_min[1];
+    const float handle_uv_w = handle.uv_max[0] - handle.uv_min[0];
+    const float handle_uv_h = handle.uv_max[1] - handle.uv_min[1];
+    const float uv_x = handle.uv_min[0] + handle_uv_w * ((float)src_x / (float)width);
+    const float uv_y = handle.uv_min[1] + handle_uv_h * ((float)src_y / (float)height);
+    const float uv_w = handle_uv_w * ((float)clip_w / (float)width);
+    const float uv_h = handle_uv_h * ((float)clip_h / (float)height);
     const float prev_alpha = fs_style_get_global_alpha(core);
     const FS_GlobalCompositeOperation prev_comp = fs_style_get_global_composite_operation(core);
     const uint32_t prev_shadow_color = fs_style_get_shadow_color(core);

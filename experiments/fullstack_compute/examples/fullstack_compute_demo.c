@@ -1565,7 +1565,7 @@ int main(void) {
                     }
                     case 2: {
                         // Bars
-                        for (int b = 0; b < 4; b++) {
+                        for (int b = 0; b < 3; b++) {
                             float t = (float)b / 3.0f;
                             uint8_t rr = (uint8_t)(((card_accent1 >> 24) & 0xFF) * (1 - t) + ((card_accent2 >> 24) & 0xFF) * t);
                             uint8_t gg = (uint8_t)(((card_accent1 >> 16) & 0xFF) * (1 - t) + ((card_accent2 >> 16) & 0xFF) * t);
