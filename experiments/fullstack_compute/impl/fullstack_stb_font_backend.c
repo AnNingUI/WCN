@@ -61,6 +61,8 @@ typedef struct FS_StbFontHandle {
     uint64_t cbdt_cache_misses;
     uint64_t cbdt_cache_inserts;
     uint64_t cbdt_cache_decode_failures;
+    uint8_t* rgba_expand_scratch;
+    size_t rgba_expand_scratch_capacity;
 } FS_StbFontHandle;
 
 static bool fs_stb_str_contains_nocase(const char* haystack, const char* needle) {
@@ -1076,6 +1078,9 @@ static void fs_stb_destroy_font(void* font_handle) {
     free(handle->bytes);
     handle->bytes = NULL;
     handle->bytes_size = 0u;
+    free(handle->rgba_expand_scratch);
+    handle->rgba_expand_scratch = NULL;
+    handle->rgba_expand_scratch_capacity = 0u;
     free(handle);
 }
 
@@ -1140,7 +1145,13 @@ static bool fs_stb_get_glyph_sdf(
         int yoff = 0;
         unsigned char* bitmap = stbtt_GetCodepointBitmap(&handle->info, scale, scale, (int)codepoint, &bw, &bh, &xoff, &yoff);
         if (bitmap && bw > 0 && bh > 0) {
-            uint8_t* rgba = (uint8_t*)malloc((size_t)bw * (size_t)bh * 4u);
+            size_t needed = (size_t)bw * (size_t)bh * 4u;
+            if (needed > handle->rgba_expand_scratch_capacity) {
+                free(handle->rgba_expand_scratch);
+                handle->rgba_expand_scratch = (uint8_t*)malloc(needed);
+                handle->rgba_expand_scratch_capacity = needed;
+            }
+            uint8_t* rgba = handle->rgba_expand_scratch;
             if (rgba) {
                 for (int i = 0; i < bw * bh; ++i) {
                     const uint8_t a = bitmap[i];
@@ -1253,7 +1264,13 @@ static bool fs_stb_get_glyph_sdf_by_index(
         unsigned char* bitmap =
             stbtt_GetGlyphBitmap(&handle->info, scale, scale, (int)glyph_index, &bw, &bh, &xoff, &yoff);
         if (bitmap && bw > 0 && bh > 0) {
-            uint8_t* rgba = (uint8_t*)malloc((size_t)bw * (size_t)bh * 4u);
+            size_t needed = (size_t)bw * (size_t)bh * 4u;
+            if (needed > handle->rgba_expand_scratch_capacity) {
+                free(handle->rgba_expand_scratch);
+                handle->rgba_expand_scratch = (uint8_t*)malloc(needed);
+                handle->rgba_expand_scratch_capacity = needed;
+            }
+            uint8_t* rgba = handle->rgba_expand_scratch;
             if (rgba) {
                 for (int i = 0; i < bw * bh; ++i) {
                     const uint8_t a = bitmap[i];

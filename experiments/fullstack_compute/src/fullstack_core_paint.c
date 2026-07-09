@@ -1236,41 +1236,55 @@ bool fs_merge_hole_into_polygon(
 
     const uint32_t old_count = *io_count;
     const uint32_t required = old_count + hole_count + 2u;
-    FS_Point2* merged = NULL;
-    uint32_t merged_capacity = 0u;
-    if (!fs_fill_points_reserve(&merged, &merged_capacity, required)) {
+
+    /* 原地 realloc：扩展多边形缓冲区，避免新建+复制+释放 */
+    if (!fs_fill_points_reserve(io_poly, io_capacity, required)) {
         return false;
     }
 
-    uint32_t out_count = 0u;
-    for (uint32_t i = 0u; i <= oi; ++i) {
-        merged[out_count++] = (*io_poly)[i];
-    }
-    for (uint32_t s = 0u; s < hole_count; ++s) {
-        const uint32_t hi = (hole_right_idx + s) % hole_count;
-        merged[out_count++] = hole[hi];
-    }
-    merged[out_count++] = hole[hole_right_idx];
-    for (uint32_t i = oi; i < old_count; ++i) {
-        merged[out_count++] = (*io_poly)[i];
+    /* 将 oi 之后的后缀右移，为洞数据腾出空间 */
+    const uint32_t hole_and_bridge = hole_count + 2u;
+    const uint32_t suffix_count = old_count - oi;
+    if (suffix_count > 0u) {
+        memmove(&(*io_poly)[oi + hole_and_bridge], &(*io_poly)[oi],
+                (size_t)suffix_count * sizeof(FS_Point2));
     }
 
-    free(*io_poly);
-    *io_poly = merged;
-    *io_count = out_count;
-    *io_capacity = merged_capacity;
+    /* 在间隙中插入旋转后的洞数据 + 桥点 */
+    uint32_t out_idx = oi;
+    for (uint32_t s = 0u; s < hole_count; ++s) {
+        const uint32_t hi = (hole_right_idx + s) % hole_count;
+        (*io_poly)[out_idx++] = hole[hi];
+    }
+    (*io_poly)[out_idx++] = hole[hole_right_idx];  /* dup bridge */
+
+    *io_count = required;
     return true;
 }
+
+/* 静态索引缓冲区：ear-clip 三角剖分复用，避免每次 malloc/free */
+static uint32_t* s_ear_clip_indices = NULL;
+static uint32_t s_ear_clip_indices_cap = 0;
 
 bool fs_emit_fill_triangles_ear_clip(FS_Core* core, const FS_Point2* points, uint32_t count, uint32_t color, bool allow_fan_fallback) {
     if (!core || !points || count < 3u) {
         return true;
     }
 
-    uint32_t* indices = (uint32_t*)malloc((size_t)count * sizeof(uint32_t));
-    if (!indices) {
-        return false;
+    /* 按需扩展持久化 scratch buffer */
+    if (count > s_ear_clip_indices_cap) {
+        uint32_t new_cap = (s_ear_clip_indices_cap > 0u) ? s_ear_clip_indices_cap : 64u;
+        while (new_cap < count) {
+            new_cap *= 2u;
+        }
+        uint32_t* grown = (uint32_t*)realloc(s_ear_clip_indices, (size_t)new_cap * sizeof(uint32_t));
+        if (!grown) {
+            return false;
+        }
+        s_ear_clip_indices = grown;
+        s_ear_clip_indices_cap = new_cap;
     }
+    uint32_t* indices = s_ear_clip_indices;
     for (uint32_t i = 0u; i < count; ++i) {
         indices[i] = i;
     }
@@ -1316,7 +1330,7 @@ bool fs_emit_fill_triangles_ear_clip(FS_Core* core, const FS_Point2* points, uin
             }
 
             if (i + 1u < remaining) {
-                memmove(&indices[i], &indices[i + 1u], (size_t)(remaining - i - 1u) * sizeof(uint32_t));
+                indices[i] = indices[remaining - 1u];  /* swap-to-back: O(1) 替代 O(n) memmove */
             }
             remaining -= 1u;
             ear_found = true;
@@ -1342,6 +1356,5 @@ bool fs_emit_fill_triangles_ear_clip(FS_Core* core, const FS_Point2* points, uin
         ok = false;
     }
 
-    free(indices);
     return ok;
 }

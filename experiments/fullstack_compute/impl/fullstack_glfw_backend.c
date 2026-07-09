@@ -517,6 +517,10 @@ bool fs_glfw_backend_present(FS_GlfwBackend* backend, float clear_r, float clear
 
     if (command_buffer) {
         WGPUSubmissionIndex submission = wgpuQueueSubmitForIndex(backend->queue, 1, &command_buffer);
+        // Process deferred GPU object destruction to prevent unbounded memory growth.
+        // Without this poll, wgpu-native internally queues released resources (buffers,
+        // textures, bind groups) for deferred cleanup and never reclaims them.
+        wgpuDevicePoll(backend->device, false, NULL);
         fs_core_notify_submission(backend->core, submission);
         wgpuCommandBufferRelease(command_buffer);
         wgpuSurfacePresent(backend->surface);

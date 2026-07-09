@@ -65,25 +65,27 @@ bool fs_refresh_canvas_shadow_from_readback(FS_Core* core) {
         return false;
     }
 
-    FS_MapReadbackContext map_ctx = {0u, 0u};
-    WGPUBufferMapCallbackInfo map_info = {
-        .nextInChain = NULL,
-        .mode = WGPUCallbackMode_AllowSpontaneous,
-        .callback = fs_canvas_readback_map_callback,
-        .userdata1 = &map_ctx,
-        .userdata2 = NULL
-    };
+    // Synchronous map: initiate, block until callback fires, read, unmap
+    core->canvas_readback_map_ctx.done = 0u;
+    core->canvas_readback_map_ctx.success = 0u;
     wgpuBufferMapAsync(
         core->canvas_readback_buffer,
         WGPUMapMode_Read,
         0u,
         core->canvas_readback_buffer_size,
-        map_info
+        (WGPUBufferMapCallbackInfo){
+            .nextInChain = NULL,
+            .mode = WGPUCallbackMode_AllowSpontaneous,
+            .callback = fs_canvas_readback_map_callback,
+            .userdata1 = &core->canvas_readback_map_ctx,
+            .userdata2 = NULL
+        }
     );
-    for (uint32_t i = 0u; i < 8u && map_ctx.done == 0u; ++i) {
-        (void)wgpuDevicePoll(core->device, true, NULL);
+    // Block until map completes (single wait poll instead of spin-count loop)
+    while (core->canvas_readback_map_ctx.done == 0u) {
+        wgpuDevicePoll(core->device, true, NULL);
     }
-    if (map_ctx.done == 0u || map_ctx.success == 0u) {
+    if (core->canvas_readback_map_ctx.success == 0u) {
         return false;
     }
 
@@ -105,13 +107,13 @@ bool fs_refresh_canvas_shadow_from_readback(FS_Core* core) {
         if (!is_bgra) {
             memcpy(dst, src, (size_t)copy_width * 4u);
         } else {
+            // BGRA -> RGBA: swap R/B per pixel using uint32_t word ops
+            // TODO: GPU-side swizzle in readback shader would eliminate this CPU pass
+            uint32_t* d32 = (uint32_t*)dst;
+            const uint32_t* s32 = (const uint32_t*)src;
             for (uint32_t x = 0u; x < copy_width; ++x) {
-                const uint8_t* s = src + (size_t)x * 4u;
-                uint8_t* d = dst + (size_t)x * 4u;
-                d[0] = s[2];
-                d[1] = s[1];
-                d[2] = s[0];
-                d[3] = s[3];
+                uint32_t p = s32[x];
+                d32[x] = (p & 0xFF00FF00) | ((p & 0xFF) << 16) | ((p >> 16) & 0xFF);
             }
         }
     }

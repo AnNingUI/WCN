@@ -605,6 +605,7 @@ bool fs_filter_chain_execute(
                     const uint32_t blur_dispatch_w = (core->width + 255u) / 256u;
                     wgpuComputePassEncoderDispatchWorkgroups(blur_h_pass, blur_dispatch_w, core->height, 1);
                     wgpuComputePassEncoderEnd(blur_h_pass);
+                    wgpuComputePassEncoderRelease(blur_h_pass);
                 }
 
                 // V-pass: opposite -> source
@@ -619,6 +620,7 @@ bool fs_filter_chain_execute(
                     const uint32_t blur_dispatch_h_v = (core->height + 255u) / 256u;
                     wgpuComputePassEncoderDispatchWorkgroups(blur_v_pass, core->width, blur_dispatch_h_v, 1);
                     wgpuComputePassEncoderEnd(blur_v_pass);
+                    wgpuComputePassEncoderRelease(blur_v_pass);
                 }
                 // After H+V blur, result returns to source buffer: write_to_a=false means result in A.
                 // Update the flag so subsequent filters read from A.
@@ -643,56 +645,21 @@ bool fs_filter_chain_execute(
                 };
                 wgpuQueueWriteBuffer(core->queue, effects->shadow_uniform_buffer, 0, &ds_uni, sizeof(ds_uni));
 
-                // Create a bind group for drop-shadow compute:
-                // binding 0 = shadow_tex (A=blurred, read via textureLoad)
-                // binding 1 = original_tex (B=scene copy, read via textureLoad)
-                // binding 2 = dst_tex (shadow_composite_texture, write)
-                // binding 3 = uniform buffer
-                WGPUTextureViewDescriptor readTexDesc = {
-                    .nextInChain = NULL, .format = WGPUTextureFormat_RGBA8Unorm,
-                    .dimension = WGPUTextureViewDimension_2D,
-                    .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All
-                };
-                WGPUTextureViewDescriptor storageTexDesc = {
-                    .nextInChain = NULL, .format = WGPUTextureFormat_RGBA8Unorm,
-                    .dimension = WGPUTextureViewDimension_2D,
-                    .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All
-                };
-                WGPUTextureView shadowView = effects->ping_pong_texture_a ? wgpuTextureCreateView(effects->ping_pong_texture_a, &readTexDesc) : NULL;
-                WGPUTextureView originalView = effects->ping_pong_texture_b ? wgpuTextureCreateView(effects->ping_pong_texture_b, &readTexDesc) : NULL;
-                WGPUTextureView dstView = effects->shadow_composite_texture ? wgpuTextureCreateView(effects->shadow_composite_texture, &storageTexDesc) : NULL;
-                if (shadowView && originalView && dstView) {
-                    WGPUBindGroupEntry dsCEntries[4];
-                    memset(dsCEntries, 0, sizeof(dsCEntries));
-                    dsCEntries[0].binding = 0; dsCEntries[0].textureView = shadowView;
-                    dsCEntries[1].binding = 1; dsCEntries[1].textureView = originalView;
-                    dsCEntries[2].binding = 2; dsCEntries[2].textureView = dstView;
-                    dsCEntries[3].binding = 3; dsCEntries[3].buffer = effects->shadow_uniform_buffer;
-                    dsCEntries[3].offset = 0; dsCEntries[3].size = sizeof(FS_ShadowUniforms);
-                    WGPUBindGroupDescriptor dsCBGDesc = {
-                        .nextInChain = NULL, .layout = effects->drop_shadow_c_bgl,
-                        .entryCount = 4, .entries = dsCEntries
+                // Use pre-created compute bind group (binding 0=A blur, 1=B original, 2=composite output, 3=uniform)
+                if (effects->drop_shadow_c_bg) {
+                    WGPUComputePassDescriptor dsC_cp_desc = {
+                        .label = { .data = "FS DS Compute Pass", .length = 17 },
+                        .timestampWrites = NULL
                     };
-                    WGPUBindGroup dsC_bg = wgpuDeviceCreateBindGroup(core->device, &dsCBGDesc);
-                    if (dsC_bg) {
-                        WGPUComputePassDescriptor dsC_cp_desc = {
-                            .label = { .data = "FS DS Compute Pass", .length = 17 },
-                            .timestampWrites = NULL
-                        };
-                        WGPUComputePassEncoder dsC_cp_pass = wgpuCommandEncoderBeginComputePass(encoder, &dsC_cp_desc);
-                        wgpuComputePassEncoderSetPipeline(dsC_cp_pass, effects->drop_shadow_c_pipeline);
-                        wgpuComputePassEncoderSetBindGroup(dsC_cp_pass, 0, dsC_bg, 0, NULL);
-                        const uint32_t ds_dispatch_w = (core->width + 7u) / 8u;
-                        const uint32_t ds_dispatch_h = (core->height + 7u) / 8u;
-                        wgpuComputePassEncoderDispatchWorkgroups(dsC_cp_pass, ds_dispatch_w, ds_dispatch_h, 1);
-                        wgpuComputePassEncoderEnd(dsC_cp_pass);
-                        wgpuComputePassEncoderRelease(dsC_cp_pass);
-                        wgpuBindGroupRelease(dsC_bg);
-                    }
+                    WGPUComputePassEncoder dsC_cp_pass = wgpuCommandEncoderBeginComputePass(encoder, &dsC_cp_desc);
+                    wgpuComputePassEncoderSetPipeline(dsC_cp_pass, effects->drop_shadow_c_pipeline);
+                    wgpuComputePassEncoderSetBindGroup(dsC_cp_pass, 0, effects->drop_shadow_c_bg, 0, NULL);
+                    const uint32_t ds_dispatch_w = (core->width + 7u) / 8u;
+                    const uint32_t ds_dispatch_h = (core->height + 7u) / 8u;
+                    wgpuComputePassEncoderDispatchWorkgroups(dsC_cp_pass, ds_dispatch_w, ds_dispatch_h, 1);
+                    wgpuComputePassEncoderEnd(dsC_cp_pass);
+                    wgpuComputePassEncoderRelease(dsC_cp_pass);
                 }
-                if (shadowView) wgpuTextureViewRelease(shadowView);
-                if (originalView) wgpuTextureViewRelease(originalView);
-                if (dstView) wgpuTextureViewRelease(dstView);
                 // Mark that drop-shadow was the last filter. Result is in shadow_composite_texture.
                 // If there are more filters after drop-shadow, copy the result to ping_pong_A
                 // so the next filter can read from it (the ping-pong pipeline only reads from A/B).
@@ -751,6 +718,7 @@ bool fs_filter_chain_execute(
                 const uint32_t dispatch_h = (core->height + 7u) / 8u;
                 wgpuComputePassEncoderDispatchWorkgroups(filter_pass, dispatch_w, dispatch_h, 1);
                 wgpuComputePassEncoderEnd(filter_pass);
+                wgpuComputePassEncoderRelease(filter_pass);
                 write_to_a = !write_to_a;
                 node = node->next;
                 continue;

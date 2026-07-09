@@ -147,10 +147,15 @@ bool fs_upload_glyph_with_mips(
     }
     // SDF glyphs are R8 but atlas is RGBA8Unorm. Expand to RGBA.
     const size_t rgba_size = (size_t)width * (size_t)height * 4u;
-    uint8_t* rgba = (uint8_t*)malloc(rgba_size);
-    if (!rgba) {
-        return false;
+    if (core->glyph_scratch_rgba_capacity[0] < rgba_size) {
+        uint8_t* grown = (uint8_t*)realloc(core->glyph_scratch_rgba[0], rgba_size);
+        if (!grown) {
+            return false;
+        }
+        core->glyph_scratch_rgba[0] = grown;
+        core->glyph_scratch_rgba_capacity[0] = rgba_size;
     }
+    uint8_t* rgba = core->glyph_scratch_rgba[0];
     for (size_t i = 0u; i < (size_t)width * (size_t)height; ++i) {
         rgba[i * 4u + 0u] = pixels[i];
         rgba[i * 4u + 1u] = pixels[i];
@@ -159,7 +164,6 @@ bool fs_upload_glyph_with_mips(
     }
     (void)sdf_onedge;
     bool ok = fs_queue_write_texture_2d(core, core->glyph_atlas_texture, 0u, x, y, width, height, rgba, 4u);
-    free(rgba);
     return ok;
 }
 
@@ -3261,6 +3265,31 @@ static void fs_release_resources(FS_Core* core) {
         core->glyph_scratch_alpha_capacity[i] = 0u;
     }
 
+    free(core->clip_path_edges_scratch);
+    core->clip_path_edges_scratch = NULL;
+    core->clip_path_edges_scratch_capacity = 0u;
+    core->clip_path_edges_scratch_count = 0u;
+
+    free(core->clip_layer_protected_scratch);
+    core->clip_layer_protected_scratch = NULL;
+    core->clip_layer_protected_scratch_capacity = 0u;
+
+    free(core->clip_dispatch_valid_jobs_scratch);
+    core->clip_dispatch_valid_jobs_scratch = NULL;
+    core->clip_dispatch_valid_jobs_scratch_capacity = 0u;
+    free(core->clip_dispatch_valid_xforms_scratch);
+    core->clip_dispatch_valid_xforms_scratch = NULL;
+    core->clip_dispatch_valid_xforms_scratch_capacity = 0u;
+    free(core->clip_dispatch_valid_bucket_ids_scratch);
+    core->clip_dispatch_valid_bucket_ids_scratch = NULL;
+    core->clip_dispatch_valid_bucket_ids_scratch_capacity = 0u;
+    free(core->clip_dispatch_ordered_jobs_scratch);
+    core->clip_dispatch_ordered_jobs_scratch = NULL;
+    core->clip_dispatch_ordered_jobs_scratch_capacity = 0u;
+    free(core->clip_dispatch_ordered_xforms_scratch);
+    core->clip_dispatch_ordered_xforms_scratch = NULL;
+    core->clip_dispatch_ordered_xforms_scratch_capacity = 0u;
+
     free(core->commands);
     core->commands = NULL;
     free(core->command_states);
@@ -3908,22 +3937,36 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
         return true;
     }
 
-    FS_ClipJobGPU* valid_jobs = (FS_ClipJobGPU*)malloc(valid_job_count * sizeof(FS_ClipJobGPU));
-    if (!valid_jobs) {
-        return false;
+    if (core->clip_dispatch_valid_jobs_scratch_capacity < valid_job_count) {
+        FS_ClipJobGPU* grown = (FS_ClipJobGPU*)realloc(
+            core->clip_dispatch_valid_jobs_scratch, valid_job_count * sizeof(FS_ClipJobGPU));
+        if (!grown) {
+            return false;
+        }
+        core->clip_dispatch_valid_jobs_scratch = grown;
+        core->clip_dispatch_valid_jobs_scratch_capacity = valid_job_count;
     }
-    FS_ClipJobTransformGPU* valid_xforms =
-        (FS_ClipJobTransformGPU*)malloc(valid_job_count * sizeof(FS_ClipJobTransformGPU));
-    if (!valid_xforms) {
-        free(valid_jobs);
-        return false;
+    if (core->clip_dispatch_valid_xforms_scratch_capacity < valid_job_count) {
+        FS_ClipJobTransformGPU* grown = (FS_ClipJobTransformGPU*)realloc(
+            core->clip_dispatch_valid_xforms_scratch, valid_job_count * sizeof(FS_ClipJobTransformGPU));
+        if (!grown) {
+            return false;
+        }
+        core->clip_dispatch_valid_xforms_scratch = grown;
+        core->clip_dispatch_valid_xforms_scratch_capacity = valid_job_count;
     }
-    uint8_t* valid_bucket_ids = (uint8_t*)malloc(valid_job_count * sizeof(uint8_t));
-    if (!valid_bucket_ids) {
-        free(valid_xforms);
-        free(valid_jobs);
-        return false;
+    if (core->clip_dispatch_valid_bucket_ids_scratch_capacity < valid_job_count) {
+        uint8_t* grown = (uint8_t*)realloc(
+            core->clip_dispatch_valid_bucket_ids_scratch, valid_job_count * sizeof(uint8_t));
+        if (!grown) {
+            return false;
+        }
+        core->clip_dispatch_valid_bucket_ids_scratch = grown;
+        core->clip_dispatch_valid_bucket_ids_scratch_capacity = valid_job_count;
     }
+    FS_ClipJobGPU* valid_jobs = core->clip_dispatch_valid_jobs_scratch;
+    FS_ClipJobTransformGPU* valid_xforms = core->clip_dispatch_valid_xforms_scratch;
+    uint8_t* valid_bucket_ids = core->clip_dispatch_valid_bucket_ids_scratch;
 
     enum { FS_CLIP_DISPATCH_BUCKET_COUNT = 6 };
     const uint32_t bucket_limits[FS_CLIP_DISPATCH_BUCKET_COUNT] = {64u, 128u, 256u, 512u, 1024u, UINT32_MAX};
@@ -3994,52 +4037,45 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
         total_slots += bucket_counts[b];
     }
     if (total_slots == 0u) {
-        free(valid_bucket_ids);
-        free(valid_xforms);
-        free(valid_jobs);
         core->clip_edge_count = 0u;
         core->clip_job_count = 0u;
         return true;
     }
     if (!fs_ensure_clip_job_gpu_capacity(core, total_slots)) {
-        free(valid_bucket_ids);
-        free(valid_xforms);
-        free(valid_jobs);
         return false;
     }
     if (!fs_ensure_clip_job_transform_gpu_capacity(core, total_slots)) {
-        free(valid_bucket_ids);
-        free(valid_xforms);
-        free(valid_jobs);
         return false;
     }
 
-    FS_ClipJobGPU* ordered_jobs = (FS_ClipJobGPU*)calloc(total_slots, sizeof(FS_ClipJobGPU));
-    if (!ordered_jobs) {
-        free(valid_bucket_ids);
-        free(valid_xforms);
-        free(valid_jobs);
-        return false;
+    if (core->clip_dispatch_ordered_jobs_scratch_capacity < total_slots) {
+        FS_ClipJobGPU* grown = (FS_ClipJobGPU*)realloc(
+            core->clip_dispatch_ordered_jobs_scratch, total_slots * sizeof(FS_ClipJobGPU));
+        if (!grown) {
+            return false;
+        }
+        core->clip_dispatch_ordered_jobs_scratch = grown;
+        core->clip_dispatch_ordered_jobs_scratch_capacity = total_slots;
     }
-    FS_ClipJobTransformGPU* ordered_xforms =
-        (FS_ClipJobTransformGPU*)calloc(total_slots, sizeof(FS_ClipJobTransformGPU));
-    if (!ordered_xforms) {
-        free(ordered_jobs);
-        free(valid_bucket_ids);
-        free(valid_xforms);
-        free(valid_jobs);
-        return false;
+    if (core->clip_dispatch_ordered_xforms_scratch_capacity < total_slots) {
+        FS_ClipJobTransformGPU* grown = (FS_ClipJobTransformGPU*)realloc(
+            core->clip_dispatch_ordered_xforms_scratch, total_slots * sizeof(FS_ClipJobTransformGPU));
+        if (!grown) {
+            return false;
+        }
+        core->clip_dispatch_ordered_xforms_scratch = grown;
+        core->clip_dispatch_ordered_xforms_scratch_capacity = total_slots;
     }
+    FS_ClipJobGPU* ordered_jobs = core->clip_dispatch_ordered_jobs_scratch;
+    FS_ClipJobTransformGPU* ordered_xforms = core->clip_dispatch_ordered_xforms_scratch;
+    memset(ordered_jobs, 0, total_slots * sizeof(FS_ClipJobGPU));
+    memset(ordered_xforms, 0, total_slots * sizeof(FS_ClipJobTransformGPU));
     for (size_t i = 0u; i < valid_job_count; ++i) {
         const uint8_t b = valid_bucket_ids[i];
         const size_t dst = bucket_cursor[b]++;
         ordered_jobs[dst] = valid_jobs[i];
         ordered_xforms[dst] = valid_xforms[i];
     }
-    free(valid_bucket_ids);
-    free(valid_xforms);
-    free(valid_jobs);
-
     wgpuQueueWriteBuffer(
         core->queue,
         core->clip_job_buffer,
@@ -4093,8 +4129,6 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
     );
 
     if (!core->clip_edge_transform_pipeline || !core->clip_edge_transform_bgl) {
-        free(ordered_xforms);
-        free(ordered_jobs);
         return false;
     }
 
@@ -4106,8 +4140,6 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
     WGPUComputePassEncoder edge_transform_pass =
         wgpuCommandEncoderBeginComputePass(encoder, &edge_transform_pass_desc);
     if (!edge_transform_pass) {
-        free(ordered_xforms);
-        free(ordered_jobs);
         return false;
     }
     wgpuComputePassEncoderSetPipeline(edge_transform_pass, core->clip_edge_transform_pipeline);
@@ -4148,9 +4180,8 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
         wgpuBindGroupRelease(edge_bg);
     }
     wgpuComputePassEncoderEnd(edge_transform_pass);
+    wgpuComputePassEncoderRelease(edge_transform_pass);
     if (!edge_transform_ok) {
-        free(ordered_xforms);
-        free(ordered_jobs);
         return false;
     }
 
@@ -4161,8 +4192,6 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
     };
     WGPUComputePassEncoder clip_pass = wgpuCommandEncoderBeginComputePass(encoder, &clip_pass_desc);
     if (!clip_pass) {
-        free(ordered_xforms);
-        free(ordered_jobs);
         return false;
     }
     wgpuComputePassEncoderSetPipeline(clip_pass, core->clip_compute_pipeline);
@@ -4203,14 +4232,13 @@ static bool fs_execute_clip_jobs(FS_Core* core, WGPUCommandEncoder encoder) {
         wgpuBindGroupRelease(bucket_bg);
     }
     wgpuComputePassEncoderEnd(clip_pass);
+    wgpuComputePassEncoderRelease(clip_pass);
     core->clip_dispatch_batches_this_frame += dispatch_batches;
     core->clip_dispatch_pixels_estimated_this_frame += estimated_pixels;
     if (estimated_pixels > ideal_pixels) {
         core->clip_dispatch_pixels_waste_this_frame += (estimated_pixels - ideal_pixels);
     }
 
-    free(ordered_xforms);
-    free(ordered_jobs);
     if (!pass_ok) {
         return false;
     }
@@ -4338,6 +4366,7 @@ bool fs_core_encode(
         const uint32_t workgroups = (vertex_count + 127u) / 128u;
         wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroups, 1, 1);
         wgpuComputePassEncoderEnd(compute_pass);
+        wgpuComputePassEncoderRelease(compute_pass);
     }
 
     // Always render to scene_texture (RGBA8Unorm) — the main render pipeline is created
@@ -4395,6 +4424,7 @@ bool fs_core_encode(
                 fs_mark_context_lost(core);
                 fs_mark_context_lost(core);
                 wgpuRenderPassEncoderEnd(pass);
+                wgpuRenderPassEncoderRelease(pass);
                 return false;
             }
             size_t end_cmd = start_cmd + 1u;
@@ -4413,6 +4443,7 @@ bool fs_core_encode(
         }
     }
     wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
 
     // Execute filter pipeline if effects are active
     // Filter pipeline reads from scene_texture (RGBA8Unorm) -> applies filters via ping-pong -> writes back to scene_texture
@@ -5209,10 +5240,16 @@ static bool fs_clip_try_acquire_layer_with_policy(FS_Core* core, const FS_Intern
         return true;
     }
 
-    uint8_t* protected_layers = (uint8_t*)calloc((size_t)layer_count, sizeof(uint8_t));
-    if (!protected_layers) {
-        return false;
+    if (core->clip_layer_protected_scratch_capacity < layer_count) {
+        uint8_t* grown = (uint8_t*)realloc(core->clip_layer_protected_scratch, (size_t)layer_count);
+        if (!grown) {
+            return false;
+        }
+        core->clip_layer_protected_scratch = grown;
+        core->clip_layer_protected_scratch_capacity = layer_count;
     }
+    uint8_t* protected_layers = core->clip_layer_protected_scratch;
+    memset(protected_layers, 0, (size_t)layer_count);
 
     for (size_t i = 0u; i < core->command_count; ++i) {
         const FS_Command* cmd = &core->commands[i];
@@ -5263,7 +5300,6 @@ static bool fs_clip_try_acquire_layer_with_policy(FS_Core* core, const FS_Intern
             oldest_stamp = stamp;
         }
     }
-    free(protected_layers);
     if (victim < 0) {
         if (can_allocate_fresh) {
             *out_layer = core->clip_mask_next_layer++;
@@ -5286,13 +5322,6 @@ static bool fs_clip_try_acquire_layer_with_policy(FS_Core* core, const FS_Intern
     *out_layer = layer;
     return true;
 }
-
-typedef struct FS_ClipEdge {
-    float x0;
-    float y0;
-    float x1;
-    float y1;
-} FS_ClipEdge;
 
 static bool fs_clip_edges_reserve(FS_ClipEdge** io_edges, uint32_t* io_capacity, uint32_t required) {
     if (!io_edges || !io_capacity) {
@@ -5994,9 +6023,9 @@ static bool fs_clip_path_with_mode(
     }
     const bool layer_was_fresh = (layer == previous_next_layer && core->clip_mask_next_layer == previous_next_layer + 1u);
 
-    FS_ClipEdge* edges = NULL;
+    FS_ClipEdge* edges = core->clip_path_edges_scratch;
     uint32_t edge_count = 0u;
-    uint32_t edge_capacity = 0u;
+    uint32_t edge_capacity = (uint32_t)core->clip_path_edges_scratch_capacity;
     size_t edge_offset = core->clip_edge_count;
 
     float min_x = rr_min_x;
@@ -6030,7 +6059,7 @@ static bool fs_clip_path_with_mode(
                             &edges, &edge_count, &edge_capacity, prev_end_x, prev_end_y, subpath_start_x, subpath_start_y,
                             &edge_min_x, &edge_min_y, &edge_max_x, &edge_max_y, &edge_has_bounds
                         )) {
-                        free(edges);
+                        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
                         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
                         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
                     }
@@ -6045,7 +6074,7 @@ static bool fs_clip_path_with_mode(
                         &edges, &edge_count, &edge_capacity, seg->x0, seg->y0, seg->x1, seg->y1,
                         &edge_min_x, &edge_min_y, &edge_max_x, &edge_max_y, &edge_has_bounds
                     )) {
-                    free(edges);
+                    core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
                     fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
                     return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
                 }
@@ -6069,7 +6098,7 @@ static bool fs_clip_path_with_mode(
                             &edges, &edge_count, &edge_capacity, prev_x, prev_y, cur_x, cur_y,
                             &edge_min_x, &edge_min_y, &edge_max_x, &edge_max_y, &edge_has_bounds
                         )) {
-                        free(edges);
+                        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
                         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
                         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
                     }
@@ -6109,7 +6138,7 @@ static bool fs_clip_path_with_mode(
                             &edges, &edge_count, &edge_capacity, prev_x, prev_y, cur_x, cur_y,
                             &edge_min_x, &edge_min_y, &edge_max_x, &edge_max_y, &edge_has_bounds
                         )) {
-                        free(edges);
+                        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
                         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
                         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
                     }
@@ -6128,14 +6157,14 @@ static bool fs_clip_path_with_mode(
                     &edges, &edge_count, &edge_capacity, prev_end_x, prev_end_y, subpath_start_x, subpath_start_y,
                     &edge_min_x, &edge_min_y, &edge_max_x, &edge_max_y, &edge_has_bounds
                 )) {
-                free(edges);
+                core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
                 fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
                 return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
             }
         }
 
         if (!fs_clip_compute_path_device_bounds(st, &min_x, &min_y, &max_x, &max_y)) {
-            free(edges);
+            core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
             fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
             return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_INVALID_BOUNDS, edge_count);
         }
@@ -6143,7 +6172,7 @@ static bool fs_clip_path_with_mode(
     }
 
     if (!has_bounds || (edge_count == 0u && !analytic_round_rect)) {
-        free(edges);
+        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EMPTY_PATH, edge_count);
     }
@@ -6161,7 +6190,7 @@ static bool fs_clip_path_with_mode(
     }
     const bool has_fill_rect = (x1 > x0) && (y1 > y0);
     if (!has_fill_rect) {
-        free(edges);
+        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
         if (parent_layer != UINT32_MAX) {
             return fs_clip_intersect_aabb(st, 1.0f, 1.0f, 0.0f, 0.0f);
@@ -6197,14 +6226,14 @@ static bool fs_clip_path_with_mode(
     if (clear_x1 > core->clip_mask_width) clear_x1 = core->clip_mask_width;
     if (clear_y1 > core->clip_mask_height) clear_y1 = core->clip_mask_height;
     if (clear_x1 <= clear_x0 || clear_y1 <= clear_y0) {
-        free(edges);
+        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_INVALID_BOUNDS, edge_count);
     }
 
     if (!analytic_round_rect) {
         if (!fs_ensure_clip_edge_cpu_capacity(core, edge_offset + edge_count)) {
-            free(edges);
+            core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
             fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
             return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_EDGE_ALLOC, edge_count);
         }
@@ -6219,7 +6248,7 @@ static bool fs_clip_path_with_mode(
     }
 
     if (!fs_ensure_clip_job_cpu_capacity(core, core->clip_job_count + 1u)) {
-        free(edges);
+        core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
         core->clip_edge_count = edge_offset;
         fs_clip_release_uncommitted_layer(core, layer, layer_was_fresh, previous_next_layer);
         return fs_clip_apply_path_aabb_fallback(core, st, FS_CLIP_FAILURE_JOB_ALLOC, edge_count);
@@ -6285,7 +6314,7 @@ static bool fs_clip_path_with_mode(
         core->clip_mask_layer_parent[layer] = parent_layer;
     }
 
-    free(edges);
+    core->clip_path_edges_scratch = edges, core->clip_path_edges_scratch_capacity = edge_capacity;
 
     st->clip_path_enabled = 1u;
     st->clip_path_layer = (uint8_t)layer;
@@ -7201,14 +7230,18 @@ bool fs_path_fill(FS_Core* core, uint32_t color) {
         contours[i].owner_outer = owner;
     }
 
+    uint32_t* hole_indices = (uint32_t*)malloc((size_t)contour_count * sizeof(uint32_t));
+    uint32_t* hole_right_indices = (uint32_t*)malloc((size_t)contour_count * sizeof(uint32_t));
+    float* hole_right_x = (float*)malloc((size_t)contour_count * sizeof(float));
+    FS_Point2* poly = NULL;
+    uint32_t poly_capacity = 0u;
+
     for (uint32_t i = 0u; i < contour_count && ok; ++i) {
         if (contours[i].is_hole) {
             continue;
         }
 
-        FS_Point2* poly = NULL;
         uint32_t poly_count = 0u;
-        uint32_t poly_capacity = 0u;
         if (!fs_fill_points_reserve(&poly, &poly_capacity, contours[i].count)) {
             ok = false;
             break;
@@ -7225,13 +7258,7 @@ bool fs_path_fill(FS_Core* core, uint32_t color) {
                 hole_local_count += 1u;
             }
         }
-        uint32_t* hole_indices = NULL;
-        uint32_t* hole_right_indices = NULL;
-        float* hole_right_x = NULL;
         if (hole_local_count > 0u) {
-            hole_indices = (uint32_t*)malloc((size_t)hole_local_count * sizeof(uint32_t));
-            hole_right_indices = (uint32_t*)malloc((size_t)hole_local_count * sizeof(uint32_t));
-            hole_right_x = (float*)malloc((size_t)hole_local_count * sizeof(float));
             if (!hole_indices || !hole_right_indices || !hole_right_x) {
                 ok = false;
             } else {
@@ -7288,10 +7315,6 @@ bool fs_path_fill(FS_Core* core, uint32_t color) {
                 break;
             }
         }
-        free(hole_indices);
-        free(hole_right_indices);
-        free(hole_right_x);
-
         if (ok) {
             ok = fs_polygon_compact_in_place(poly, &poly_count);
         }
@@ -7299,8 +7322,12 @@ bool fs_path_fill(FS_Core* core, uint32_t color) {
         if (ok) {
             ok = fs_emit_fill_triangles_ear_clip(core, poly, poly_count, color, hole_local_count == 0u);
         }
-        free(poly);
     }
+
+    free(hole_indices);
+    free(hole_right_indices);
+    free(hole_right_x);
+    free(poly);
 
     for (uint32_t i = 0u; i < contour_count; ++i) {
         fs_fill_contour_clear(&contours[i]);

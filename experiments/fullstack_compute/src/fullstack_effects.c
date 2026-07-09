@@ -57,6 +57,7 @@ void fs_effects_destroy(FS_Core* core) {
     fs_effects_release_bg(res->filter_copy_bg); fs_effects_release_bg(res->filter_copy_bg_back);
     fs_effects_release_bg(res->drop_shadow_bg); fs_effects_release_bg(res->drop_shadow_temp_bg);
     fs_effects_release_bg(res->shadow_composite_bg);
+    fs_effects_release_bg(res->drop_shadow_c_bg);
     fs_effects_release_bgl(res->gaussian_blur_bgl); fs_effects_release_bgl(res->filter_bgl);
     fs_effects_release_bgl(res->filter_copy_bgl); fs_effects_release_bgl(res->drop_shadow_bgl);
     fs_effects_release_bgl(res->shadow_composite_bgl);
@@ -565,6 +566,35 @@ bool fs_effects_init(FS_Core* core) {
         if (!res->drop_shadow_c_pipeline) ok = false;
     }
 
+    // 20d. Create pre-computed drop-shadow compute bind group
+    if (ok) {
+        WGPUTextureViewDescriptor dsCReadDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
+        WGPUTextureView dsCViewA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &dsCReadDesc) : NULL;
+        WGPUTextureView dsCViewB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &dsCReadDesc) : NULL;
+        WGPUTextureViewDescriptor dsCStorageDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
+        WGPUTextureView dsCStorageView = res->shadow_composite_texture ? wgpuTextureCreateView(res->shadow_composite_texture, &dsCStorageDesc) : NULL;
+        if (dsCViewA && dsCViewB && dsCStorageView) {
+            WGPUBindGroupEntry dsCEntries[4];
+            memset(dsCEntries, 0, sizeof(dsCEntries));
+            dsCEntries[0].binding = 0; dsCEntries[0].textureView = dsCViewA;
+            dsCEntries[1].binding = 1; dsCEntries[1].textureView = dsCViewB;
+            dsCEntries[2].binding = 2; dsCEntries[2].textureView = dsCStorageView;
+            dsCEntries[3].binding = 3; dsCEntries[3].buffer = res->shadow_uniform_buffer;
+            dsCEntries[3].offset = 0; dsCEntries[3].size = sizeof(FS_ShadowUniforms);
+            WGPUBindGroupDescriptor dsCBGDesc = {
+                .nextInChain = NULL, .layout = res->drop_shadow_c_bgl,
+                .entryCount = 4, .entries = dsCEntries
+            };
+            res->drop_shadow_c_bg = wgpuDeviceCreateBindGroup(device, &dsCBGDesc);
+            if (!res->drop_shadow_c_bg) ok = false;
+        } else {
+            ok = false;
+        }
+        if (dsCViewA) wgpuTextureViewRelease(dsCViewA);
+        if (dsCViewB) wgpuTextureViewRelease(dsCViewB);
+        if (dsCStorageView) wgpuTextureViewRelease(dsCStorageView);
+    }
+
     // 21. Cleanup on failure or set enabled
     if (!ok) { fs_effects_destroy(core); return false; }
     res->enabled = true; fs_core_set_effects_resources(core, res); return true;
@@ -574,6 +604,7 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
     if (!core) return false;
     struct FS_EffectResources* res = fs_core_get_effects_resources(core);
     if (!res) return false;
+    if (res->width == width && res->height == height && res->enabled) return true;
     if (res->scene_view) { wgpuTextureViewRelease(res->scene_view); res->scene_view = NULL; }
     if (res->scene_texture) { wgpuTextureRelease(res->scene_texture); res->scene_texture = NULL; }
     if (res->ping_pong_view_a) { wgpuTextureViewRelease(res->ping_pong_view_a); res->ping_pong_view_a = NULL; }
@@ -593,6 +624,7 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
     fs_effects_release_bg(res->filter_copy_bg_back); res->filter_copy_bg_back = NULL;
     fs_effects_release_bg(res->drop_shadow_bg); res->drop_shadow_bg = NULL;
     fs_effects_release_bg(res->shadow_composite_bg); res->shadow_composite_bg = NULL;
+    fs_effects_release_bg(res->drop_shadow_c_bg); res->drop_shadow_c_bg = NULL;
     res->width = width; res->height = height;
     WGPUDevice device = core->device;
     WGPUTextureDescriptor texDesc = {
@@ -653,47 +685,31 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
 
     // Recreate Gaussian bind groups
     if (res->gaussian_blur_bgl) {
-        WGPUTextureViewDescriptor storageViewDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
-        WGPUTextureView storageViewA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &storageViewDesc) : NULL;
-        WGPUTextureView storageViewB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &storageViewDesc) : NULL;
-        WGPUTextureViewDescriptor readViewDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
-        WGPUTextureView readViewA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &readViewDesc) : NULL;
-        WGPUTextureView readViewB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &readViewDesc) : NULL;
         WGPUBindGroupEntry entries[4]; memset(entries, 0, sizeof(entries));
         entries[2].binding = 2; entries[2].buffer = res->gaussian_uniform_buffer; entries[2].offset = 0; entries[2].size = 16;
         entries[3].binding = 3; entries[3].buffer = res->gaussian_kernel_buffer; entries[3].offset = 0; entries[3].size = res->gaussian_kernel_buffer_size;
         WGPUBindGroupDescriptor bgDesc = { .nextInChain = NULL, .layout = res->gaussian_blur_bgl, .entryCount = 4, .entries = entries };
-        entries[0].binding = 0; entries[0].textureView = readViewA; entries[1].binding = 1; entries[1].textureView = storageViewB;
+        entries[0].binding = 0; entries[0].textureView = res->ping_pong_view_a; entries[1].binding = 1; entries[1].textureView = res->ping_pong_view_b;
         res->gaussian_blur_h_bg_a = wgpuDeviceCreateBindGroup(device, &bgDesc);
-        entries[0].binding = 0; entries[0].textureView = readViewB; entries[1].binding = 1; entries[1].textureView = storageViewA;
+        entries[0].binding = 0; entries[0].textureView = res->ping_pong_view_b; entries[1].binding = 1; entries[1].textureView = res->ping_pong_view_a;
         res->gaussian_blur_h_bg_b = wgpuDeviceCreateBindGroup(device, &bgDesc);
         // V blur: reads from B (H output), writes to A
-        entries[0].binding = 0; entries[0].textureView = readViewB; entries[1].binding = 1; entries[1].textureView = storageViewA;
+        entries[0].binding = 0; entries[0].textureView = res->ping_pong_view_b; entries[1].binding = 1; entries[1].textureView = res->ping_pong_view_a;
         res->gaussian_blur_v_bg_a = wgpuDeviceCreateBindGroup(device, &bgDesc);
         // V blur (alternate): reads from A (V output), writes to B
-        entries[0].binding = 0; entries[0].textureView = readViewA; entries[1].binding = 1; entries[1].textureView = storageViewB;
+        entries[0].binding = 0; entries[0].textureView = res->ping_pong_view_a; entries[1].binding = 1; entries[1].textureView = res->ping_pong_view_b;
         res->gaussian_blur_v_bg_b = wgpuDeviceCreateBindGroup(device, &bgDesc);
-        if (readViewA) wgpuTextureViewRelease(readViewA); if (readViewB) wgpuTextureViewRelease(readViewB);
-        if (storageViewA) wgpuTextureViewRelease(storageViewA); if (storageViewB) wgpuTextureViewRelease(storageViewB);
     }
 
     // Recreate filter bind groups
     if (res->filter_bgl) {
-        WGPUTextureViewDescriptor rvDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
-        WGPUTextureViewDescriptor svDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
-        WGPUTextureView srcTexA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &rvDesc) : NULL;
-        WGPUTextureView srcTexB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &rvDesc) : NULL;
-        WGPUTextureView dstTexA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &svDesc) : NULL;
-        WGPUTextureView dstTexB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &svDesc) : NULL;
         WGPUBindGroupEntry fEntries[3]; memset(fEntries, 0, sizeof(fEntries));
         fEntries[2].binding = 2; fEntries[2].buffer = res->filter_uniform_buffer; fEntries[2].offset = 0; fEntries[2].size = sizeof(FS_FilterUniforms);
         WGPUBindGroupDescriptor fBGDesc = { .nextInChain = NULL, .layout = res->filter_bgl, .entryCount = 3, .entries = fEntries };
-        fEntries[0].binding = 0; fEntries[0].textureView = srcTexA; fEntries[1].binding = 1; fEntries[1].textureView = dstTexB;
+        fEntries[0].binding = 0; fEntries[0].textureView = res->ping_pong_view_a; fEntries[1].binding = 1; fEntries[1].textureView = res->ping_pong_view_b;
         res->filter_bg_a = wgpuDeviceCreateBindGroup(device, &fBGDesc);
-        fEntries[0].binding = 0; fEntries[0].textureView = srcTexB; fEntries[1].binding = 1; fEntries[1].textureView = dstTexA;
+        fEntries[0].binding = 0; fEntries[0].textureView = res->ping_pong_view_b; fEntries[1].binding = 1; fEntries[1].textureView = res->ping_pong_view_a;
         res->filter_bg_b = wgpuDeviceCreateBindGroup(device, &fBGDesc);
-        if (srcTexA) wgpuTextureViewRelease(srcTexA); if (srcTexB) wgpuTextureViewRelease(srcTexB);
-        if (dstTexA) wgpuTextureViewRelease(dstTexA); if (dstTexB) wgpuTextureViewRelease(dstTexB);
     }
 
     // Recreate filter copy bind groups
@@ -742,39 +758,31 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
     }
 
     // Recreate drop shadow bind group
-    // Recreate drop-shadow compute pipeline (drop_shadow_c_pipeline uses implicit layout from drop_shadow_c_bgl)
-    if (res->drop_shadow_c_pipeline_layout) {
-        fs_effects_release_pipeline_layout(res->drop_shadow_c_pipeline_layout);
-        res->drop_shadow_c_pipeline_layout = NULL;
-    }
-    if (res->drop_shadow_c_bgl && device) {
-        WGPUPipelineLayoutDescriptor dsCLayoutDesc = {
-            .nextInChain = NULL, .label = { .data = "FS DS Compute Layout", .length = 19 },
-            .bindGroupLayoutCount = 1, .bindGroupLayouts = &res->drop_shadow_c_bgl
-        };
-        res->drop_shadow_c_pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &dsCLayoutDesc);
-    }
-    if (res->drop_shadow_c_shader_module && res->drop_shadow_c_pipeline_layout && device) {
-        fs_effects_release_compute_pipeline(res->drop_shadow_c_pipeline);
-        WGPUComputePipelineDescriptor dsCCpDesc = {
-            .nextInChain = NULL, .label = { .data = "FS DS Compute", .length = 14 }, .layout = res->drop_shadow_c_pipeline_layout,
-            .compute = { .module = res->drop_shadow_c_shader_module, .entryPoint = { .data = "drop_shadow_c_main", .length = 18 }, .constantCount = 0, .constants = NULL }
-        };
-        res->drop_shadow_c_pipeline = wgpuDeviceCreateComputePipeline(device, &dsCCpDesc);
+    if (res->drop_shadow_c_bgl && res->shadow_uniform_buffer) {
+        if (res->ping_pong_view_a && res->ping_pong_view_b && res->shadow_composite_view) {
+            WGPUBindGroupEntry dsCEntries[4];
+            memset(dsCEntries, 0, sizeof(dsCEntries));
+            dsCEntries[0].binding = 0; dsCEntries[0].textureView = res->ping_pong_view_a;
+            dsCEntries[1].binding = 1; dsCEntries[1].textureView = res->ping_pong_view_b;
+            dsCEntries[2].binding = 2; dsCEntries[2].textureView = res->shadow_composite_view;
+            dsCEntries[3].binding = 3; dsCEntries[3].buffer = res->shadow_uniform_buffer;
+            dsCEntries[3].offset = 0; dsCEntries[3].size = sizeof(FS_ShadowUniforms);
+            WGPUBindGroupDescriptor dsCBGDesc = {
+                .nextInChain = NULL, .layout = res->drop_shadow_c_bgl,
+                .entryCount = 4, .entries = dsCEntries
+            };
+            res->drop_shadow_c_bg = wgpuDeviceCreateBindGroup(device, &dsCBGDesc);
+        }
     }
 
     if (res->drop_shadow_bgl && res->shadow_sampler && res->shadow_uniform_buffer) {
-        WGPUTextureViewDescriptor dsReadDesc = { .format = WGPUTextureFormat_RGBA8Unorm, .dimension = WGPUTextureViewDimension_2D, .mipLevelCount = 1, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All };
-        WGPUTextureView dsViewA = res->ping_pong_texture_a ? wgpuTextureCreateView(res->ping_pong_texture_a, &dsReadDesc) : NULL;
-        WGPUTextureView dsViewB = res->ping_pong_texture_b ? wgpuTextureCreateView(res->ping_pong_texture_b, &dsReadDesc) : NULL;
         WGPUBindGroupEntry dsBGEntries[4]; memset(dsBGEntries, 0, sizeof(dsBGEntries));
-        dsBGEntries[0].binding = 0; dsBGEntries[0].textureView = dsViewA;
-        dsBGEntries[1].binding = 1; dsBGEntries[1].textureView = dsViewB;
+        dsBGEntries[0].binding = 0; dsBGEntries[0].textureView = res->ping_pong_view_a;
+        dsBGEntries[1].binding = 1; dsBGEntries[1].textureView = res->ping_pong_view_b;
         dsBGEntries[2].binding = 2; dsBGEntries[2].sampler = res->shadow_sampler;
         dsBGEntries[3].binding = 3; dsBGEntries[3].buffer = res->shadow_uniform_buffer; dsBGEntries[3].offset = 0; dsBGEntries[3].size = sizeof(FS_ShadowUniforms);
         WGPUBindGroupDescriptor dsBGDesc = { .nextInChain = NULL, .layout = res->drop_shadow_bgl, .entryCount = 4, .entries = dsBGEntries };
         res->drop_shadow_bg = wgpuDeviceCreateBindGroup(device, &dsBGDesc);
-        if (dsViewA) wgpuTextureViewRelease(dsViewA); if (dsViewB) wgpuTextureViewRelease(dsViewB);
     }
 
     res->kernel_dirty = true; return true;
@@ -923,12 +931,9 @@ bool fs_effects_render_physical_shadow(FS_Core* core, WGPUCommandEncoder encoder
         size_t upload_size = kernel_size * sizeof(float);
         uint32_t padded = ((kernel_size + 3u) / 4u) * 4u;
         size_t padded_size = padded * sizeof(float);
-        uint8_t* staging = (uint8_t*)malloc(padded_size);
-        if (!staging) return false;
-        memset(staging, 0, padded_size);
+        float staging[256] = {0};
         memcpy(staging, res->current_kernel.weights, upload_size);
         wgpuQueueWriteBuffer(core->queue, res->gaussian_kernel_buffer, 0, staging, padded_size);
-        free(staging);
         float uniform_data[4] = { (float)kernel_size, res->current_kernel.sigma, 0.0f, 0.0f };
         wgpuQueueWriteBuffer(core->queue, res->gaussian_uniform_buffer, 0, uniform_data, sizeof(uniform_data));
         res->kernel_dirty = false;

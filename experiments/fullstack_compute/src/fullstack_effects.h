@@ -80,6 +80,7 @@ struct FS_EffectResources {
     WGPUPipelineLayout drop_shadow_c_pipeline_layout;
     WGPUBindGroupLayout drop_shadow_c_bgl;
     WGPUShaderModule drop_shadow_c_shader_module;
+    WGPUBindGroup drop_shadow_c_bg;                // Pre-created compute bind group (blur A + original B + composite output + uniform)
     WGPUTexture shadow_composite_texture;           // Dedicated composite output texture
     WGPUTextureView shadow_composite_view;
 

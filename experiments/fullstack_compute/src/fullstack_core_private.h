@@ -430,6 +430,13 @@ typedef struct FS_MapReadbackContext {
 // Forward declaration (opaque type, defined in fullstack_effects.h)
 typedef struct FS_EffectResources FS_EffectResources;
 
+typedef struct FS_ClipEdge {
+    float x0;
+    float y0;
+    float x1;
+    float y1;
+} FS_ClipEdge;
+
 struct FS_Core {
     WGPUDevice device;
     WGPUQueue queue;
@@ -471,6 +478,8 @@ struct FS_Core {
     WGPUSubmissionIndex canvas_readback_submission;
     uint8_t canvas_readback_submission_valid;
     uint8_t canvas_readback_mapped;
+    FS_MapReadbackContext canvas_readback_map_ctx;
+    uint8_t canvas_readback_map_in_flight;
     FS_ImageHandle canvas_image_data_handle;
     uint8_t canvas_image_data_handle_valid;
 
@@ -576,6 +585,25 @@ struct FS_Core {
     size_t glyph_scratch_rgba_capacity[2];
     uint8_t* glyph_scratch_alpha[2];
     size_t glyph_scratch_alpha_capacity[2];
+
+    // Persistent scratch buffers (avoid per-frame/per-call malloc/free)
+    FS_ClipEdge* clip_path_edges_scratch;
+    size_t clip_path_edges_scratch_capacity;
+    uint32_t clip_path_edges_scratch_count;
+
+    uint8_t* clip_layer_protected_scratch;
+    uint32_t clip_layer_protected_scratch_capacity;
+
+    FS_ClipJobGPU* clip_dispatch_valid_jobs_scratch;
+    size_t clip_dispatch_valid_jobs_scratch_capacity;
+    FS_ClipJobTransformGPU* clip_dispatch_valid_xforms_scratch;
+    size_t clip_dispatch_valid_xforms_scratch_capacity;
+    uint8_t* clip_dispatch_valid_bucket_ids_scratch;
+    size_t clip_dispatch_valid_bucket_ids_scratch_capacity;
+    FS_ClipJobGPU* clip_dispatch_ordered_jobs_scratch;
+    size_t clip_dispatch_ordered_jobs_scratch_capacity;
+    FS_ClipJobTransformGPU* clip_dispatch_ordered_xforms_scratch;
+    size_t clip_dispatch_ordered_xforms_scratch_capacity;
 
     void* internal_state;
 };
