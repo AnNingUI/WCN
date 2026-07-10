@@ -8,6 +8,32 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <windows.h>
+#include <psapi.h>
+
+static void print_working_set(void) {
+    PROCESS_MEMORY_COUNTERS_EX pmc = {0};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
+
+    // Count private WS pages via QueryWorkingSet
+    SIZE_T priv_ws = 0;
+    DWORD n = (DWORD)(pmc.WorkingSetSize / 4096) * 2; // overallocate
+    DWORD buf_sz = sizeof(PSAPI_WORKING_SET_INFORMATION) + n * sizeof(PSAPI_WORKING_SET_BLOCK);
+    PSAPI_WORKING_SET_INFORMATION* info = (PSAPI_WORKING_SET_INFORMATION*)calloc(1, buf_sz);
+    if (info && QueryWorkingSet(GetCurrentProcess(), info, buf_sz)) {
+        for (ULONG_PTR i = 0; i < info->NumberOfEntries; i++) {
+            if (info->WorkingSetInfo[i].Shared == FALSE)
+                priv_ws += 4096;
+        }
+    }
+    free(info);
+
+    printf("PrivateWS=%.1f MB  WorkingSet=%.1f MB  PrivateBytes=%.1f MB\n",
+           priv_ws / (1024.0 * 1024.0),
+           pmc.WorkingSetSize / (1024.0 * 1024.0),
+           pmc.PrivateUsage / (1024.0 * 1024.0));
+}
 #include <stdlib.h>
 #include <string.h>
 
@@ -440,6 +466,7 @@ int main(void) {
     }
     printf("Image backend: %s\n", fs_core_get_image_backend_name(core));
     printf("Font backend: %s\n", fs_core_get_font_backend_name(core));
+    print_working_set();
 
     uint32_t emoji_font_id = 0u;
     FS_ImageFontSequence emoji_sequences[ARRAY_COUNT(k_emoji_assets)];
@@ -3312,6 +3339,7 @@ submit_frame:
             break;
         }
         if (frame == 0u) {
+            print_working_set();  // after first render, all textures allocated
             uint8_t frame_px[4] = {0, 0, 0, 0};
             if (fs_core_get_canvas_image_data_rgba8(core, 1, 1, 1u, 1u, frame_px, sizeof(frame_px))) {
                 printf(

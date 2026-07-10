@@ -4387,6 +4387,7 @@ bool fs_core_encode(
     WGPUTextureView scene_view = fx ? fx->scene_view : NULL;
     WGPURenderPassColorAttachment color = {
         .view = scene_view ? scene_view : target_view,
+        .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
         .resolveTarget = NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
@@ -4456,6 +4457,7 @@ bool fs_core_encode(
         if (fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
             WGPURenderPassColorAttachment pres_att = {
                 .view = target_view,
+                .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
                 .resolveTarget = NULL,
                 .loadOp = WGPULoadOp_Clear,
                 .storeOp = WGPUStoreOp_Store,
@@ -4485,6 +4487,7 @@ bool fs_core_encode(
         if (fx && fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
             WGPURenderPassColorAttachment pres_att = {
                 .view = target_view,
+                .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
                 .resolveTarget = NULL,
                 .loadOp = WGPULoadOp_Clear,
                 .storeOp = WGPUStoreOp_Store,

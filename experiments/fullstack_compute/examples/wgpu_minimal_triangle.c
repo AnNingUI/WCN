@@ -18,6 +18,7 @@
 #endif
 
 #include <webgpu/webgpu.h>
+#include <psapi.h>
 
 // ── WGSL 着色器 ────────────────────────────────────────────────────────
 static const char* SHADER_WGSL =
@@ -52,6 +53,24 @@ static void device_cb(
     (void)userdata2; (void)message;
     if (status == WGPURequestDeviceStatus_Success)
         *(WGPUDevice*)userdata1 = device;
+}
+
+// ── 内存测量 ──────────────────────────────────────────────────────────
+static void print_ws(void) {
+    PROCESS_MEMORY_COUNTERS_EX pmc = {0};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
+    SIZE_T priv_ws = 0;
+    DWORD n = (DWORD)(pmc.WorkingSetSize / 4096) * 2;
+    DWORD buf_sz = sizeof(PSAPI_WORKING_SET_INFORMATION) + n * sizeof(PSAPI_WORKING_SET_BLOCK);
+    PSAPI_WORKING_SET_INFORMATION* info = (PSAPI_WORKING_SET_INFORMATION*)calloc(1, buf_sz);
+    if (info && QueryWorkingSet(GetCurrentProcess(), info, buf_sz)) {
+        for (ULONG_PTR i = 0; i < info->NumberOfEntries; i++)
+            if (info->WorkingSetInfo[i].Shared == FALSE) priv_ws += 4096;
+    }
+    free(info);
+    printf("[MEM] PrivateWS=%.1f MB  WorkingSet=%.1f MB\n",
+           priv_ws / (1024.0*1024.0), pmc.WorkingSetSize / (1024.0*1024.0));
 }
 
 // ── 平台相关 surface ────────────────────────────────────────────────────
@@ -146,7 +165,9 @@ int main(void) {
 
     printf("=== Minimal wgpu triangle ===\n");
     printf("Check GPU memory now. Close window to exit.\n");
+    print_ws();
 
+    int frame = 0;
     while (!glfwWindowShouldClose(win)) {
         glfwPollEvents();
 
@@ -165,7 +186,8 @@ int main(void) {
         WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &(WGPURenderPassDescriptor){
             .colorAttachmentCount = 1,
             .colorAttachments = &(WGPURenderPassColorAttachment){
-                .view = view, .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store,
+                .view = view, .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
+                .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store,
                 .clearValue = {0.0f, 0.0f, 0.1f, 1.0f},
             },
         });
@@ -185,6 +207,10 @@ int main(void) {
 
         wgpuTextureViewRelease(view);
         wgpuTextureRelease(st.texture);
+        if (frame == 0) {
+            print_ws();
+        }
+        frame++;
     }
 
     printf("Done. Exiting...\n");

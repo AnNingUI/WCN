@@ -351,6 +351,7 @@ public:
 
         WGPURenderPassColorAttachment att{};
         att.view = swap_view;
+        att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
         att.loadOp = WGPULoadOp_Clear;
         att.storeOp = WGPUStoreOp_Store;
         att.clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };

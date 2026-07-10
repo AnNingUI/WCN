@@ -96,9 +96,8 @@ static const char* fs_surface_status_name(WGPUSurfaceGetCurrentTextureStatus sta
         case WGPUSurfaceGetCurrentTextureStatus_Timeout: return "Timeout";
         case WGPUSurfaceGetCurrentTextureStatus_Outdated: return "Outdated";
         case WGPUSurfaceGetCurrentTextureStatus_Lost: return "Lost";
-        case WGPUSurfaceGetCurrentTextureStatus_OutOfMemory: return "OutOfMemory";
-        case WGPUSurfaceGetCurrentTextureStatus_DeviceLost: return "DeviceLost";
         case WGPUSurfaceGetCurrentTextureStatus_Error: return "Error";
+        case WGPUSurfaceGetCurrentTextureStatus_Occluded: return "Occluded";
         default: return "Unknown";
     }
 }
@@ -111,7 +110,7 @@ static WGPUSurface fs_create_surface(WGPUInstance instance, GLFWwindow* window) 
         .hwnd = glfwGetWin32Window(window)
     };
     WGPUSurfaceDescriptor desc = {
-        .nextInChain = (const WGPUChainedStruct*)&surface_source
+        .nextInChain = &surface_source.chain
     };
     return wgpuInstanceCreateSurface(instance, &desc);
 #elif defined(__linux__)
@@ -121,16 +120,16 @@ static WGPUSurface fs_create_surface(WGPUInstance instance, GLFWwindow* window) 
         .window = glfwGetX11Window(window)
     };
     WGPUSurfaceDescriptor desc = {
-        .nextInChain = (const WGPUChainedStruct*)&surface_source
+        .nextInChain = &surface_source.chain
     };
     return wgpuInstanceCreateSurface(instance, &desc);
 #elif defined(__APPLE__)
-    WGPUSurfaceDescriptorFromMetalLayer surface_source = {
-        .chain = {.sType = WGPUSType_SurfaceDescriptorFromMetalLayer},
+    WGPUSurfaceSourceMetalLayer surface_source = {
+        .chain = {.sType = WGPUSType_SurfaceSourceMetalLayer},
         .layer = glfwGetCocoaWindow(window)
     };
     WGPUSurfaceDescriptor desc = {
-        .nextInChain = (const WGPUChainedStruct*)&surface_source
+        .nextInChain = &surface_source.chain
     };
     return wgpuInstanceCreateSurface(instance, &desc);
 #else
@@ -419,6 +418,7 @@ bool fs_glfw_backend_present(FS_GlfwBackend* backend, float clear_r, float clear
         }
         switch (surface_texture.status) {
             case WGPUSurfaceGetCurrentTextureStatus_Timeout:
+            case WGPUSurfaceGetCurrentTextureStatus_Occluded:
                 // Transient surface timeout; skip this frame and keep running.
                 return true;
             case WGPUSurfaceGetCurrentTextureStatus_Outdated:

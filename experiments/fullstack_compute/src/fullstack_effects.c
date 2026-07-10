@@ -1062,7 +1062,7 @@ bool fs_effects_render_physical_shadow(FS_Core* core, WGPUCommandEncoder encoder
 
     WGPURenderPassColorAttachment rpColorAtt = {
         .view = dest_view,
-        .depthSlice = 0xFFFFFFFF,
+        .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
         .loadOp = WGPULoadOp_Load,
         .storeOp = WGPUStoreOp_Store,
         .clearValue = { 0, 0, 0, 0 }

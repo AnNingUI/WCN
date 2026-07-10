@@ -17,7 +17,6 @@ if(NOT glfw3_FOUND)
     pkg_check_modules(GLFW_PKG QUIET glfw3)
 endif()
 
-find_library(WGPU_LIBRARY NAMES wgpu_native wgpu webgpu)
 if(NOT WGPU_LIBRARY)
     find_library(
         WGPU_LIBRARY
@@ -26,6 +25,9 @@ if(NOT WGPU_LIBRARY)
         PATH_SUFFIXES release debug
         NO_DEFAULT_PATH
     )
+endif()
+if(NOT WGPU_LIBRARY)
+    message(FATAL_ERROR "Pinned WebGPU library not found under ${WCN_ROOT}/external/wgpu/lib")
 endif()
 
 find_package(Freetype QUIET)
@@ -44,6 +46,9 @@ macro(fs_example_link target)
         target_link_libraries(${target} PRIVATE glfw)
     endif()
     target_link_libraries(${target} PRIVATE ${WGPU_LIBRARY})
+    if(TARGET fs_wgpu_runtime)
+        add_dependencies(${target} fs_wgpu_runtime)
+    endif()
     if(NOT MSVC)
         target_link_libraries(${target} PRIVATE m)
     endif()
@@ -109,6 +114,7 @@ add_executable(fullstack_compute_demo
 )
 target_include_directories(fullstack_compute_demo ${FS_INCLUDE_DIRS})
 fs_example_link(fullstack_compute_demo)
+target_link_libraries(fullstack_compute_demo PRIVATE psapi)
 
 # ---------------------------------------------------------------------------
 # Orbital Catcher
@@ -222,6 +228,22 @@ else()
     target_link_libraries(wgpu_minimal_triangle PRIVATE glfw)
 endif()
 target_link_libraries(wgpu_minimal_triangle PRIVATE ${WGPU_LIBRARY})
+if(TARGET fs_wgpu_runtime)
+    add_dependencies(wgpu_minimal_triangle fs_wgpu_runtime)
+endif()
+target_link_libraries(wgpu_minimal_triangle PRIVATE psapi)
 if(NOT MSVC)
     target_link_libraries(wgpu_minimal_triangle PRIVATE m)
 endif()
+
+# ---------------------------------------------------------------------------
+# fs_mem_baseline — FS_Core 内存基线（无字体，只渲染矩形）
+# ---------------------------------------------------------------------------
+add_executable(fs_mem_baseline
+    ${FS_CORE_SOURCES}
+    ${FS_BACKEND_SOURCES}
+    ${FS_EXAMPLES_ROOT}/fs_mem_baseline.c
+)
+target_include_directories(fs_mem_baseline ${FS_INCLUDE_DIRS})
+fs_example_link(fs_mem_baseline)
+target_link_libraries(fs_mem_baseline PRIVATE psapi)

@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(FS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 get_filename_component(WCN_ROOT "${FS_ROOT}/../.." ABSOLUTE)
+set(FS_WGPU_LIB_DIR "${WCN_ROOT}/external/wgpu/lib")
 
 find_package(glfw3 QUIET CONFIG)
 if(NOT glfw3_FOUND)
@@ -20,18 +21,31 @@ if(NOT glfw3_FOUND AND NOT GLFW_PKG_FOUND)
     message(FATAL_ERROR "GLFW not found for fullstack compute experiment")
 endif()
 
-find_library(WGPU_LIBRARY NAMES wgpu_native wgpu webgpu)
-if(NOT WGPU_LIBRARY)
-    find_library(
-        WGPU_LIBRARY
-        NAMES wgpu_native wgpu webgpu
-        PATHS ${WCN_ROOT}/external/wgpu/lib
-        PATH_SUFFIXES release debug
-        NO_DEFAULT_PATH
-    )
+find_library(
+    FS_WGPU_LIBRARY
+    NAMES wgpu_native wgpu webgpu
+    PATHS ${FS_WGPU_LIB_DIR}
+    PATH_SUFFIXES release debug
+    NO_DEFAULT_PATH
+)
+if(NOT FS_WGPU_LIBRARY)
+    message(FATAL_ERROR "Pinned WebGPU library not found under ${FS_WGPU_LIB_DIR}")
 endif()
-if(NOT WGPU_LIBRARY)
-    message(FATAL_ERROR "WebGPU library not found for fullstack compute experiment")
+set(WGPU_LIBRARY "${FS_WGPU_LIBRARY}")
+unset(WGPU_LIBRARY CACHE)
+
+if(WIN32)
+    set(FS_WGPU_RUNTIME_LIBRARY "${FS_WGPU_LIB_DIR}/wgpu_native.dll")
+    if(NOT EXISTS "${FS_WGPU_RUNTIME_LIBRARY}")
+        message(FATAL_ERROR "Pinned WebGPU runtime not found: ${FS_WGPU_RUNTIME_LIBRARY}")
+    endif()
+    add_custom_target(fs_wgpu_runtime
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FS_WGPU_RUNTIME_LIBRARY}"
+            "${CMAKE_BINARY_DIR}/wgpu_native.dll"
+        COMMENT "Deploying pinned wgpu-native runtime"
+        VERBATIM
+    )
 endif()
 
 add_subdirectory(examples)
