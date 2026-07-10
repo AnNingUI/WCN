@@ -110,12 +110,20 @@ struct FS_EffectResources {
 
     // Enabled flag
     bool enabled;
+    // Phase 2 lazy-init flag: true when filter textures (ping-pong, shadow_composite)
+    // and their dependent pipelines/bind-groups have been created
+    bool filter_textures_ready;
 };
 
 // Effects subsystem lifecycle
 bool fs_effects_init(FS_Core* core);
 void fs_effects_destroy(FS_Core* core);
 bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height);
+
+// Phase 2 lazy init: creates ping-pong textures, shadow_composite texture,
+// and all filter/blur/shadow pipelines+bind-groups that depend on them.
+// Called automatically on first filter chain execution.
+bool fs_effects_ensure_filter_textures(FS_Core* core);
 
 // Physical shadow rendering
 bool fs_effects_render_physical_shadow(

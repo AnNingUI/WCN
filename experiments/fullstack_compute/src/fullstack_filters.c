@@ -549,6 +549,13 @@ bool fs_filter_chain_execute(
         return true;  // No effects resources, nothing to do
     }
 
+    // Phase 2 lazy init: create filter-specific textures/pipelines on first use
+    if (!effects->filter_textures_ready) {
+        if (!fs_effects_ensure_filter_textures(core)) {
+            return false;
+        }
+    }
+
     // Check required pipelines
     if (!effects->filter_pipeline || !effects->filter_copy_pipeline) {
         return true;  // Filter pipelines not initialized

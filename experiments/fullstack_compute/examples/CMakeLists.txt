@@ -200,3 +200,28 @@ target_include_directories(transition_demo
 target_compile_definitions(transition_demo PRIVATE TAFFY_FLEXBOX TAFFY_GRID TAFFY_BLOCK_LAYOUT TAFFY_CONTENT_SIZE)
 fs_example_link(transition_demo)
 target_link_libraries(transition_demo PRIVATE ${CMAKE_DL_LIBS})
+
+# ---------------------------------------------------------------------------
+# wgpu_minimal_triangle — 裸 wgpu+GLFW 三角形，不依赖 WCN/FS
+# 用途：验证 Dawn 的基准 VRAM 预分配池
+# ---------------------------------------------------------------------------
+add_executable(wgpu_minimal_triangle
+    ${FS_EXAMPLES_ROOT}/wgpu_minimal_triangle.c
+)
+target_include_directories(wgpu_minimal_triangle
+    PRIVATE ${WCN_ROOT}/external/wgpu/include
+)
+# 只链接 glfw + wgpu，不包含 FS 源码
+if(TARGET GLFW::GLFW)
+    target_link_libraries(wgpu_minimal_triangle PRIVATE GLFW::GLFW)
+elseif(GLFW_LIBRARIES)
+    target_include_directories(wgpu_minimal_triangle PRIVATE ${GLFW_INCLUDE_DIRS})
+    target_link_directories(wgpu_minimal_triangle PRIVATE ${GLFW_LINK_DIRS})
+    target_link_libraries(wgpu_minimal_triangle PRIVATE ${GLFW_LIBRARIES})
+else()
+    target_link_libraries(wgpu_minimal_triangle PRIVATE glfw)
+endif()
+target_link_libraries(wgpu_minimal_triangle PRIVATE ${WGPU_LIBRARY})
+if(NOT MSVC)
+    target_link_libraries(wgpu_minimal_triangle PRIVATE m)
+endif()
