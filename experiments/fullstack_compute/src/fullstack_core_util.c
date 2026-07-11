@@ -57,3 +57,83 @@ uint64_t fs_hash64_f32(uint64_t hash, float value) {
     conv.f = value;
     return fs_hash64_u32(hash, conv.u);
 }
+
+static void fs_swap_round_radius(FS_RoundRadius* a, FS_RoundRadius* b) {
+    const FS_RoundRadius tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
+bool fs_normalize_round_rect(
+    float x,
+    float y,
+    float w,
+    float h,
+    const FS_RoundRectRadii* radii,
+    FS_NormalizedRoundRect* out_rect
+) {
+    if (!radii || !out_rect || !isfinite(x) || !isfinite(y) ||
+        !isfinite(w) || !isfinite(h)) {
+        return false;
+    }
+
+    FS_RoundRectRadii resolved = *radii;
+    FS_RoundRadius* values[4] = {
+        &resolved.top_left,
+        &resolved.top_right,
+        &resolved.bottom_right,
+        &resolved.bottom_left
+    };
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        if (!isfinite(values[i]->x) || !isfinite(values[i]->y) ||
+            values[i]->x < 0.0f || values[i]->y < 0.0f) {
+            return false;
+        }
+    }
+
+    if (w < 0.0f) {
+        x += w;
+        w = -w;
+        fs_swap_round_radius(&resolved.top_left, &resolved.top_right);
+        fs_swap_round_radius(&resolved.bottom_left, &resolved.bottom_right);
+    }
+    if (h < 0.0f) {
+        y += h;
+        h = -h;
+        fs_swap_round_radius(&resolved.top_left, &resolved.bottom_left);
+        fs_swap_round_radius(&resolved.top_right, &resolved.bottom_right);
+    }
+
+    float scale = 1.0f;
+#define FS_LIMIT_RADIUS_SUM(limit, sum) \
+    do { \
+        const float fs_sum_value = (sum); \
+        if (fs_sum_value > 0.0f) { \
+            scale = fminf(scale, (limit) / fs_sum_value); \
+        } \
+    } while (0)
+    FS_LIMIT_RADIUS_SUM(w, resolved.top_left.x + resolved.top_right.x);
+    FS_LIMIT_RADIUS_SUM(w, resolved.bottom_left.x + resolved.bottom_right.x);
+    FS_LIMIT_RADIUS_SUM(h, resolved.top_left.y + resolved.bottom_left.y);
+    FS_LIMIT_RADIUS_SUM(h, resolved.top_right.y + resolved.bottom_right.y);
+#undef FS_LIMIT_RADIUS_SUM
+    scale = fmaxf(0.0f, fminf(scale, 1.0f));
+
+    FS_RoundRadius* normalized[4] = {
+        &resolved.top_left,
+        &resolved.top_right,
+        &resolved.bottom_right,
+        &resolved.bottom_left
+    };
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        normalized[i]->x *= scale;
+        normalized[i]->y *= scale;
+    }
+
+    out_rect->x = x;
+    out_rect->y = y;
+    out_rect->w = w;
+    out_rect->h = h;
+    out_rect->radii = resolved;
+    return true;
+}

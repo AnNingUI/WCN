@@ -10,6 +10,7 @@
 #define FS_CMD_CLIP_PATH_BIT 2u
 #define FS_RENDER_FLAG_PATTERN_FILL_HINT (1u << 0u)
 #define FS_RENDER_FLAG_IMAGE_NEAREST (1u << 1u)
+#define FS_RENDER_FLAG_CONTINUOUS_CORNER (1u << 1u) /* rect commands only */
 #define FS_TRI_FLAG_AA_EDGE0 (1u << 2u)
 #define FS_TRI_FLAG_AA_EDGE1 (1u << 3u)
 #define FS_TRI_FLAG_AA_EDGE2 (1u << 4u)
@@ -103,6 +104,7 @@ typedef struct FS_VertexGPU {
     float extra0[4];
     float extra1[4];
     float extra2[4];
+    float extra3[4];
 } FS_VertexGPU;
 
 typedef struct FS_ClipEdgeGPU {

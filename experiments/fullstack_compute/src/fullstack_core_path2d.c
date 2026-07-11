@@ -589,6 +589,10 @@ bool fs_path2d_rect(FS_Path2D* path, float x, float y, float w, float h) {
 }
 
 bool fs_path2d_round_rect(FS_Path2D* path, float x, float y, float w, float h, float radius) {
+#if 1
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_path2d_round_rect_radii(path, x, y, w, h, &radii, FS_CORNER_PROFILE_ROUND);
+#else
     const float pi = 3.14159265358979323846f;
     if (!path) {
         return false;
@@ -642,6 +646,69 @@ bool fs_path2d_round_rect(FS_Path2D* path, float x, float y, float w, float h, f
     if (!fs_path2d_append_arc_sweep(path, left + r, top + r, r, pi, 1.5f * pi)) {
         return false;
     }
+    return fs_path2d_close(path);
+#endif
+}
+static bool fs_path2d_continuous_corner(FS_Path2D* path, float cx, float cy,
+                                         float rx, float ry, uint32_t corner) {
+    const float half_pi = 1.57079632679489661923f;
+    const uint32_t segments = 12u;
+    for (uint32_t i = 1u; i <= segments; ++i) {
+        const float t = half_pi * ((float)i / (float)segments);
+        const float st = sqrtf(fmaxf(sinf(t), 0.0f));
+        const float ct = sqrtf(fmaxf(cosf(t), 0.0f));
+        float px = cx, py = cy;
+        switch (corner) {
+            case 0u: px += rx * st; py -= ry * ct; break;
+            case 1u: px += rx * ct; py += ry * st; break;
+            case 2u: px -= rx * st; py += ry * ct; break;
+            default: px -= rx * ct; py -= ry * st; break;
+        }
+        if (!fs_path2d_line_to(path, px, py)) return false;
+    }
+    return true;
+}
+
+static bool fs_path2d_corner(FS_Path2D* path, float cx, float cy, float rx, float ry,
+                             float start, float end, uint32_t corner,
+                             FS_CornerProfile profile) {
+    if (rx <= 1e-6f || ry <= 1e-6f) {
+        const float ex[4] = {cx + rx, cx + rx, cx - rx, cx};
+        const float ey[4] = {cy, cy + ry, cy, cy - ry};
+        return fs_path2d_line_to(path, ex[corner], ey[corner]);
+    }
+    if (profile == FS_CORNER_PROFILE_CONTINUOUS) {
+        return fs_path2d_continuous_corner(path, cx, cy, rx, ry, corner);
+    }
+    return fs_path2d_ellipse(path, cx, cy, rx, ry, 0.0f, start, end, false);
+}
+
+bool fs_path2d_round_rect_radii(FS_Path2D* path, float x, float y, float w, float h,
+                                const FS_RoundRectRadii* radii,
+                                FS_CornerProfile profile) {
+    if (!path) return false;
+    FS_NormalizedRoundRect rr;
+    if (!fs_normalize_round_rect(x, y, w, h, radii, &rr)) return false;
+    if (rr.w <= 1e-6f || rr.h <= 1e-6f) return fs_path2d_rect(path, rr.x, rr.y, rr.w, rr.h);
+    const float pi = 3.14159265358979323846f;
+    const float left = rr.x, top = rr.y, right = rr.x + rr.w, bottom = rr.y + rr.h;
+    const FS_RoundRadius tl = rr.radii.top_left;
+    const FS_RoundRadius tr = rr.radii.top_right;
+    const FS_RoundRadius br = rr.radii.bottom_right;
+    const FS_RoundRadius bl = rr.radii.bottom_left;
+    if (!fs_path2d_move_to(path, left + tl.x, top)) return false;
+    if (!fs_path2d_line_to(path, right - tr.x, top)) return false;
+    if (!fs_path2d_corner(path, right-tr.x, top+tr.y, tr.x, tr.y,
+                          -0.5f*pi, 0.0f, 0u, profile)) return false;
+    if (!fs_path2d_line_to(path, right, bottom - br.y)) return false;
+    if (!fs_path2d_corner(path, right-br.x, bottom-br.y, br.x, br.y,
+                          0.0f, 0.5f*pi, 1u, profile)) return false;
+    if (!fs_path2d_line_to(path, left + bl.x, bottom)) return false;
+    if (!fs_path2d_corner(path, left+bl.x, bottom-bl.y, bl.x, bl.y,
+                          0.5f*pi, pi, 2u, profile)) return false;
+    if (!fs_path2d_line_to(path, left, top + tl.y)) return false;
+    if (!fs_path2d_corner(path, left+tl.x, top+tl.y, tl.x, tl.y,
+                          pi, 1.5f*pi, 3u, profile)) return false;
     return fs_path2d_close(path);
 }
 
@@ -1182,6 +1249,9 @@ bool fs_path_rect(FS_Core* core, float x, float y, float w, float h) {
 }
 
 bool fs_path_round_rect(FS_Core* core, float x, float y, float w, float h, float radius) {
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_path_round_rect_radii(core, x, y, w, h, &radii, FS_CORNER_PROFILE_ROUND);
+#if 0
     const float pi = 3.14159265358979323846f;
     if (!core) {
         return false;
@@ -1239,6 +1309,8 @@ bool fs_path_round_rect(FS_Core* core, float x, float y, float w, float h, float
     return fs_path_close(core);
 }
 
+#endif
+}
 bool fs_path_close(FS_Core* core) {
     FS_InternalState* st = fs_path_core_state(core);
     if (!st) {
@@ -1253,4 +1325,62 @@ bool fs_path_close(FS_Core* core) {
         return true;
     }
     return fs_path_line_to(core, st->path_subpath_start_x, st->path_subpath_start_y);
+}
+static bool fs_path_continuous_corner(FS_Core* core, float cx, float cy,
+                                       float rx, float ry, uint32_t corner) {
+    const float half_pi = 1.57079632679489661923f;
+    const uint32_t segments = 12u;
+    for (uint32_t i = 1u; i <= segments; ++i) {
+        const float t = half_pi * ((float)i / (float)segments);
+        const float st = sqrtf(fmaxf(sinf(t), 0.0f));
+        const float ct = sqrtf(fmaxf(cosf(t), 0.0f));
+        float px = cx, py = cy;
+        switch (corner) {
+            case 0u: px += rx * st; py -= ry * ct; break;
+            case 1u: px += rx * ct; py += ry * st; break;
+            case 2u: px -= rx * st; py += ry * ct; break;
+            default: px -= rx * ct; py -= ry * st; break;
+        }
+        if (!fs_path_line_to(core, px, py)) return false;
+    }
+    return true;
+}
+
+static bool fs_path_corner(FS_Core* core, float cx, float cy, float rx, float ry,
+                           float start, float end, uint32_t corner,
+                           FS_CornerProfile profile) {
+    if (rx <= 1e-6f || ry <= 1e-6f) {
+        const float ex[4] = {cx + rx, cx + rx, cx - rx, cx};
+        const float ey[4] = {cy, cy + ry, cy, cy - ry};
+        return fs_path_line_to(core, ex[corner], ey[corner]);
+    }
+    if (profile == FS_CORNER_PROFILE_CONTINUOUS) {
+        return fs_path_continuous_corner(core, cx, cy, rx, ry, corner);
+    }
+    return fs_path_ellipse(core, cx, cy, rx, ry, 0.0f, start, end, false);
+}
+
+bool fs_path_round_rect_radii(FS_Core* core, float x, float y, float w, float h,
+                              const FS_RoundRectRadii* radii,
+                              FS_CornerProfile profile) {
+    if (!core) return false;
+    FS_NormalizedRoundRect rr;
+    if (!fs_normalize_round_rect(x, y, w, h, radii, &rr)) return false;
+    if (rr.w <= 1e-6f || rr.h <= 1e-6f) return fs_path_rect(core, rr.x, rr.y, rr.w, rr.h);
+    const float pi = 3.14159265358979323846f;
+    const float left = rr.x, top = rr.y, right = rr.x + rr.w, bottom = rr.y + rr.h;
+    const FS_RoundRadius tl = rr.radii.top_left;
+    const FS_RoundRadius tr = rr.radii.top_right;
+    const FS_RoundRadius br = rr.radii.bottom_right;
+    const FS_RoundRadius bl = rr.radii.bottom_left;
+    if (!fs_path_move_to(core, left + tl.x, top)) return false;
+    if (!fs_path_line_to(core, right - tr.x, top)) return false;
+    if (!fs_path_corner(core, right-tr.x, top+tr.y, tr.x, tr.y, -0.5f*pi, 0, 0u, profile)) return false;
+    if (!fs_path_line_to(core, right, bottom-br.y)) return false;
+    if (!fs_path_corner(core, right-br.x, bottom-br.y, br.x, br.y, 0, 0.5f*pi, 1u, profile)) return false;
+    if (!fs_path_line_to(core, left+bl.x, bottom)) return false;
+    if (!fs_path_corner(core, left+bl.x, bottom-bl.y, bl.x, bl.y, 0.5f*pi, pi, 2u, profile)) return false;
+    if (!fs_path_line_to(core, left, top+tl.y)) return false;
+    if (!fs_path_corner(core, left+tl.x, top+tl.y, tl.x, tl.y, pi, 1.5f*pi, 3u, profile)) return false;
+    return fs_path_close(core);
 }

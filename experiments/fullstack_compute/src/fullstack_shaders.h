@@ -84,6 +84,7 @@ struct VertexOut {
     extra0: vec4<f32>,
     extra1: vec4<f32>,
     extra2: vec4<f32>,
+    extra3: vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> commands: array<Command>;
@@ -207,6 +208,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var extra0 = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var extra1 = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var extra2 = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var extra3 = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var use_oriented_quad = false;
     var quad_origin = vec2<f32>(0.0, 0.0);
     var quad_du = vec2<f32>(0.0, 0.0);
@@ -216,13 +218,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     switch (cmd.cmd_type) {
         case CMD_RECT: {
-            var radius = cmd.scalar;
-            if (local_space) {
-                radius = cmd.scalar * transform_metric_scale(state);
-            }
-            extra1 = vec4<f32>(radius, 0.0, 0.0, 0.0);
             if (oriented_quad) {
-                extra0 = vec4<f32>(cmd.p0.xy, cmd.p0.zw);
+                extra0 = vec4<f32>(cmd.p0.xy + cmd.p0.zw * 0.5, cmd.p0.zw);
+                extra1 = cmd.p1;
+                extra2 = cmd.p2;
                 use_oriented_quad = true;
                 quad_origin = cmd.quad0.xy;
                 quad_du = cmd.quad0.zw;
@@ -233,31 +232,26 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 min_xy = min(min(quad_origin, q1), min(q2, q3));
                 max_xy = max(max(quad_origin, q1), max(q2, q3));
             } else {
-                if (local_space) {
-                    let p00 = transform_point(state, cmd.p0.xy);
-                    let p10 = transform_point(state, cmd.p0.xy + vec2<f32>(cmd.p0.z, 0.0));
-                    let p01 = transform_point(state, cmd.p0.xy + vec2<f32>(0.0, cmd.p0.w));
-                    let p11 = transform_point(state, cmd.p0.xy + cmd.p0.zw);
-                    min_xy = min(min(p00, p10), min(p01, p11));
-                    max_xy = max(max(p00, p10), max(p01, p11));
-                } else {
-                    min_xy = cmd.p0.xy;
-                    max_xy = cmd.p0.xy + cmd.p0.zw;
-                }
-                extra0 = vec4<f32>(min_xy, max_xy - min_xy);
+                let p00 = transform_point(state, cmd.p0.xy);
+                let p11 = transform_point(state, cmd.p0.xy + cmd.p0.zw);
+                let shape_min = min(p00, p11);
+                let shape_max = max(p00, p11);
+                let shape_size = shape_max - shape_min;
+                let s = transform_metric_scale(state);
+                let pad = 1.5;
+                min_xy = shape_min - vec2<f32>(pad, pad);
+                max_xy = shape_max + vec2<f32>(pad, pad);
+                extra0 = vec4<f32>((shape_min + shape_max) * 0.5, shape_size);
+                extra1 = cmd.p1 * s;
+                extra2 = cmd.p2 * s;
             }
         }
         case CMD_RECT_STROKE: {
-            var radius = cmd.p1.x;
-            var stroke_w = cmd.scalar;
-            if (local_space) {
-                let s = transform_metric_scale(state);
-                radius = cmd.p1.x * s;
-                stroke_w = cmd.scalar * s;
-            }
-            extra1 = vec4<f32>(radius, stroke_w, 0.0, 0.0);
             if (oriented_quad) {
-                extra0 = vec4<f32>(cmd.p0.xy, cmd.p0.zw);
+                extra0 = vec4<f32>(cmd.p0.xy + cmd.p0.zw * 0.5, cmd.p0.zw);
+                extra1 = cmd.p1;
+                extra2 = cmd.p2;
+                extra3.x = cmd.scalar;
                 use_oriented_quad = true;
                 quad_origin = cmd.quad0.xy;
                 quad_du = cmd.quad0.zw;
@@ -268,18 +262,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 min_xy = min(min(quad_origin, q1), min(q2, q3));
                 max_xy = max(max(quad_origin, q1), max(q2, q3));
             } else {
-                if (local_space) {
-                    let p00 = transform_point(state, cmd.p0.xy);
-                    let p10 = transform_point(state, cmd.p0.xy + vec2<f32>(cmd.p0.z, 0.0));
-                    let p01 = transform_point(state, cmd.p0.xy + vec2<f32>(0.0, cmd.p0.w));
-                    let p11 = transform_point(state, cmd.p0.xy + cmd.p0.zw);
-                    min_xy = min(min(p00, p10), min(p01, p11));
-                    max_xy = max(max(p00, p10), max(p01, p11));
-                } else {
-                    min_xy = cmd.p0.xy;
-                    max_xy = cmd.p0.xy + cmd.p0.zw;
-                }
-                extra0 = vec4<f32>(min_xy, max_xy - min_xy);
+                let p00 = transform_point(state, cmd.p0.xy);
+                let p11 = transform_point(state, cmd.p0.xy + cmd.p0.zw);
+                let shape_min = min(p00, p11);
+                let shape_max = max(p00, p11);
+                let shape_size = shape_max - shape_min;
+                let s = transform_metric_scale(state);
+                let stroke_w = cmd.scalar * s;
+                let pad = stroke_w * 0.5 + 1.5;
+                min_xy = shape_min - vec2<f32>(pad, pad);
+                max_xy = shape_max + vec2<f32>(pad, pad);
+                extra0 = vec4<f32>((shape_min + shape_max) * 0.5, shape_size);
+                extra1 = cmd.p1 * s;
+                extra2 = cmd.p2 * s;
+                extra3.x = stroke_w;
             }
         }
         case CMD_IMAGE: {
@@ -478,6 +474,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             clipped_v.extra0 = extra0;
             clipped_v.extra1 = extra1;
             clipped_v.extra2 = extra2;
+            clipped_v.extra3 = extra3;
             vertices[vertex_index] = clipped_v;
             return;
         }
@@ -501,6 +498,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 clipped_v.extra0 = extra0;
                 clipped_v.extra1 = extra1;
                 clipped_v.extra2 = extra2;
+                clipped_v.extra3 = extra3;
                 vertices[vertex_index] = clipped_v;
                 return;
             }
@@ -521,6 +519,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 clipped_v.extra0 = extra0;
                 clipped_v.extra1 = extra1;
                 clipped_v.extra2 = extra2;
+                clipped_v.extra3 = extra3;
                 vertices[vertex_index] = clipped_v;
                 return;
             }
@@ -551,6 +550,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             clipped_v.extra0 = extra0;
             clipped_v.extra1 = extra1;
             clipped_v.extra2 = extra2;
+            clipped_v.extra3 = extra3;
             vertices[vertex_index] = clipped_v;
             return;
         }
@@ -576,6 +576,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             clipped_v.extra0 = extra0;
             clipped_v.extra1 = extra1;
             clipped_v.extra2 = extra2;
+            clipped_v.extra3 = extra3;
             vertices[vertex_index] = clipped_v;
             return;
         }
@@ -616,6 +617,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     out_v.extra0 = extra0;
     out_v.extra1 = extra1;
     out_v.extra2 = extra2;
+    out_v.extra3 = extra3;
     vertices[vertex_index] = out_v;
 }
 );
@@ -648,6 +650,7 @@ const FS_RENDER_FLAG_SHADOW_BLUR_MASK: u32 = 0xFu << FS_RENDER_FLAG_SHADOW_BLUR_
 const FS_RENDER_FLAG_SHADOW: u32 = 1u << 12u;
 const FS_RENDER_FLAG_PATTERN_SHADE: u32 = 1u << 13u;
 const FS_RENDER_FLAG_IMAGE_NEAREST: u32 = 1u << 1u;
+const FS_RENDER_FLAG_CONTINUOUS_CORNER: u32 = 1u << 1u;
 const FS_RENDER_FLAG_ORIENTED_QUAD: u32 = 1u << 14u;
 const FS_RENDER_FLAG_CLIP_MASK: u32 = 1u << 16u;
 const FS_RENDER_FLAG_CLIP_PARENT_SHIFT: u32 = 17u;
@@ -743,6 +746,7 @@ struct VSIn {
     @location(7) extra0: vec4<f32>,
     @location(8) extra1: vec4<f32>,
     @location(9) extra2: vec4<f32>,
+    @location(10) extra3: vec4<f32>,
 };
 
 struct VSOut {
@@ -756,6 +760,7 @@ struct VSOut {
     @location(6) extra0: vec4<f32>,
     @location(7) extra1: vec4<f32>,
     @location(8) extra2: vec4<f32>,
+    @location(9) extra3: vec4<f32>,
 };
 
 fn sdf_segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -769,6 +774,74 @@ fn rounded_rect_sdf(p: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
     let b = max(size * 0.5 - vec2<f32>(radius, radius), vec2<f32>(0.0, 0.0));
     let q = abs(p) - b;
     return length(max(q, vec2<f32>(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+fn lane_f32(v: vec4<f32>, lane: u32) -> f32 {
+    switch (lane) {
+        case 0u: { return v.x; }
+        case 1u: { return v.y; }
+        case 2u: { return v.z; }
+        default: { return v.w; }
+    }
+}
+
+fn round_rect_corner_index(p: vec2<f32>) -> u32 {
+    if (p.y < 0.0) {
+        return select(0u, 1u, p.x >= 0.0);
+    }
+    return select(3u, 2u, p.x >= 0.0);
+}
+
+fn round_rect_profile_sdf(
+    p: vec2<f32>, size: vec2<f32>, radii_x: vec4<f32>, radii_y: vec4<f32>,
+    continuous: bool
+) -> f32 {
+    let lane = round_rect_corner_index(p);
+    let radius = max(vec2<f32>(lane_f32(radii_x, lane), lane_f32(radii_y, lane)),
+                     vec2<f32>(0.0, 0.0));
+    let half_size = max(size * 0.5, vec2<f32>(0.0, 0.0));
+    let corner_center = max(half_size - radius, vec2<f32>(0.0, 0.0));
+    let q = abs(p) - corner_center;
+    if (radius.x <= 1e-5 || radius.y <= 1e-5) {
+        return max(abs(p).x - half_size.x, abs(p).y - half_size.y);
+    }
+    if (q.x <= 0.0 || q.y <= 0.0) {
+        return max(q.x - radius.x, q.y - radius.y);
+    }
+    let normalized = q / radius;
+    var exponent = 2.0;
+    if (continuous) {
+        let extent = max(
+            (radius.x * 2.0) / max(size.x, 1e-5),
+            (radius.y * 2.0) / max(size.y, 1e-5)
+        );
+        exponent = mix(4.0, 2.0, smoothstep(0.82, 1.0, extent));
+    }
+    let profile = pow(
+        pow(max(normalized.x, 0.0), exponent) +
+        pow(max(normalized.y, 0.0), exponent),
+        1.0 / exponent
+    );
+    return (profile - 1.0) * min(radius.x, radius.y);
+}
+
+fn round_rect_local_point(input: VSOut) -> vec2<f32> {
+    if ((input.flags & FS_RENDER_FLAG_ORIENTED_QUAD) == 0u) {
+        return input.world_pos - input.extra0.xy;
+    }
+    let state = command_states[input.state_index];
+    let a = state.xform0.x;
+    let b = state.xform0.y;
+    let c = state.xform0.z;
+    let d = state.xform0.w;
+    let translated = input.world_pos - state.xform1.xy;
+    let det = a * d - b * c;
+    if (abs(det) <= 1e-8) {
+        return vec2<f32>(1e9, 1e9);
+    }
+    let local = vec2<f32>(d * translated.x - c * translated.y,
+                          -b * translated.x + a * translated.y) / det;
+    return local - input.extra0.xy;
 }
 
 fn in_arc(angle: f32, start_angle: f32, end_angle: f32) -> bool {
@@ -917,6 +990,7 @@ fn vs_main(input: VSIn) -> VSOut {
     out_v.extra0 = input.extra0;
     out_v.extra1 = input.extra1;
     out_v.extra2 = input.extra2;
+    out_v.extra3 = input.extra3;
     return out_v;
 }
 
@@ -971,33 +1045,31 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
     switch (input.cmd_type) {
         case CMD_RECT: {
             let size = input.extra0.zw;
-            let radius = max(input.extra1.x, 0.0);
+            let p = round_rect_local_point(input);
+            let continuous = (input.flags & FS_RENDER_FLAG_CONTINUOUS_CORNER) != 0u;
+            let d = round_rect_profile_sdf(p, size, input.extra1, input.extra2, continuous);
             if (is_shadow) {
-                let p = (input.uv - vec2<f32>(0.5, 0.5)) * size;
-                let d = rounded_rect_sdf(p, size, radius);
                 let aa = max(fwidth(d), 1.0) + shadow_blur;
                 alpha = 1.0 - smoothstep(-aa, aa, d);
-            } else if ((input.flags & FS_RENDER_FLAG_ORIENTED_QUAD) != 0u) {
-                alpha = rounded_rect_fill_alpha_4tap(input.uv, size, radius);
             } else {
-                alpha = rounded_rect_fill_alpha(input.uv, size, radius);
+                let aa = max(fwidth(d), 0.65);
+                alpha = 1.0 - smoothstep(-aa, aa, d);
             }
             break;
         }
         case CMD_RECT_STROKE: {
             let size = input.extra0.zw;
-            let radius = max(input.extra1.x, 0.0);
-            let stroke_w = max(input.extra1.y, 1.0);
+            let stroke_w = max(input.extra3.x, 0.0);
+            let p = round_rect_local_point(input);
+            let continuous = (input.flags & FS_RENDER_FLAG_CONTINUOUS_CORNER) != 0u;
+            let d = round_rect_profile_sdf(p, size, input.extra1, input.extra2, continuous);
+            let ring = stroke_w * 0.5 - abs(d);
             if (is_shadow) {
-                let p = (input.uv - vec2<f32>(0.5, 0.5)) * size;
-                let d = rounded_rect_sdf(p, size, radius);
-                let ring = stroke_w * 0.5 - abs(d);
                 let aa = max(fwidth(ring), 1.0) + shadow_blur;
                 alpha = smoothstep(-aa, aa, ring);
-            } else if ((input.flags & FS_RENDER_FLAG_ORIENTED_QUAD) != 0u) {
-                alpha = rounded_rect_stroke_alpha_4tap(input.uv, size, radius, stroke_w);
             } else {
-                alpha = rounded_rect_stroke_alpha(input.uv, size, radius, stroke_w);
+                let aa = max(fwidth(ring), 0.65);
+                alpha = smoothstep(-aa, aa, ring);
             }
             break;
         }

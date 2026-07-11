@@ -660,6 +660,16 @@ uint32_t fs_compute_mip_count(uint32_t width, uint32_t height);
 uint64_t fs_hash64_u32(uint64_t hash, uint32_t value);
 uint64_t fs_hash64_mix(uint64_t hash, uint64_t value);
 uint64_t fs_hash64_f32(uint64_t hash, float value);
+typedef struct FS_NormalizedRoundRect {
+    float x;
+    float y;
+    float w;
+    float h;
+    FS_RoundRectRadii radii;
+} FS_NormalizedRoundRect;
+bool fs_normalize_round_rect(float x, float y, float w, float h,
+                             const FS_RoundRectRadii* radii,
+                             FS_NormalizedRoundRect* out_rect);
 bool fs_ensure_state_stack_capacity(FS_InternalState* st, size_t required);
 bool fs_style_snapshot_capture(FS_StyleSnapshot* dst, const FS_InternalState* st);
 void fs_style_snapshot_apply(FS_InternalState* st, FS_StyleSnapshot* src);

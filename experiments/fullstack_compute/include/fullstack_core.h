@@ -151,6 +151,29 @@ typedef struct FS_TextMetrics {
     uint32_t line_count;
 } FS_TextMetrics;
 
+typedef enum FS_CornerProfile {
+    FS_CORNER_PROFILE_ROUND = 0,
+    FS_CORNER_PROFILE_CONTINUOUS = 1
+} FS_CornerProfile;
+
+typedef struct FS_RoundRadius {
+    float x;
+    float y;
+} FS_RoundRadius;
+
+typedef struct FS_RoundRectRadii {
+    FS_RoundRadius top_left;
+    FS_RoundRadius top_right;
+    FS_RoundRadius bottom_right;
+    FS_RoundRadius bottom_left;
+} FS_RoundRectRadii;
+
+static inline FS_RoundRectRadii fs_round_rect_uniform_radii(float radius_x, float radius_y) {
+    const FS_RoundRadius radius = {radius_x, radius_y};
+    const FS_RoundRectRadii radii = {radius, radius, radius, radius};
+    return radii;
+}
+
 typedef struct FS_ContextAttributes {
     bool alpha;
     bool premultiplied_alpha;
@@ -211,6 +234,9 @@ bool fs_core_encode(
 void fs_core_notify_submission(FS_Core* core, WGPUSubmissionIndex submission_index);
 
 bool fs_cmd_rect(FS_Core* core, float x, float y, float w, float h, float radius, uint32_t color);
+bool fs_cmd_round_rect(FS_Core* core, float x, float y, float w, float h,
+                       const FS_RoundRectRadii* radii, FS_CornerProfile profile,
+                       uint32_t color);
 bool fs_cmd_clear_rect(FS_Core* core, float x, float y, float w, float h);
 bool fs_cmd_image(FS_Core* core, float x, float y, float w, float h, float uv_x, float uv_y, float uv_w, float uv_h, uint32_t color);
 bool fs_cmd_text_glyph(FS_Core* core, float x, float y, float w, float h, uint32_t codepoint, uint32_t color);
@@ -220,6 +246,10 @@ bool fs_cmd_circle(FS_Core* core, float cx, float cy, float radius, uint32_t col
 bool fs_cmd_arc(FS_Core* core, float cx, float cy, float radius, float thickness, float start_angle, float end_angle, uint32_t color);
 bool fs_cmd_bezier_quad(FS_Core* core, float x0, float y0, float cx, float cy, float x1, float y1, float width, uint32_t color);
 bool fs_cmd_rect_stroke(FS_Core* core, float x, float y, float w, float h, float radius, float stroke_width, uint32_t color);
+bool fs_cmd_round_rect_stroke(FS_Core* core, float x, float y, float w, float h,
+                              const FS_RoundRectRadii* radii,
+                              FS_CornerProfile profile,
+                              float stroke_width, uint32_t color);
 bool fs_cmd_ellipse(FS_Core* core, float cx, float cy, float radius_x, float radius_y, uint32_t color);
 bool fs_cmd_bezier_cubic(FS_Core* core, float x0, float y0, float cx0, float cy0, float cx1, float cy1, float x1, float y1, float width, uint32_t color);
 bool fs_cmd_triangle(FS_Core* core, float x0, float y0, float x1, float y1, float x2, float y2, uint32_t color);
@@ -343,6 +373,9 @@ bool fs_path_ellipse(
 bool fs_path_arc_to(FS_Core* core, float x1, float y1, float x2, float y2, float radius);
 bool fs_path_rect(FS_Core* core, float x, float y, float w, float h);
 bool fs_path_round_rect(FS_Core* core, float x, float y, float w, float h, float radius);
+bool fs_path_round_rect_radii(FS_Core* core, float x, float y, float w, float h,
+                              const FS_RoundRectRadii* radii,
+                              FS_CornerProfile profile);
 bool fs_path_close(FS_Core* core);
 bool fs_path_stroke(FS_Core* core, float width, uint32_t color);
 bool fs_path_fill(FS_Core* core, uint32_t color);
@@ -350,6 +383,12 @@ bool fs_stroke(FS_Core* core, float width);
 bool fs_fill(FS_Core* core);
 bool fs_stroke_rect(FS_Core* core, float x, float y, float w, float h, float radius, float stroke_width);
 bool fs_fill_rect(FS_Core* core, float x, float y, float w, float h, float radius);
+bool fs_stroke_round_rect(FS_Core* core, float x, float y, float w, float h,
+                          const FS_RoundRectRadii* radii,
+                          FS_CornerProfile profile, float stroke_width);
+bool fs_fill_round_rect(FS_Core* core, float x, float y, float w, float h,
+                        const FS_RoundRectRadii* radii,
+                        FS_CornerProfile profile);
 bool fs_stroke_text_utf8(
     FS_Core* core,
     float x,
@@ -393,6 +432,9 @@ bool fs_path2d_ellipse(
 bool fs_path2d_arc_to(FS_Path2D* path, float x1, float y1, float x2, float y2, float radius);
 bool fs_path2d_rect(FS_Path2D* path, float x, float y, float w, float h);
 bool fs_path2d_round_rect(FS_Path2D* path, float x, float y, float w, float h, float radius);
+bool fs_path2d_round_rect_radii(FS_Path2D* path, float x, float y, float w, float h,
+                                const FS_RoundRectRadii* radii,
+                                FS_CornerProfile profile);
 bool fs_path2d_close(FS_Path2D* path);
 bool fs_path2d_add_path(FS_Path2D* path, const FS_Path2D* other);
 bool fs_path2d_add_path_with_transform(FS_Path2D* path, const FS_Path2D* other, const float matrix_2x3[6]);

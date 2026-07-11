@@ -2862,7 +2862,8 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
         {.shaderLocation = 6, .format = WGPUVertexFormat_Uint32, .offset = 56},
         {.shaderLocation = 7, .format = WGPUVertexFormat_Float32x4, .offset = 64},
         {.shaderLocation = 8, .format = WGPUVertexFormat_Float32x4, .offset = 80},
-        {.shaderLocation = 9, .format = WGPUVertexFormat_Float32x4, .offset = 96}
+        {.shaderLocation = 9, .format = WGPUVertexFormat_Float32x4, .offset = 96},
+        {.shaderLocation = 10, .format = WGPUVertexFormat_Float32x4, .offset = 112}
     };
     WGPUVertexBufferLayout vb_layout = {
         .arrayStride = sizeof(FS_VertexGPU),
@@ -6446,6 +6447,53 @@ static bool fs_cmd_rect_compute_coverage_stroke(
     return ok;
 }
 
+static void fs_pack_round_rect_radii(FS_Command* cmd, const FS_RoundRectRadii* radii) {
+    cmd->p1[0] = radii->top_left.x;
+    cmd->p1[1] = radii->top_right.x;
+    cmd->p1[2] = radii->bottom_right.x;
+    cmd->p1[3] = radii->bottom_left.x;
+    cmd->p2[0] = radii->top_left.y;
+    cmd->p2[1] = radii->top_right.y;
+    cmd->p2[2] = radii->bottom_right.y;
+    cmd->p2[3] = radii->bottom_left.y;
+}
+
+static bool fs_cmd_round_rect_with_flags(
+    FS_Core* core, float x, float y, float w, float h,
+    const FS_RoundRectRadii* radii, FS_CornerProfile profile,
+    uint32_t color, uint32_t extra_flags
+) {
+    FS_InternalState* st = fs_state(core);
+    if (!core || !st) return false;
+    FS_NormalizedRoundRect rr;
+    if (!fs_normalize_round_rect(x, y, w, h, radii, &rr)) return false;
+
+    FS_Command cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.p0[0] = rr.x;
+    cmd.p0[1] = rr.y;
+    cmd.p0[2] = rr.w;
+    cmd.p0[3] = rr.h;
+    fs_pack_round_rect_radii(&cmd, &rr.radii);
+    cmd.flags = extra_flags;
+    if (profile == FS_CORNER_PROFILE_CONTINUOUS) {
+        cmd.flags |= FS_RENDER_FLAG_CONTINUOUS_CORNER;
+    }
+    const FS_Transform2D* t = &st->current_transform;
+    if (fs_transform_requires_oriented_quad(t)) {
+        const float metric = fs_transform_metric_scale_cpu(t);
+        const float pad = 1.5f / fmaxf(metric, 1e-4f);
+        fs_command_set_oriented_quad_from_rect(&cmd, t,
+            rr.x - pad, rr.y - pad, rr.w + pad * 2.0f, rr.h + pad * 2.0f);
+        cmd.flags |= FS_RENDER_FLAG_ORIENTED_QUAD;
+    } else {
+        cmd.flags |= FS_RENDER_FLAG_LOCAL_SPACE;
+    }
+    cmd.color_rgba8 = color;
+    cmd.type = FS_CMD_RECT;
+    return fs_push_command(core, &cmd);
+}
+
 static bool fs_cmd_rect_with_flags(
     FS_Core* core,
     float x,
@@ -6456,22 +6504,15 @@ static bool fs_cmd_rect_with_flags(
     uint32_t color,
     uint32_t extra_flags
 ) {
-    FS_InternalState* st = fs_state(core);
-    const FS_Transform2D* t = st ? &st->current_transform : NULL;
-    if (core && st && t && fs_transform_requires_oriented_quad(t)) {
-        return fs_cmd_rect_compute_coverage_fill(core, x, y, w, h, radius, color, extra_flags);
-    }
-    FS_Command cmd;
-    memset(&cmd, 0, sizeof(cmd));
-    cmd.flags |= FS_RENDER_FLAG_LOCAL_SPACE | extra_flags;
-    cmd.p0[0] = x;
-    cmd.p0[1] = y;
-    cmd.p0[2] = w;
-    cmd.p0[3] = h;
-    cmd.scalar = radius;
-    cmd.color_rgba8 = color;
-    cmd.type = FS_CMD_RECT;
-    return fs_push_command(core, &cmd);
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_cmd_round_rect_with_flags(core, x, y, w, h, &radii,
+                                        FS_CORNER_PROFILE_ROUND, color, extra_flags);
+}
+
+bool fs_cmd_round_rect(FS_Core* core, float x, float y, float w, float h,
+                       const FS_RoundRectRadii* radii, FS_CornerProfile profile,
+                       uint32_t color) {
+    return fs_cmd_round_rect_with_flags(core, x, y, w, h, radii, profile, color, 0u);
 }
 
 bool fs_cmd_rect(FS_Core* core, float x, float y, float w, float h, float radius, uint32_t color) {
@@ -6510,30 +6551,60 @@ bool fs_cmd_clear_rect(FS_Core* core, float x, float y, float w, float h) {
 }
 
 bool fs_cmd_rect_stroke(FS_Core* core, float x, float y, float w, float h, float radius, float stroke_width, uint32_t color) {
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_cmd_round_rect_stroke(core, x, y, w, h, &radii,
+                                    FS_CORNER_PROFILE_ROUND, stroke_width, color);
+}
+
+bool fs_cmd_round_rect_stroke(
+    FS_Core* core, float x, float y, float w, float h,
+    const FS_RoundRectRadii* radii, FS_CornerProfile profile,
+    float stroke_width, uint32_t color
+) {
     FS_InternalState* st = fs_state(core);
-    const FS_Transform2D* t = st ? &st->current_transform : NULL;
-    if (core && st && t && fs_transform_requires_oriented_quad(t)) {
-        return fs_cmd_rect_compute_coverage_stroke(core, x, y, w, h, radius, stroke_width, color);
-    }
+    if (!core || !st || !isfinite(stroke_width) || stroke_width <= 0.0f) return false;
+    FS_NormalizedRoundRect rr;
+    if (!fs_normalize_round_rect(x, y, w, h, radii, &rr)) return false;
     FS_Command cmd;
     memset(&cmd, 0, sizeof(cmd));
-    cmd.p0[0] = x;
-    cmd.p0[1] = y;
-    cmd.p0[2] = w;
-    cmd.p0[3] = h;
-    cmd.flags |= FS_RENDER_FLAG_LOCAL_SPACE;
-    cmd.p1[0] = radius;
+    cmd.p0[0] = rr.x;
+    cmd.p0[1] = rr.y;
+    cmd.p0[2] = rr.w;
+    cmd.p0[3] = rr.h;
+    fs_pack_round_rect_radii(&cmd, &rr.radii);
     cmd.scalar = stroke_width;
+    if (profile == FS_CORNER_PROFILE_CONTINUOUS) {
+        cmd.flags |= FS_RENDER_FLAG_CONTINUOUS_CORNER;
+    }
+    const FS_Transform2D* t = &st->current_transform;
+    if (fs_transform_requires_oriented_quad(t)) {
+        const float metric = fs_transform_metric_scale_cpu(t);
+        const float pad = stroke_width * 0.5f + 1.5f / fmaxf(metric, 1e-4f);
+        fs_command_set_oriented_quad_from_rect(&cmd, t,
+            rr.x - pad, rr.y - pad, rr.w + pad * 2.0f, rr.h + pad * 2.0f);
+        cmd.flags |= FS_RENDER_FLAG_ORIENTED_QUAD;
+    } else {
+        cmd.flags |= FS_RENDER_FLAG_LOCAL_SPACE;
+    }
     cmd.color_rgba8 = color;
     cmd.type = FS_CMD_RECT_STROKE;
     return fs_push_command(core, &cmd);
 }
 
 bool fs_fill_rect(FS_Core* core, float x, float y, float w, float h, float radius) {
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_fill_round_rect(core, x, y, w, h, &radii, FS_CORNER_PROFILE_ROUND);
+}
+
+bool fs_fill_round_rect(FS_Core* core, float x, float y, float w, float h,
+                        const FS_RoundRectRadii* radii,
+                        FS_CornerProfile profile) {
     FS_InternalState* st = fs_state(core);
     if (!st) {
         return false;
     }
+    FS_NormalizedRoundRect rr;
+    if (!fs_normalize_round_rect(x, y, w, h, radii, &rr)) return false;
     const bool fill_linear = st->style_fill_paint_type == (uint8_t)FS_STYLE_PAINT_LINEAR_GRADIENT &&
                              st->style_fill_linear_gradient.stop_count >= 2u;
     const bool fill_radial = st->style_fill_paint_type == (uint8_t)FS_STYLE_PAINT_RADIAL_GRADIENT &&
@@ -6544,24 +6615,33 @@ bool fs_fill_rect(FS_Core* core, float x, float y, float w, float h, float radiu
                               st->style_fill_pattern.handle.width > 0u &&
                               st->style_fill_pattern.handle.height > 0u;
     if (!fill_linear && !fill_radial && !fill_conic && !fill_pattern) {
-        return fs_cmd_rect(core, x, y, w, h, radius, st->style_fill_color_rgba8);
+        return fs_cmd_round_rect(core, rr.x, rr.y, rr.w, rr.h,
+                                 &rr.radii, profile, st->style_fill_color_rgba8);
     }
-    if (!isfinite(radius) || radius <= 1e-6f) {
+    const FS_RoundRadius* rv[4] = {
+        &rr.radii.top_left, &rr.radii.top_right,
+        &rr.radii.bottom_right, &rr.radii.bottom_left
+    };
+    bool has_radius = false;
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        has_radius = has_radius || rv[i]->x > 1e-6f || rv[i]->y > 1e-6f;
+    }
+    if (!has_radius) {
         if (fill_linear) {
-            return fs_draw_linear_gradient_rect_cells(core, x, y, w, h, &st->style_fill_linear_gradient);
+            return fs_draw_linear_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_linear_gradient);
         }
         if (fill_radial) {
-            return fs_draw_radial_gradient_rect_cells(core, x, y, w, h, &st->style_fill_radial_gradient);
+            return fs_draw_radial_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_radial_gradient);
         }
         if (fill_conic) {
-            return fs_draw_conic_gradient_rect_cells(core, x, y, w, h, &st->style_fill_conic_gradient);
+            return fs_draw_conic_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_conic_gradient);
         }
         return fs_cmd_rect_with_flags(
             core,
-            x,
-            y,
-            w,
-            h,
+            rr.x,
+            rr.y,
+            rr.w,
+            rr.h,
             0.0f,
             0xFFFFFFFFu,
             FS_RENDER_FLAG_PATTERN_SHADE | FS_RENDER_FLAG_PATTERN_FILL_HINT
@@ -6570,27 +6650,29 @@ bool fs_fill_rect(FS_Core* core, float x, float y, float w, float h, float radiu
 
     FS_Path2D* clip_rr = fs_path2d_create();
     if (!clip_rr) {
-        const float cx = x + w * 0.5f;
-        const float cy = y + h * 0.5f;
-        return fs_cmd_rect(core, x, y, w, h, radius, fs_style_resolve_fill_color_at(st, cx, cy));
+        const float cx = rr.x + rr.w * 0.5f;
+        const float cy = rr.y + rr.h * 0.5f;
+        return fs_cmd_round_rect(core, rr.x, rr.y, rr.w, rr.h, &rr.radii, profile,
+                                 fs_style_resolve_fill_color_at(st, cx, cy));
     }
     fs_state_save(core);
-    const bool clip_ok = fs_path2d_round_rect(clip_rr, x, y, w, h, radius) && fs_clip_path2d(core, clip_rr);
+    const bool clip_ok = fs_path2d_round_rect_radii(clip_rr, rr.x, rr.y, rr.w, rr.h,
+                                                     &rr.radii, profile) && fs_clip_path2d(core, clip_rr);
     bool draw_ok = false;
     if (clip_ok) {
         if (fill_linear) {
-            draw_ok = fs_draw_linear_gradient_rect_cells(core, x, y, w, h, &st->style_fill_linear_gradient);
+            draw_ok = fs_draw_linear_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_linear_gradient);
         } else if (fill_radial) {
-            draw_ok = fs_draw_radial_gradient_rect_cells(core, x, y, w, h, &st->style_fill_radial_gradient);
+            draw_ok = fs_draw_radial_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_radial_gradient);
         } else if (fill_conic) {
-            draw_ok = fs_draw_conic_gradient_rect_cells(core, x, y, w, h, &st->style_fill_conic_gradient);
+            draw_ok = fs_draw_conic_gradient_rect_cells(core, rr.x, rr.y, rr.w, rr.h, &st->style_fill_conic_gradient);
         } else {
             draw_ok = fs_cmd_rect_with_flags(
                 core,
-                x,
-                y,
-                w,
-                h,
+                rr.x,
+                rr.y,
+                rr.w,
+                rr.h,
                 0.0f,
                 0xFFFFFFFFu,
                 FS_RENDER_FLAG_PATTERN_SHADE | FS_RENDER_FLAG_PATTERN_FILL_HINT
@@ -6603,6 +6685,14 @@ bool fs_fill_rect(FS_Core* core, float x, float y, float w, float h, float radiu
 }
 
 bool fs_stroke_rect(FS_Core* core, float x, float y, float w, float h, float radius, float stroke_width) {
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_stroke_round_rect(core, x, y, w, h, &radii,
+                                FS_CORNER_PROFILE_ROUND, stroke_width);
+}
+
+bool fs_stroke_round_rect(FS_Core* core, float x, float y, float w, float h,
+                          const FS_RoundRectRadii* radii,
+                          FS_CornerProfile profile, float stroke_width) {
     FS_InternalState* st = fs_state(core);
     if (!st) {
         return false;
@@ -6610,7 +6700,7 @@ bool fs_stroke_rect(FS_Core* core, float x, float y, float w, float h, float rad
     const float cx = x + w * 0.5f;
     const float cy = y + h * 0.5f;
     const uint32_t color = fs_style_resolve_stroke_color_at(st, cx, cy);
-    return fs_cmd_rect_stroke(core, x, y, w, h, radius, stroke_width, color);
+    return fs_cmd_round_rect_stroke(core, x, y, w, h, radii, profile, stroke_width, color);
 }
 
 bool fs_cmd_image(FS_Core* core, float x, float y, float w, float h, float uv_x, float uv_y, float uv_w, float uv_h, uint32_t color) {
