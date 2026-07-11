@@ -15,6 +15,9 @@ typedef struct FS_RadialGradient FS_RadialGradient;
 typedef struct FS_ConicGradient FS_ConicGradient;
 typedef struct FS_Pattern FS_Pattern;
 
+typedef uint32_t FS_FontHandle;
+#define FS_FONT_HANDLE_INVALID ((FS_FontHandle)0u)
+
 typedef struct FS_ImageHandle {
     float uv_min[2];
     float uv_max[2];
@@ -510,6 +513,10 @@ bool fs_core_get_canvas_image_data_rgba8(
 
 bool fs_core_load_font_file(FS_Core* core, const char* path);
 bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size);
+bool fs_core_load_font_file_handle(FS_Core* core, const char* path, FS_FontHandle* out_font);
+bool fs_core_load_font_memory_handle(FS_Core* core, const uint8_t* data, size_t size, FS_FontHandle* out_font);
+bool fs_set_font(FS_Core* core, FS_FontHandle font);
+FS_FontHandle fs_get_font(const FS_Core* core);
 bool fs_core_register_image_font(
     FS_Core* core,
     const FS_ImageFontSequence* sequences,

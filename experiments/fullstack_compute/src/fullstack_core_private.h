@@ -48,7 +48,7 @@ typedef struct FS_GlyphEntry {
     uint32_t bake_px_q;
     uint32_t text_flags;
     uint8_t font_slot;
-    uint8_t _pad0;
+    uint8_t preference_font_slot;
     uint8_t _pad1;
     uint8_t _pad2;
     float uv_min[2];
@@ -285,6 +285,7 @@ typedef struct FS_StateSnapshot {
     uint8_t clip_path_enabled;
     uint8_t clip_path_layer;
     uint8_t _pad0;
+    FS_FontHandle current_font;
     float clip_min_x;
     float clip_min_y;
     float clip_max_x;
@@ -325,6 +326,7 @@ typedef struct FS_InternalState {
     FS_Core* owner_core;
     void* fonts[FS_MAX_FONT_FALLBACKS];
     uint32_t font_count;
+    FS_FontHandle current_font;
 
     FS_GlyphEntry* glyphs;
     size_t glyph_count;
@@ -794,11 +796,11 @@ bool fs_find_image_sequence_match(
     uint32_t* out_glyph_id,
     size_t* out_consumed_bytes
 );
-uint32_t fs_glyph_cache_hash_key(uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q);
+uint32_t fs_glyph_cache_hash_key(uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q, uint8_t preference_font_slot);
 size_t fs_glyph_cache_next_pow2(size_t v);
 bool fs_glyph_cache_rebuild(FS_InternalState* st, size_t min_capacity);
 void fs_glyph_cache_clear_index(FS_InternalState* st);
-FS_GlyphEntry* fs_glyph_cache_find(FS_InternalState* st, uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q);
+FS_GlyphEntry* fs_glyph_cache_find(FS_InternalState* st, uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q, uint8_t preference_font_slot);
 bool fs_glyph_cache_insert_index(FS_InternalState* st, size_t glyph_index);
 void fs_invalidate_cached_glyph(FS_InternalState* st, uint32_t key_kind, uint32_t glyph_key);
 int fs_sequence_entry_sort_desc(const void* lhs, const void* rhs);

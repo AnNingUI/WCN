@@ -2980,6 +2980,7 @@ static void fs_clear_loaded_fonts(FS_InternalState* st) {
         }
     }
     st->font_count = 0u;
+    st->current_font = FS_FONT_HANDLE_INVALID;
 }
 
 static void fs_free_internal_state(FS_Core* core) {
@@ -4896,7 +4897,7 @@ bool fs_core_get_canvas_image_data_rgba8(
     return true;
 }
 
-bool fs_core_load_font_file(FS_Core* core, const char* path) {
+bool fs_core_load_font_file_handle(FS_Core* core, const char* path, FS_FontHandle* out_font) {
     if (!core || !path) {
         return false;
     }
@@ -4915,11 +4916,18 @@ bool fs_core_load_font_file(FS_Core* core, const char* path) {
     if (!loaded) {
         return false;
     }
+    const FS_FontHandle handle = (FS_FontHandle)(st->font_count + 1u);
     st->fonts[st->font_count++] = loaded;
+    if (st->current_font == FS_FONT_HANDLE_INVALID) {
+        st->current_font = handle;
+    }
+    if (out_font) {
+        *out_font = handle;
+    }
     return true;
 }
 
-bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size) {
+bool fs_core_load_font_memory_handle(FS_Core* core, const uint8_t* data, size_t size, FS_FontHandle* out_font) {
     if (!core || !data || size == 0) {
         return false;
     }
@@ -4937,8 +4945,40 @@ bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size) {
     if (!loaded) {
         return false;
     }
+    const FS_FontHandle handle = (FS_FontHandle)(st->font_count + 1u);
     st->fonts[st->font_count++] = loaded;
+    if (st->current_font == FS_FONT_HANDLE_INVALID) {
+        st->current_font = handle;
+    }
+    if (out_font) {
+        *out_font = handle;
+    }
     return true;
+}
+
+bool fs_core_load_font_file(FS_Core* core, const char* path) {
+    return fs_core_load_font_file_handle(core, path, NULL);
+}
+
+bool fs_core_load_font_memory(FS_Core* core, const uint8_t* data, size_t size) {
+    return fs_core_load_font_memory_handle(core, data, size, NULL);
+}
+
+bool fs_set_font(FS_Core* core, FS_FontHandle font) {
+    FS_InternalState* st = fs_state(core);
+    if (!st || font == FS_FONT_HANDLE_INVALID || font > st->font_count || !st->fonts[font - 1u]) {
+        return false;
+    }
+    st->current_font = font;
+    return true;
+}
+
+FS_FontHandle fs_get_font(const FS_Core* core) {
+    const FS_InternalState* st = core ? (const FS_InternalState*)core->internal_state : NULL;
+    if (!st || st->current_font == FS_FONT_HANDLE_INVALID || st->current_font > st->font_count) {
+        return FS_FONT_HANDLE_INVALID;
+    }
+    return st->current_font;
 }
 
 bool fs_core_set_image_backend(FS_Core* core, const FS_ImageBackend* backend) {
@@ -5054,6 +5094,7 @@ void fs_state_save(FS_Core* core) {
     snap.clip_enabled = st->clip_enabled;
     snap.clip_path_enabled = st->clip_path_enabled;
     snap.clip_path_layer = st->clip_path_layer;
+    snap.current_font = st->current_font;
     snap.clip_min_x = st->clip_min_x;
     snap.clip_min_y = st->clip_min_y;
     snap.clip_max_x = st->clip_max_x;
@@ -5076,6 +5117,7 @@ bool fs_state_restore(FS_Core* core) {
     st->clip_enabled = snap->clip_enabled;
     st->clip_path_enabled = snap->clip_path_enabled;
     st->clip_path_layer = snap->clip_path_layer;
+    st->current_font = snap->current_font;
     st->clip_min_x = snap->clip_min_x;
     st->clip_min_y = snap->clip_min_y;
     st->clip_max_x = snap->clip_max_x;

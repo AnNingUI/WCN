@@ -312,10 +312,11 @@ bool fs_find_image_sequence_match(
     return true;
 }
 
-uint32_t fs_glyph_cache_hash_key(uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q) {
+uint32_t fs_glyph_cache_hash_key(uint32_t glyph_key, uint32_t key_kind, uint32_t bake_px_q, uint8_t preference_font_slot) {
     uint32_t x = glyph_key * 0x9E3779B1u;
     x ^= key_kind * 0x85EBCA77u;
     x ^= bake_px_q * 0xC2B2AE3Du;
+    x ^= (uint32_t)preference_font_slot * 0x27D4EB2Du;
     x ^= x >> 16u;
     return x;
 }
@@ -360,7 +361,7 @@ bool fs_glyph_cache_rebuild(FS_InternalState* st, size_t min_capacity) {
     const size_t mask = target - 1u;
     for (size_t i = 0u; i < st->glyph_count; ++i) {
         const FS_GlyphEntry* g = &st->glyphs[i];
-        size_t slot = (size_t)fs_glyph_cache_hash_key(g->glyph_key, g->key_kind, g->bake_px_q) & mask;
+        size_t slot = (size_t)fs_glyph_cache_hash_key(g->glyph_key, g->key_kind, g->bake_px_q, g->preference_font_slot) & mask;
         for (size_t probe = 0u; probe < target; ++probe) {
             if (table[slot] == 0u) {
                 table[slot] = (uint32_t)(i + 1u);
@@ -387,7 +388,8 @@ FS_GlyphEntry* fs_glyph_cache_find(
     FS_InternalState* st,
     uint32_t glyph_key,
     uint32_t key_kind,
-    uint32_t bake_px_q
+    uint32_t bake_px_q,
+    uint8_t preference_font_slot
 ) {
     if (!st || st->glyph_count == 0u) {
         return NULL;
@@ -400,7 +402,7 @@ FS_GlyphEntry* fs_glyph_cache_find(
 
     const size_t cap = st->glyph_hash_capacity;
     const size_t mask = cap - 1u;
-    size_t slot = (size_t)fs_glyph_cache_hash_key(glyph_key, key_kind, bake_px_q) & mask;
+    size_t slot = (size_t)fs_glyph_cache_hash_key(glyph_key, key_kind, bake_px_q, preference_font_slot) & mask;
     for (size_t probe = 0u; probe < cap; ++probe) {
         const uint32_t packed = st->glyph_hash_slots[slot];
         if (packed == 0u) {
@@ -409,7 +411,7 @@ FS_GlyphEntry* fs_glyph_cache_find(
         const size_t idx = (size_t)(packed - 1u);
         if (idx < st->glyph_count) {
             FS_GlyphEntry* g = &st->glyphs[idx];
-            if (g->glyph_key == glyph_key && g->key_kind == key_kind && g->bake_px_q == bake_px_q) {
+            if (g->glyph_key == glyph_key && g->key_kind == key_kind && g->bake_px_q == bake_px_q && g->preference_font_slot == preference_font_slot) {
                 return g;
             }
         }
@@ -436,7 +438,7 @@ bool fs_glyph_cache_insert_index(FS_InternalState* st, size_t glyph_index) {
     const FS_GlyphEntry* g = &st->glyphs[glyph_index];
     const size_t cap = st->glyph_hash_capacity;
     const size_t mask = cap - 1u;
-    size_t slot = (size_t)fs_glyph_cache_hash_key(g->glyph_key, g->key_kind, g->bake_px_q) & mask;
+    size_t slot = (size_t)fs_glyph_cache_hash_key(g->glyph_key, g->key_kind, g->bake_px_q, g->preference_font_slot) & mask;
     for (size_t probe = 0u; probe < cap; ++probe) {
         const uint32_t packed = st->glyph_hash_slots[slot];
         if (packed == 0u) {
@@ -446,7 +448,7 @@ bool fs_glyph_cache_insert_index(FS_InternalState* st, size_t glyph_index) {
         const size_t idx = (size_t)(packed - 1u);
         if (idx < st->glyph_count) {
             const FS_GlyphEntry* cur = &st->glyphs[idx];
-            if (cur->glyph_key == g->glyph_key && cur->key_kind == g->key_kind && cur->bake_px_q == g->bake_px_q) {
+            if (cur->glyph_key == g->glyph_key && cur->key_kind == g->key_kind && cur->bake_px_q == g->bake_px_q && cur->preference_font_slot == g->preference_font_slot) {
                 st->glyph_hash_slots[slot] = (uint32_t)(glyph_index + 1u);
                 return true;
             }
@@ -531,12 +533,19 @@ bool fs_find_or_create_glyph(
         return false;
     }
 
+    uint8_t preference_font_slot = 0u;
+    if (key_kind != FS_IMAGE_FONT_KIND &&
+        st->current_font != FS_FONT_HANDLE_INVALID &&
+        st->current_font <= st->font_count) {
+        preference_font_slot = (uint8_t)(st->current_font - 1u);
+    }
+
     const float requested_px = font_px < 1.0f ? 1.0f : font_px;
     const float bake_px = fs_get_text_bake_px(requested_px);
     const uint32_t bake_px_q = fs_quantize_font_size(bake_px);
     const float layout_scale = requested_px / bake_px;
 
-    FS_GlyphEntry* cached = fs_glyph_cache_find(st, glyph_key, key_kind, bake_px_q);
+    FS_GlyphEntry* cached = fs_glyph_cache_find(st, glyph_key, key_kind, bake_px_q, preference_font_slot);
     if (cached) {
         *out_glyph = cached;
         if (out_layout_scale) {
@@ -554,6 +563,7 @@ bool fs_find_or_create_glyph(
     entry.glyph_key = glyph_key;
     entry.key_kind = key_kind;
     entry.bake_px_q = bake_px_q;
+    entry.preference_font_slot = preference_font_slot;
     entry.bake_px = bake_px;
     entry.sdf_radius_px = 8.0f;
     entry.sdf_onedge = 0.5f;
@@ -590,18 +600,22 @@ bool fs_find_or_create_glyph(
             return false;
         }
         bool glyph_ok = false;
-        uint32_t selected_font_slot = 0u;
+        uint32_t selected_font_slot = preference_font_slot;
         if (key_kind == 1u && st->font_backend->get_glyph_sdf_by_index) {
             if (st->font_count == 0u) {
                 return false;
             }
-            if (st->font_backend->get_glyph_sdf_by_index(st->fonts[0], glyph_key, bake_px, &glyph_bitmap)) {
+            if (st->fonts[preference_font_slot] &&
+                st->font_backend->get_glyph_sdf_by_index(st->fonts[preference_font_slot], glyph_key, bake_px, &glyph_bitmap)) {
                 glyph_ok = true;
-                selected_font_slot = 0u;
             }
         } else {
             const uint32_t count = st->font_count > FS_MAX_FONT_FALLBACKS ? FS_MAX_FONT_FALLBACKS : st->font_count;
-            for (uint32_t fi = 0u; fi < count; ++fi) {
+            for (uint32_t order = 0u; order < count; ++order) {
+                uint32_t fi = order == 0u ? preference_font_slot : order - 1u;
+                if (order > 0u && fi >= preference_font_slot) {
+                    fi += 1u;
+                }
                 if (!st->fonts[fi]) {
                     continue;
                 }

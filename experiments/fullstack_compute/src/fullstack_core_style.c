@@ -274,9 +274,14 @@ void fs_resolve_text_vertical_metrics(
     float em_ascent = (font_size_px > 0.0f) ? (font_size_px * 0.8f) : 0.0f;
     float em_descent = (font_size_px > 0.0f) ? (font_size_px * 0.2f) : 0.0f;
     float line_height = (font_size_px > 0.0f) ? (font_size_px * 1.25f) : 0.0f;
-    if (st && st->font_backend && st->font_backend->get_vertical_metrics && st->font_count > 0u && st->fonts[0]) {
+    uint32_t font_slot = 0u;
+    if (st && st->current_font != FS_FONT_HANDLE_INVALID && st->current_font <= st->font_count) {
+        font_slot = st->current_font - 1u;
+    }
+    if (st && st->font_backend && st->font_backend->get_vertical_metrics &&
+        st->font_count > 0u && st->fonts[font_slot]) {
         FS_FontVerticalMetrics vm = {0};
-        if (st->font_backend->get_vertical_metrics(st->fonts[0], font_size_px, &vm)) {
+        if (st->font_backend->get_vertical_metrics(st->fonts[font_slot], font_size_px, &vm)) {
             if (isfinite(vm.ascent) && vm.ascent > 0.0f) {
                 em_ascent = vm.ascent;
             }
