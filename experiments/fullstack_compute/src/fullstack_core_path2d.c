@@ -588,67 +588,6 @@ bool fs_path2d_rect(FS_Path2D* path, float x, float y, float w, float h) {
     return fs_path2d_close(path);
 }
 
-bool fs_path2d_round_rect(FS_Path2D* path, float x, float y, float w, float h, float radius) {
-#if 1
-    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
-    return fs_path2d_round_rect_radii(path, x, y, w, h, &radii, FS_CORNER_PROFILE_ROUND);
-#else
-    const float pi = 3.14159265358979323846f;
-    if (!path) {
-        return false;
-    }
-    if (fabsf(w) <= 1e-6f || fabsf(h) <= 1e-6f) {
-        return fs_path2d_rect(path, x, y, w, h);
-    }
-    const float left = fminf(x, x + w);
-    const float right = fmaxf(x, x + w);
-    const float top = fminf(y, y + h);
-    const float bottom = fmaxf(y, y + h);
-    const float width = right - left;
-    const float height = bottom - top;
-
-    float r = radius;
-    if (r < 0.0f) {
-        r = 0.0f;
-    }
-    const float max_r = fminf(width, height) * 0.5f;
-    if (r > max_r) {
-        r = max_r;
-    }
-    if (r <= 1e-6f) {
-        return fs_path2d_rect(path, x, y, w, h);
-    }
-
-    if (!fs_path2d_move_to(path, left + r, top)) {
-        return false;
-    }
-    if (!fs_path2d_line_to(path, right - r, top)) {
-        return false;
-    }
-    if (!fs_path2d_append_arc_sweep(path, right - r, top + r, r, -0.5f * pi, 0.0f)) {
-        return false;
-    }
-    if (!fs_path2d_line_to(path, right, bottom - r)) {
-        return false;
-    }
-    if (!fs_path2d_append_arc_sweep(path, right - r, bottom - r, r, 0.0f, 0.5f * pi)) {
-        return false;
-    }
-    if (!fs_path2d_line_to(path, left + r, bottom)) {
-        return false;
-    }
-    if (!fs_path2d_append_arc_sweep(path, left + r, bottom - r, r, 0.5f * pi, pi)) {
-        return false;
-    }
-    if (!fs_path2d_line_to(path, left, top + r)) {
-        return false;
-    }
-    if (!fs_path2d_append_arc_sweep(path, left + r, top + r, r, pi, 1.5f * pi)) {
-        return false;
-    }
-    return fs_path2d_close(path);
-#endif
-}
 static bool fs_path2d_continuous_corner(FS_Path2D* path, float cx, float cy,
                                          float rx, float ry, uint32_t corner) {
     const float half_pi = 1.57079632679489661923f;
@@ -710,6 +649,11 @@ bool fs_path2d_round_rect_radii(FS_Path2D* path, float x, float y, float w, floa
     if (!fs_path2d_corner(path, left+tl.x, top+tl.y, tl.x, tl.y,
                           pi, 1.5f*pi, 3u, profile)) return false;
     return fs_path2d_close(path);
+}
+
+bool fs_path2d_round_rect(FS_Path2D* path, float x, float y, float w, float h, float radius) {
+    const FS_RoundRectRadii radii = fs_round_rect_uniform_radii(radius, radius);
+    return fs_path2d_round_rect_radii(path, x, y, w, h, &radii, FS_CORNER_PROFILE_ROUND);
 }
 
 bool fs_path2d_close(FS_Path2D* path) {

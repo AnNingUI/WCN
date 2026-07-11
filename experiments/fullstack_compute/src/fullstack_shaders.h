@@ -792,6 +792,58 @@ fn round_rect_corner_index(p: vec2<f32>) -> u32 {
     return select(3u, 2u, p.x >= 0.0);
 }
 
+fn superellipse_point(u: f32, radius: vec2<f32>, exponent: f32) -> vec2<f32> {
+    let x = clamp(u, 0.0, 1.0);
+    let y = pow(max(1.0 - pow(x, exponent), 0.0), 1.0 / exponent);
+    return vec2<f32>(radius.x * x, radius.y * y);
+}
+
+fn superellipse_signed_distance(q: vec2<f32>, radius: vec2<f32>, exponent: f32) -> f32 {
+    // Golden-section search gives the actual Euclidean distance to the quarter
+    // superellipse. Unlike F/|grad F|, this remains continuous where the curved
+    // corner meets either straight edge, including offset contours used by stroke.
+    let ratio = 0.6180339887498948;
+    var lo = 0.0;
+    var hi = 1.0;
+    var u0 = hi - (hi - lo) * ratio;
+    var u1 = lo + (hi - lo) * ratio;
+    var p0 = superellipse_point(u0, radius, exponent);
+    var p1 = superellipse_point(u1, radius, exponent);
+    var v0 = q - p0;
+    var v1 = q - p1;
+    var d0 = dot(v0, v0);
+    var d1 = dot(v1, v1);
+
+    for (var i: u32 = 0u; i < 18u; i = i + 1u) {
+        if (d0 <= d1) {
+            hi = u1;
+            u1 = u0;
+            d1 = d0;
+            u0 = hi - (hi - lo) * ratio;
+            p0 = superellipse_point(u0, radius, exponent);
+            v0 = q - p0;
+            d0 = dot(v0, v0);
+        } else {
+            lo = u0;
+            u0 = u1;
+            d0 = d1;
+            u1 = lo + (hi - lo) * ratio;
+            p1 = superellipse_point(u1, radius, exponent);
+            v1 = q - p1;
+            d1 = dot(v1, v1);
+        }
+    }
+
+    let top_delta = q - vec2<f32>(0.0, radius.y);
+    let right_delta = q - vec2<f32>(radius.x, 0.0);
+    let distance_sq = min(min(d0, d1),
+                          min(dot(top_delta, top_delta), dot(right_delta, right_delta)));
+    let normalized = max(q / radius, vec2<f32>(0.0, 0.0));
+    let implicit = pow(normalized.x, exponent) + pow(normalized.y, exponent) - 1.0;
+    let distance = sqrt(max(distance_sq, 0.0));
+    return select(-distance, distance, implicit >= 0.0);
+}
+
 fn round_rect_profile_sdf(
     p: vec2<f32>, size: vec2<f32>, radii_x: vec4<f32>, radii_y: vec4<f32>,
     continuous: bool
@@ -808,7 +860,6 @@ fn round_rect_profile_sdf(
     if (q.x <= 0.0 || q.y <= 0.0) {
         return max(q.x - radius.x, q.y - radius.y);
     }
-    let normalized = q / radius;
     var exponent = 2.0;
     if (continuous) {
         let extent = max(
@@ -817,12 +868,7 @@ fn round_rect_profile_sdf(
         );
         exponent = mix(4.0, 2.0, smoothstep(0.82, 1.0, extent));
     }
-    let profile = pow(
-        pow(max(normalized.x, 0.0), exponent) +
-        pow(max(normalized.y, 0.0), exponent),
-        1.0 / exponent
-    );
-    return (profile - 1.0) * min(radius.x, radius.y);
+    return superellipse_signed_distance(q, radius, exponent);
 }
 
 fn round_rect_local_point(input: VSOut) -> vec2<f32> {
@@ -1144,10 +1190,8 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
             }
             // Match use.gpu-style sharper readback by slightly biasing towards higher mip detail.
             let sdf = sampled.a;
-            let sdf_radius = max(input.extra2.x, 1.0);
             let sdf_onedge = input.extra2.y;
             let px_dist_scale = max(input.extra2.z, 1e-3);
-            let glyph_size_px = max(min(input.extra0.z, input.extra0.w), 1.0);
             let tex_size_u = textureDimensions(glyph_tex, 0);
             let tex_size = vec2<f32>(f32(tex_size_u.x), f32(tex_size_u.y));
             let atlas_w = max(input.extra1.z * tex_size.x, 1.0);
@@ -1156,9 +1200,16 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
                 max(fwidth(input.uv.x) * atlas_w, fwidth(input.uv.y) * atlas_h),
                 1e-3
             );
-            let sd = (sdf - sdf_onedge) * (px_dist_scale / texel_span);
-            let radius_term = clamp(sdf_radius / glyph_size_px, 0.01, 0.5);
-            let w = max(fwidth(sd), 0.36 + radius_term * 0.16);
+            // Both stb_truetype and the FreeType backend encode SDF texels as
+            //   encoded_u8 = onedge_u8 + signed_distance_px * pixel_dist_scale.
+            // Decode the normalized texture value back to bake-space pixels,
+            // then convert bake-space pixels to screen-space pixels.
+            let sd_bake_px = (sdf - sdf_onedge) * (255.0 / px_dist_scale);
+            let sd = sd_bake_px / texel_span;
+            // sd is already measured in screen pixels. A one-pixel transition is
+            // therefore explicit and stable; fwidth(sd) is invalid at the glyph
+            // quad boundary because helper fragments sample outside the atlas slot.
+            let w = 0.5;
             if ((input.flags & FS_TEXT_FLAG_STROKE) != 0u) {
                 let stroke_width = max(input.extra2.w, 0.0);
                 if (stroke_width <= 1e-4) {

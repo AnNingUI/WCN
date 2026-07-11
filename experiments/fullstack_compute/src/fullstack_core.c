@@ -6458,6 +6458,18 @@ static void fs_pack_round_rect_radii(FS_Command* cmd, const FS_RoundRectRadii* r
     cmd->p2[3] = radii->bottom_left.y;
 }
 
+static float fs_round_rect_min_transform_scale(const FS_Transform2D* t) {
+    if (!t) return 1.0f;
+    const float m00 = t->a * t->a + t->b * t->b;
+    const float m11 = t->c * t->c + t->d * t->d;
+    const float m01 = t->a * t->c + t->b * t->d;
+    const float trace = m00 + m11;
+    const float delta = m00 - m11;
+    const float discriminant = sqrtf(fmaxf(delta * delta + 4.0f * m01 * m01, 0.0f));
+    const float lambda_min = 0.5f * (trace - discriminant);
+    return sqrtf(fmaxf(lambda_min, 1e-8f));
+}
+
 static bool fs_cmd_round_rect_with_flags(
     FS_Core* core, float x, float y, float w, float h,
     const FS_RoundRectRadii* radii, FS_CornerProfile profile,
@@ -6481,8 +6493,8 @@ static bool fs_cmd_round_rect_with_flags(
     }
     const FS_Transform2D* t = &st->current_transform;
     if (fs_transform_requires_oriented_quad(t)) {
-        const float metric = fs_transform_metric_scale_cpu(t);
-        const float pad = 1.5f / fmaxf(metric, 1e-4f);
+        const float min_scale = fs_round_rect_min_transform_scale(t);
+        const float pad = 1.5f / min_scale;
         fs_command_set_oriented_quad_from_rect(&cmd, t,
             rr.x - pad, rr.y - pad, rr.w + pad * 2.0f, rr.h + pad * 2.0f);
         cmd.flags |= FS_RENDER_FLAG_ORIENTED_QUAD;
@@ -6578,8 +6590,8 @@ bool fs_cmd_round_rect_stroke(
     }
     const FS_Transform2D* t = &st->current_transform;
     if (fs_transform_requires_oriented_quad(t)) {
-        const float metric = fs_transform_metric_scale_cpu(t);
-        const float pad = stroke_width * 0.5f + 1.5f / fmaxf(metric, 1e-4f);
+        const float min_scale = fs_round_rect_min_transform_scale(t);
+        const float pad = stroke_width * 0.5f + 1.5f / min_scale;
         fs_command_set_oriented_quad_from_rect(&cmd, t,
             rr.x - pad, rr.y - pad, rr.w + pad * 2.0f, rr.h + pad * 2.0f);
         cmd.flags |= FS_RENDER_FLAG_ORIENTED_QUAD;
