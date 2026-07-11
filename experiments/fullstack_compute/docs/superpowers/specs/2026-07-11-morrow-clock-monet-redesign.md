@@ -189,6 +189,100 @@ The demo keeps its current safe fallback behavior.
   menu.
 - If the selected city is removed, select the first remaining saved city.
 
+## Image-derived Monet themes
+
+The demo lets the user choose an image and generates a standard Monet theme
+from its content. GLFW does not provide native file dialogs. On Windows, the
+demo uses `GetOpenFileNameW` with the GLFW-owned HWND and these flags:
+
+- `OFN_FILEMUSTEXIST`
+- `OFN_PATHMUSTEXIST`
+- `OFN_NOCHANGEDIR`
+
+The Windows dialog exposes stb_image-supported raster formats: PNG, JPEG,
+BMP, TGA, GIF, PSD, HDR, PIC, PNM, PPM, and PGM. Its filter also provides an
+all-files option. Canceling the dialog leaves the current theme unchanged.
+Dialog errors are nonfatal and produce a runtime message. The target links
+`Comdlg32`.
+
+On non-Windows platforms, retain the theme-image button. Activating it reports
+that the native file picker is unsupported and leaves the theme unchanged.
+
+The selected wide-character path must not be converted to a narrow path for
+`stbi_load`. The demo reads the file through a Windows wide-path file API into
+memory, then calls stb_image memory decoding. This preserves paths containing
+non-ASCII characters. Opening the synchronous native dialog intentionally
+pauses rendering until the user selects a file or cancels it.
+
+Theme extraction vendors the official Material Color Utilities C++ source at
+commit `6fd88eb3e95ba1d457842e2a2bf847d06b3a018a`. Its behavior must match
+`sourceColorFromImage()` from `@material/material-color-utilities` version
+`0.3.0`:
+
+1. Decode the complete image to RGBA pixels.
+2. Include only pixels whose alpha value equals 255.
+3. Convert included pixels to opaque ARGB values.
+4. Run `QuantizerCelebi` with `max_colors = 128`.
+5. Run `Score` with its default options: desired count 4, filtering enabled,
+   and the library default fallback color.
+6. Use the first ranked color as the seed.
+7. Generate light and dark `SchemeTonalSpot` roles at contrast level `0.0`.
+
+If the image cannot be decoded or contains no fully opaque pixels, keep the
+current seed and report the failure. The implementation must not replace this
+pipeline with average color, median-cut-only extraction, or an ad hoc
+dominant-color histogram.
+
+## Seed persistence
+
+After successful extraction, save one opaque ARGB seed beside the executable
+in `morrow-theme.conf` with this exact format:
+
+```text
+seed_argb=0xFFB65F49
+```
+
+Resolve the executable directory with `GetModuleFileNameW`. Parse exactly eight
+hexadecimal ARGB digits, require alpha `FF`, and reject trailing non-whitespace
+content. Invalid or missing configuration falls back to `0xFFB65F49`.
+
+Write `morrow-theme.conf.tmp`, flush and close it, then atomically replace
+`morrow-theme.conf`. If the executable directory is not writable, keep the new
+theme for the current session and log a nonfatal persistence error. The demo
+does not persist the image path or image content. Load the saved seed before
+setting the initial clear color.
+
+## Motion
+
+Motion follows Material Design 3 timing while preserving the custom visual
+language.
+
+- Theme and image-seed changes last 500 milliseconds and use the MD3 emphasized
+  cubic Bezier curve `(0.05, 0.7, 0.1, 1.0)`.
+- Search focus lasts 200 milliseconds and uses the MD3 standard curve
+  `(0.2, 0, 0, 1.0)`.
+- Hover and pressed state changes last 150 milliseconds and use the same
+  standard curve.
+- Interpolate RGB channels in linear sRGB and alpha linearly.
+- If a new transition starts before the previous one finishes, use the
+  currently displayed palette as the new transition source.
+- Update the application clear color from the interpolated `surface` role on
+  every frame.
+- Display a visible search insertion caret with an approximately 530
+  millisecond visible phase and a 530 millisecond hidden phase.
+- Move the 24-hour track marker continuously from subsecond time instead of
+  advancing once per second.
+- Keep all animations nonblocking and responsive to input, except for the
+  intentional modal pause while the native file dialog is open.
+
+## Card control layout
+
+Each saved-city card reserves its full top-right 48 by 48 design-pixel region
+as the remove hit target. Place the UTC label on the city subtitle row, and end
+its text bounds at least 12 design pixels before the remove region begins. The
+daylight state remains in the lower-right area and must not overlap either the
+UTC bounds or the remove target.
+
 ## Verification
 
 Verification covers build success, runtime initialization, interaction, and
