@@ -85,10 +85,6 @@ void fs_effects_destroy(FS_Core* core) {
     if (res->gaussian_kernel_buffer) wgpuBufferRelease(res->gaussian_kernel_buffer);
     if (res->filter_uniform_buffer) wgpuBufferRelease(res->filter_uniform_buffer);
     if (res->shadow_uniform_buffer) wgpuBufferRelease(res->shadow_uniform_buffer);
-    if (res->presentation_pipeline) {
-        fs_effects_release_bg(res->presentation_scene_bg); res->presentation_scene_bg = NULL;
-        fs_effects_release_render_pipeline(res->presentation_pipeline); res->presentation_pipeline = NULL;
-    }
     if (res->shadow_composite_view) wgpuTextureViewRelease(res->shadow_composite_view);
     if (res->shadow_composite_texture) wgpuTextureRelease(res->shadow_composite_texture);
     fs_effects_release_compute_pipeline(res->drop_shadow_c_pipeline);
@@ -305,7 +301,7 @@ bool fs_effects_init(FS_Core* core) {
         if (!res->filter_copy_pipeline) ok = false;
     }
 
-    // 16. Create shadow sampler (needed by presentation_scene_bg and filter_copy_bg)
+    // 16. Create shadow sampler (needed by filter_copy and shadow passes)
     if (ok) {
         WGPUSamplerDescriptor sampDesc = {
             .nextInChain = NULL, .label = { .data = "FS Shadow Sampler", .length = 16 },
@@ -316,33 +312,7 @@ bool fs_effects_init(FS_Core* core) {
         res->shadow_sampler = wgpuDeviceCreateSampler(device, &sampDesc);
         if (!res->shadow_sampler) ok = false;
     }
-
-    // 17. Create presentation_scene_bg (samples scene_view -> render to canvas)
-    if (ok && res->filter_copy_bgl && res->shadow_sampler && res->scene_view) {
-        WGPUTextureViewDescriptor presSceneViewDesc = {
-            .nextInChain = NULL, .format = WGPUTextureFormat_RGBA8Unorm,
-            .dimension = WGPUTextureViewDimension_2D,
-            .baseMipLevel = 0, .mipLevelCount = 1,
-            .baseArrayLayer = 0, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All
-        };
-        WGPUTextureView presSceneTexView = wgpuTextureCreateView(res->scene_texture, &presSceneViewDesc);
-        if (presSceneTexView) {
-            WGPUBindGroupEntry presEntry[2];
-            memset(presEntry, 0, sizeof(presEntry));
-            presEntry[0].binding = 0; presEntry[0].textureView = presSceneTexView;
-            presEntry[1].binding = 1; presEntry[1].sampler = res->shadow_sampler;
-            WGPUBindGroupDescriptor presBGDesc = {
-                .nextInChain = NULL, .layout = res->filter_copy_bgl, .entryCount = 2, .entries = presEntry
-            };
-            res->presentation_scene_bg = wgpuDeviceCreateBindGroup(device, &presBGDesc);
-            wgpuTextureViewRelease(presSceneTexView);
-            if (!res->presentation_scene_bg) ok = false;
-        } else {
-            ok = false;
-        }
-    }
-
-    // 18. filter_copy_bg + filter_copy_bg_back are deferred to Phase 2
+    // 17. filter_copy_bg + filter_copy_bg_back are deferred to Phase 2
     //    (they depend on ping_pong_view_a which doesn't exist yet)
 
     if (!ok) { fs_effects_destroy(core); return false; }
@@ -674,7 +644,6 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
     // Always release and recreate scene texture/view
     if (res->scene_view) { wgpuTextureViewRelease(res->scene_view); res->scene_view = NULL; }
     if (res->scene_texture) { wgpuTextureRelease(res->scene_texture); res->scene_texture = NULL; }
-    if (res->presentation_pipeline) { fs_effects_release_bg(res->presentation_scene_bg); res->presentation_scene_bg = NULL; }
 
     // If filter textures have been lazy-initialized, release them too
     if (res->filter_textures_ready) {
@@ -833,121 +802,9 @@ bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height) {
             res->drop_shadow_bg = wgpuDeviceCreateBindGroup(device, &dsBGDesc);
         }
     }
-
-    // Always recreate presentation_scene_bg (samples scene_view -> render to canvas)
-    if (res->filter_copy_bgl && res->shadow_sampler && res->scene_texture) {
-        if (res->presentation_scene_bg) { fs_effects_release_bg(res->presentation_scene_bg); res->presentation_scene_bg = NULL; }
-        WGPUTextureViewDescriptor presSceneViewDesc = {
-            .nextInChain = NULL, .format = WGPUTextureFormat_RGBA8Unorm,
-            .dimension = WGPUTextureViewDimension_2D,
-            .baseMipLevel = 0, .mipLevelCount = 1,
-            .baseArrayLayer = 0, .arrayLayerCount = 1, .aspect = WGPUTextureAspect_All
-        };
-        WGPUTextureView presSceneTexView = wgpuTextureCreateView(res->scene_texture, &presSceneViewDesc);
-        if (presSceneTexView) {
-            WGPUBindGroupEntry presEntry[2];
-            memset(presEntry, 0, sizeof(presEntry));
-            presEntry[0].binding = 0; presEntry[0].textureView = presSceneTexView;
-            presEntry[1].binding = 1; presEntry[1].sampler = res->shadow_sampler;
-            WGPUBindGroupDescriptor presBGDesc = {
-                .nextInChain = NULL, .layout = res->filter_copy_bgl, .entryCount = 2, .entries = presEntry
-            };
-            res->presentation_scene_bg = wgpuDeviceCreateBindGroup(device, &presBGDesc);
-            wgpuTextureViewRelease(presSceneTexView);
-            if (!res->presentation_scene_bg) return false;
-        } else {
-            return false;
-        }
-    }
-
     res->kernel_dirty = true; return true;
 }
 
-bool fs_effects_create_presentation_pipeline(FS_Core* core, WGPUTextureFormat surface_format) {
-    if (!core) return false;
-    struct FS_EffectResources* fx = fs_core_get_effects_resources(core);
-    if (!fx || !fx->filter_copy_shader_module || !fx->vert_shader_module || !fx->filter_copy_bgl) return false;
-    if (fx->presentation_pipeline) {
-        wgpuRenderPipelineRelease(fx->presentation_pipeline);
-        fx->presentation_pipeline = NULL;
-    }
-    if (fx->presentation_scene_bg) {
-        fs_effects_release_bg(fx->presentation_scene_bg);
-        fx->presentation_scene_bg = NULL;
-    }
-    // Create explicit pipeline layout from filter_copy_bgl so bind groups are compatible
-    WGPUPipelineLayoutDescriptor plDesc = {
-        .nextInChain = NULL,
-        .label = { .data = "FS Presentation Layout", .length = 22 },
-        .bindGroupLayoutCount = 1,
-        .bindGroupLayouts = &fx->filter_copy_bgl
-    };
-    WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(core->device, &plDesc);
-    if (!pl) return false;
-    WGPUColorTargetState presTarget = {
-        .nextInChain = NULL,
-        .format = surface_format,
-        .blend = NULL,
-        .writeMask = WGPUColorWriteMask_All
-    };
-    WGPUFragmentState presFrag = {
-        .nextInChain = NULL,
-        .module = fx->filter_copy_shader_module,
-        .entryPoint = { .data = "filter_copy_fs_main", .length = 19 },
-        .constantCount = 0, .constants = NULL,
-        .targetCount = 1, .targets = &presTarget
-    };
-    WGPURenderPipelineDescriptor rpDesc = {
-        .nextInChain = NULL,
-        .label = { .data = "FS Presentation", .length = 18 },
-        .layout = pl,
-        .vertex = {
-            .module = fx->vert_shader_module,
-            .entryPoint = { .data = "fs_vs_main", .length = 10 },
-            .constantCount = 0, .constants = NULL,
-            .buffers = NULL, .bufferCount = 0
-        },
-        .primitive = {
-            .topology = WGPUPrimitiveTopology_TriangleList,
-            .stripIndexFormat = WGPUIndexFormat_Undefined,
-            .frontFace = WGPUFrontFace_CCW,
-            .cullMode = WGPUCullMode_None
-        },
-        .depthStencil = NULL,
-        .multisample = { .count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false },
-        .fragment = &presFrag
-    };
-    fx->presentation_pipeline = wgpuDeviceCreateRenderPipeline(core->device, &rpDesc);
-    wgpuPipelineLayoutRelease(pl);
-    if (!fx->presentation_pipeline) return false;
-
-    // Create presentation_scene_bg: samples scene_view for presentation to canvas
-    // View uses scene texture's native format (RGBA8Unorm). Color space conversion
-    // (linear ↔ sRGB) is handled by the pipeline's render target format.
-    if (fx->scene_texture && fx->shadow_sampler) {
-        WGPUTextureViewDescriptor sceneViewDesc = {
-            .nextInChain = NULL,
-            .format = WGPUTextureFormat_RGBA8Unorm,  // matches scene_texture's format
-            .dimension = WGPUTextureViewDimension_2D,
-            .baseMipLevel = 0, .mipLevelCount = 1,
-            .baseArrayLayer = 0, .arrayLayerCount = 1,
-            .aspect = WGPUTextureAspect_All
-        };
-        WGPUTextureView presSceneView = wgpuTextureCreateView(fx->scene_texture, &sceneViewDesc);
-        if (presSceneView) {
-            WGPUBindGroupEntry presEntry[2];
-            memset(presEntry, 0, sizeof(presEntry));
-            presEntry[0].binding = 0; presEntry[0].textureView = presSceneView;
-            presEntry[1].binding = 1; presEntry[1].sampler = fx->shadow_sampler;
-            WGPUBindGroupDescriptor presBGDesc = {
-                .nextInChain = NULL, .layout = fx->filter_copy_bgl, .entryCount = 2, .entries = presEntry
-            };
-            fx->presentation_scene_bg = wgpuDeviceCreateBindGroup(core->device, &presBGDesc);
-            wgpuTextureViewRelease(presSceneView);
-        }
-    }
-    return true;
-}
 
 bool fs_style_set_physical_shadow(FS_Core* core, const FS_PhysicalShadowParams* params) {
     if (!core || !params) return false;

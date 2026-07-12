@@ -1,6 +1,7 @@
 #include "fullstack_core_private.h"
 #include "fullstack_core_debug.h"
 #include "fullstack_shaders.h"
+#include "fullstack_present.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -2884,7 +2885,7 @@ static bool fs_create_pipelines_and_bindings(FS_Core* core) {
     };
     WGPUColorTargetState target = {
         // Use RGBA8Unorm to match scene_texture (always used as render target).
-        // presentation_pipeline handles canvas swap chain format (BGRA8UnormSrgb).
+        // legacy FS_Presenter handles the canvas output format (BGRA8UnormSrgb).
         .format = WGPUTextureFormat_RGBA8Unorm,
         .blend = NULL,
         .writeMask = WGPUColorWriteMask_All
@@ -4283,7 +4284,7 @@ static bool fs_update_clip_layer_uniform(FS_Core* core) {
     return true;
 }
 
-bool fs_core_encode(
+static bool fs_core_encode_internal(
     FS_Core* core,
     WGPUCommandEncoder encoder,
     WGPUTexture target_texture,
@@ -4291,7 +4292,8 @@ bool fs_core_encode(
     float clear_r,
     float clear_g,
     float clear_b,
-    float clear_a
+    float clear_a,
+    bool allow_presentation
 ) {
     if (!core || !encoder || !target_view) {
         return false;
@@ -4372,7 +4374,7 @@ bool fs_core_encode(
     }
 
     // Always render to scene_texture (RGBA8Unorm) — the main render pipeline is created
-    // with scene_texture's format. Use presentation_pipeline to copy to canvas swap chain.
+    // with scene_texture's format. Use the external Presenter to copy to an output target.
     FS_EffectResources* fx = fs_core_get_effects_resources(core);
     FS_FilterChain* active_chain = NULL;
     bool effects_active = false;
@@ -4448,75 +4450,24 @@ bool fs_core_encode(
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
 
-    // Execute filter pipeline if effects are active
-    // Filter pipeline reads from scene_texture (RGBA8Unorm) -> applies filters via ping-pong -> writes back to scene_texture
-    // Then presentation_pipeline copies scene_texture -> canvas (with format conversion)
+    // Filters transform the internal scene texture and never own presentation.
     if (effects_active && active_chain && fx && fx->scene_texture) {
-        if (!fs_filter_chain_execute(core, encoder, fx->scene_texture, target_view, active_chain)) {
-            fprintf(stderr, "[FS] Filter chain execution failed\n");
-        }
-        // Present the filtered result: presentation_pipeline samples scene_texture -> canvas
-        if (fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
-            WGPURenderPassColorAttachment pres_att = {
-                .view = target_view,
-                .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
-                .resolveTarget = NULL,
-                .loadOp = WGPULoadOp_Clear,
-                .storeOp = WGPUStoreOp_Store,
-                .clearValue = {0.0f, 0.0f, 0.0f, 0.0f}
-            };
-            WGPURenderPassDescriptor pres_desc = {
-                .nextInChain = NULL,
-                .label = { .data = "FS Presentation Copy", .length = 20 },
-                .colorAttachmentCount = 1,
-                .colorAttachments = &pres_att,
-                .depthStencilAttachment = NULL,
-                .occlusionQuerySet = NULL,
-                .timestampWrites = NULL
-            };
-            WGPURenderPassEncoder pres_pass = wgpuCommandEncoderBeginRenderPass(encoder, &pres_desc);
-            if (pres_pass) {
-                wgpuRenderPassEncoderSetViewport(pres_pass, 0.0f, 0.0f, (float)core->width, (float)core->height, 0.0f, 1.0f);
-                wgpuRenderPassEncoderSetPipeline(pres_pass, fx->presentation_pipeline);
-                wgpuRenderPassEncoderSetBindGroup(pres_pass, 0, fx->presentation_scene_bg, 0, NULL);
-                wgpuRenderPassEncoderDraw(pres_pass, 3, 1, 0, 0);
-                wgpuRenderPassEncoderEnd(pres_pass);
-                wgpuRenderPassEncoderRelease(pres_pass);
-            }
-        }
-    } else {
-        // No effects: copy scene_texture -> canvas using presentation_pipeline
-        if (fx && fx->presentation_pipeline && fx->presentation_scene_bg && target_texture) {
-            WGPURenderPassColorAttachment pres_att = {
-                .view = target_view,
-                .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
-                .resolveTarget = NULL,
-                .loadOp = WGPULoadOp_Clear,
-                .storeOp = WGPUStoreOp_Store,
-                .clearValue = {0.0f, 0.0f, 0.0f, 0.0f}
-            };
-            WGPURenderPassDescriptor pres_desc = {
-                .nextInChain = NULL,
-                .label = { .data = "FS Presentation Copy", .length = 20 },
-                .colorAttachmentCount = 1,
-                .colorAttachments = &pres_att,
-                .depthStencilAttachment = NULL,
-                .occlusionQuerySet = NULL,
-                .timestampWrites = NULL
-            };
-            WGPURenderPassEncoder pres_pass = wgpuCommandEncoderBeginRenderPass(encoder, &pres_desc);
-            if (pres_pass) {
-                wgpuRenderPassEncoderSetViewport(pres_pass, 0.0f, 0.0f, (float)core->width, (float)core->height, 0.0f, 1.0f);
-                wgpuRenderPassEncoderSetPipeline(pres_pass, fx->presentation_pipeline);
-                wgpuRenderPassEncoderSetBindGroup(pres_pass, 0, fx->presentation_scene_bg, 0, NULL);
-                wgpuRenderPassEncoderDraw(pres_pass, 3, 1, 0, 0);
-                wgpuRenderPassEncoderEnd(pres_pass);
-                wgpuRenderPassEncoderRelease(pres_pass);
-            }
+        if (!fs_filter_chain_execute(core, encoder, fx->scene_texture,
+                                     fx->scene_view, active_chain)) {
+            return false;
         }
     }
 
-    if (target_texture) {
+    // Deprecated compatibility output path. New code consumes
+    // fs_core_encode_scene() and owns FS_Presenter outside Core.
+    if (allow_presentation && target_texture && core->legacy_presenter) {
+        if (fs_presenter_set_source(core->legacy_presenter, fx->scene_view, NULL) != FS_RESULT_OK ||
+            fs_presenter_encode(core->legacy_presenter, encoder, target_view,
+                                core->width, core->height, NULL) != FS_RESULT_OK) {
+            return false;
+        }
+    }
+    if (allow_presentation && target_texture) {
         if (!fs_encode_canvas_readback_copy(core, encoder, target_texture)) {
             core->canvas_shadow_serial = 0u;
         }
@@ -4524,6 +4475,55 @@ bool fs_core_encode(
     return true;
 }
 
+bool fs_core_encode(
+    FS_Core* core,
+    WGPUCommandEncoder encoder,
+    WGPUTexture target_texture,
+    WGPUTextureView target_view,
+    float clear_r,
+    float clear_g,
+    float clear_b,
+    float clear_a
+) {
+    return fs_core_encode_internal(core, encoder, target_texture, target_view,
+                                   clear_r, clear_g, clear_b, clear_a, true);
+}
+
+bool fs_core_encode_scene(
+    FS_Core* core,
+    WGPUCommandEncoder encoder,
+    float clear_r,
+    float clear_g,
+    float clear_b,
+    float clear_a,
+    FS_CoreSceneOutput* out_scene
+) {
+    if (out_scene) memset(out_scene, 0, sizeof(*out_scene));
+    if (!core || !encoder || !out_scene) return false;
+    FS_EffectResources* fx = fs_core_get_effects_resources(core);
+    if (!fx || !fx->scene_texture || !fx->scene_view) return false;
+    if (!fs_core_encode_internal(core, encoder, NULL, fx->scene_view,
+                                 clear_r, clear_g, clear_b, clear_a, false)) {
+        return false;
+    }
+    out_scene->struct_size = sizeof(*out_scene);
+    out_scene->texture = fx->scene_texture;
+    out_scene->view = fx->scene_view;
+    out_scene->format = WGPUTextureFormat_RGBA8Unorm;
+    out_scene->width = core->width;
+    out_scene->height = core->height;
+    out_scene->generation = (uint64_t)core->clip_frame_index;
+    return true;
+}
+bool fs_core_legacy_set_presentation_format(FS_Core* core, WGPUTextureFormat target_format) {
+    if (!core) return false;
+    if (core->legacy_presenter) {
+        fs_presenter_destroy(core->legacy_presenter);
+        core->legacy_presenter = NULL;
+    }
+    FS_PresenterDesc desc = { sizeof(desc), core->device, target_format };
+    return fs_presenter_create(&desc, &core->legacy_presenter, NULL) == FS_RESULT_OK;
+}
 void fs_core_notify_submission(FS_Core* core, WGPUSubmissionIndex submission_index) {
     if (!core) {
         return;

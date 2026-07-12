@@ -93,8 +93,6 @@ struct FS_EffectResources {
     WGPUSampler shadow_sampler;
 
     // Presentation (render to canvas) - pipeline with target surface format
-    WGPURenderPipeline presentation_pipeline;
-    WGPUBindGroup presentation_scene_bg;  // samples scene_view (RGBA8Unorm) for canvas presentation
 
     // Kernel state
     FS_GaussianKernel current_kernel;
@@ -148,8 +146,6 @@ bool fs_gaussian_kernel_compute_for_blur(
 struct FS_EffectResources* fs_core_get_effects_resources(FS_Core* core);
 void fs_core_set_effects_resources(FS_Core* core, struct FS_EffectResources* effects);
 
-// Create presentation pipeline with the given target surface format
-bool fs_effects_create_presentation_pipeline(FS_Core* core, WGPUTextureFormat surface_format);
 
 #ifdef __cplusplus
 }

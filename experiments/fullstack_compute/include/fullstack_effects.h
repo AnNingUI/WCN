@@ -51,8 +51,6 @@ bool fs_effects_init(FS_Core* core);
 void fs_effects_destroy(FS_Core* core);
 bool fs_effects_resize(FS_Core* core, uint32_t width, uint32_t height);
 
-// 创建 presentation pipeline（使用 canvas surface format）
-bool fs_effects_create_presentation_pipeline(FS_Core* core, WGPUTextureFormat surface_format);
 
 // 高斯核计算
 bool fs_gaussian_kernel_compute(FS_GaussianKernel* out_kernel, float sigma, uint32_t kernel_size);

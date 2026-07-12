@@ -224,6 +224,25 @@ void fs_context_reset(FS_Core* core);
 bool fs_core_is_context_lost(const FS_Core* core);
 bool fs_core_get_context_attributes(const FS_Core* core, FS_ContextAttributes* out_attributes);
 
+typedef struct FS_CoreSceneOutput {
+    uint32_t struct_size;
+    WGPUTexture texture;
+    WGPUTextureView view;
+    WGPUTextureFormat format;
+    uint32_t width;
+    uint32_t height;
+    uint64_t generation;
+} FS_CoreSceneOutput;
+bool fs_core_encode_scene(
+    FS_Core* core,
+    WGPUCommandEncoder encoder,
+    float clear_r,
+    float clear_g,
+    float clear_b,
+    float clear_a,
+    FS_CoreSceneOutput* out_scene
+);
+
 bool fs_core_encode(
     FS_Core* core,
     WGPUCommandEncoder encoder,
@@ -234,6 +253,7 @@ bool fs_core_encode(
     float clear_b,
     float clear_a
 );
+bool fs_core_legacy_set_presentation_format(FS_Core* core, WGPUTextureFormat target_format);
 void fs_core_notify_submission(FS_Core* core, WGPUSubmissionIndex submission_index);
 
 bool fs_cmd_rect(FS_Core* core, float x, float y, float w, float h, float radius, uint32_t color);

@@ -431,6 +431,7 @@ typedef struct FS_MapReadbackContext {
 
 // Forward declaration (opaque type, defined in fullstack_effects.h)
 typedef struct FS_EffectResources FS_EffectResources;
+typedef struct FS_Presenter FS_Presenter;
 
 typedef struct FS_ClipEdge {
     float x0;
@@ -567,6 +568,7 @@ struct FS_Core {
     uint32_t clip_layer_reuse_reserve;
     FS_ContextAttributes context_attributes;
     FS_EffectResources* effects;
+    FS_Presenter* legacy_presenter;
 
     FS_Command* commands;
     FS_CommandStateGPU* command_states;

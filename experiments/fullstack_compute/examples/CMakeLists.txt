@@ -36,6 +36,7 @@ find_package(Freetype QUIET)
 # Helper macro: link GLFW + WGPU + Freetype to a target
 # ---------------------------------------------------------------------------
 macro(fs_example_link target)
+    target_link_libraries(${target} PRIVATE fullstack_present)
     if(TARGET GLFW::GLFW)
         target_link_libraries(${target} PRIVATE GLFW::GLFW)
     elseif(GLFW_LIBRARIES)

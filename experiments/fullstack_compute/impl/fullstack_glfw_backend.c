@@ -305,7 +305,7 @@ bool fs_glfw_backend_init(FS_GlfwBackend* backend, uint32_t width, uint32_t heig
         return false;
     }
     // Create presentation pipeline with canvas surface format (BGRA8UnormSrgb)
-    if (!fs_effects_create_presentation_pipeline(backend->core, backend->surface_format)) {
+    if (!fs_core_legacy_set_presentation_format(backend->core, backend->surface_format)) {
         fs_glfw_backend_shutdown(backend);
         return false;
     }
@@ -405,7 +405,7 @@ bool fs_glfw_backend_present(FS_GlfwBackend* backend, float clear_r, float clear
             fprintf(stderr, "Surface reconfigure failed (resize to %dx%d)\n", fb_w, fb_h);
             return false;
         }
-        fs_effects_create_presentation_pipeline(backend->core, backend->surface_format);
+        fs_core_legacy_set_presentation_format(backend->core, backend->surface_format);
     }
 
     WGPUSurfaceTexture surface_texture = {0};
@@ -431,7 +431,7 @@ bool fs_glfw_backend_present(FS_GlfwBackend* backend, float clear_r, float clear
                     );
                     return false;
                 }
-                fs_effects_create_presentation_pipeline(backend->core, backend->surface_format);
+                fs_core_legacy_set_presentation_format(backend->core, backend->surface_format);
                 wgpuSurfaceGetCurrentTexture(backend->surface, &surface_texture);
                 if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
                     surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {

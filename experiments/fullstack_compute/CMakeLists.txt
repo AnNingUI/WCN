@@ -97,6 +97,58 @@ target_include_directories(fullstack_backend_mock
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 target_link_libraries(fullstack_backend_mock PUBLIC fullstack_app)
+
+
+add_library(fullstack_present STATIC
+    src/present/fullstack_present.c
+)
+target_include_directories(fullstack_present PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${WCN_ROOT}/external/wgpu/include
+)
+target_link_libraries(fullstack_present PUBLIC fullstack_result PRIVATE ${WGPU_LIBRARY})
+set(FS_CORE_RUNTIME_SOURCES
+    src/fullstack_core.c
+    src/fullstack_core_paint.c
+    src/fullstack_core_path2d.c
+    src/fullstack_core_transform.c
+    src/fullstack_core_util.c
+    src/fullstack_core_atlas.c
+    src/fullstack_core_upload.c
+    src/fullstack_core_canvas.c
+    src/fullstack_core_gpu_common.c
+    src/fullstack_core_clip_resources.c
+    src/fullstack_core_text_glyph.c
+    src/fullstack_core_text_image_font.c
+    src/fullstack_core_text_api.c
+    src/fullstack_core_style_api.c
+    src/fullstack_core_style.c
+    src/fullstack_effects.c
+    src/fullstack_filters.c
+    impl/fullstack_stb_image_backend.c
+    impl/fullstack_stb_font_backend.c
+    impl/fullstack_stb_cbdt_parser.c
+    impl/fullstack_freetype2_font_backend.c
+)
+add_library(fullstack_core_runtime STATIC ${FS_CORE_RUNTIME_SOURCES})
+target_include_directories(fullstack_core_runtime
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/impl
+            ${WCN_ROOT}/include
+            ${WCN_ROOT}/external/wgpu/include
+            ${WCN_ROOT}/external/stb/include
+)
+target_link_libraries(fullstack_core_runtime PUBLIC fullstack_gpu fullstack_present PRIVATE ${WGPU_LIBRARY})
+find_package(Freetype QUIET)
+if(FREETYPE_FOUND)
+    target_compile_definitions(fullstack_core_runtime PRIVATE FS_HAS_FREETYPE2=1)
+    target_include_directories(fullstack_core_runtime PRIVATE ${FREETYPE_INCLUDE_DIRS})
+    target_link_libraries(fullstack_core_runtime PRIVATE ${FREETYPE_LIBRARIES})
+endif()
+if(NOT MSVC)
+    target_link_libraries(fullstack_core_runtime PRIVATE m)
+endif()
 add_subdirectory(examples)
 
 if(BUILD_TESTING)
