@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.11)
 project(wcn_fullstack_compute_experiment C CXX)
 
+include(CTest)
+
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
@@ -49,3 +51,7 @@ if(WIN32)
 endif()
 
 add_subdirectory(examples)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
