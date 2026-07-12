@@ -57,6 +57,16 @@ add_library(fullstack_result STATIC
 target_include_directories(fullstack_result PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+add_library(fullstack_gpu STATIC
+    src/fullstack_gpu.c
+)
+target_include_directories(fullstack_gpu
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${WCN_ROOT}/external/wgpu/include
+)
+target_link_libraries(fullstack_gpu PUBLIC fullstack_result PRIVATE ${WGPU_LIBRARY})
 add_subdirectory(examples)
 
 if(BUILD_TESTING)
