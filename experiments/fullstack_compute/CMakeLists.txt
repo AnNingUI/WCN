@@ -50,6 +50,13 @@ if(WIN32)
     )
 endif()
 
+add_library(fullstack_result STATIC
+    src/fullstack_abi.c
+    src/fullstack_result.c
+)
+target_include_directories(fullstack_result PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 add_subdirectory(examples)
 
 if(BUILD_TESTING)

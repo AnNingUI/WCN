@@ -1,6 +1,13 @@
-﻿add_test(
+add_test(
     NAME fs_architecture_layers
     COMMAND ${CMAKE_COMMAND}
         -DFS_SOURCE_ROOT=${FS_ROOT}
         -P ${FS_ROOT}/tests/architecture_layer_test.cmake
 )
+add_executable(fs_result_abi_tests result_abi_tests.c)
+target_link_libraries(fs_result_abi_tests PRIVATE fullstack_result)
+add_test(NAME fs_result_abi COMMAND fs_result_abi_tests)
+
+add_executable(fs_result_abi_cpp_tests result_abi_cpp_tests.cpp)
+target_link_libraries(fs_result_abi_cpp_tests PRIVATE fullstack_result)
+add_test(NAME fs_result_abi_cpp COMMAND fs_result_abi_cpp_tests)
