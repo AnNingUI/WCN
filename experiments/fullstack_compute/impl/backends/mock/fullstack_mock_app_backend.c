@@ -1,0 +1,20 @@
+﻿#include "fullstack_mock_app_backend.h"
+#include "fullstack_app_private.h"
+#include <string.h>
+
+typedef struct FS_MockBackend { FS_AppBackendHost* host; uint32_t windows; uint32_t wakes; } FS_MockBackend;
+typedef struct FS_MockWindow { FS_MockBackend* backend; FS_AppWindowMetrics metrics; bool should_close; } FS_MockWindow;
+static FS_Result FS_CALL mock_create(FS_AppBackendHost*h,const FS_AppBackendDesc*d,FS_BackendInstance**out,FS_Error*e){(void)d;(void)e;if(out)*out=NULL;if(!h||!out)return FS_RESULT_INVALID_ARGUMENT;FS_MockBackend*m=(FS_MockBackend*)fs_allocator_allocate(h->allocator,sizeof(*m),sizeof(void*));if(!m)return FS_RESULT_OUT_OF_MEMORY;memset(m,0,sizeof(*m));m->host=h;*out=(FS_BackendInstance*)m;return FS_RESULT_OK;}
+static void FS_CALL mock_destroy(FS_BackendInstance*i){FS_MockBackend*m=(FS_MockBackend*)i;if(m)fs_allocator_deallocate(m->host->allocator,m,sizeof(*m),sizeof(void*));}
+static FS_Result FS_CALL mock_create_window(FS_BackendInstance*i,const FS_AppWindowDesc*d,FS_BackendWindow**out,FS_Error*e){(void)e;if(out)*out=NULL;if(!i||!d||!out)return FS_RESULT_INVALID_ARGUMENT;FS_MockBackend*m=(FS_MockBackend*)i;FS_MockWindow*w=(FS_MockWindow*)fs_allocator_allocate(m->host->allocator,sizeof(*w),sizeof(void*));if(!w)return FS_RESULT_OUT_OF_MEMORY;memset(w,0,sizeof(*w));w->backend=m;w->metrics.struct_size=sizeof(w->metrics);w->metrics.logical_width=d->width;w->metrics.logical_height=d->height;w->metrics.framebuffer_width=d->width;w->metrics.framebuffer_height=d->height;w->metrics.scale_x=w->metrics.scale_y=1;m->windows++;*out=(FS_BackendWindow*)w;return FS_RESULT_OK;}
+static void FS_CALL mock_destroy_window(FS_BackendInstance*i,FS_BackendWindow*w){FS_MockBackend*m=(FS_MockBackend*)i;if(!m||!w)return;if(m->windows)m->windows--;fs_allocator_deallocate(m->host->allocator,w,sizeof(FS_MockWindow),sizeof(void*));}
+static FS_Result FS_CALL mock_pump(FS_BackendInstance*i,FS_AppPumpMode mode,uint64_t timeout,FS_Error*e){(void)i;(void)mode;(void)timeout;(void)e;return FS_RESULT_OK;}
+static void FS_CALL mock_wake(FS_BackendInstance*i){FS_MockBackend*m=(FS_MockBackend*)i;if(m)m->wakes++;}
+static FS_Result FS_CALL mock_metrics(FS_BackendInstance*i,FS_BackendWindow*w,FS_AppWindowMetrics*out,FS_Error*e){(void)i;(void)e;if(!w||!out)return FS_RESULT_INVALID_ARGUMENT;*out=((FS_MockWindow*)w)->metrics;return FS_RESULT_OK;}
+static bool FS_CALL mock_should_close(FS_BackendInstance*i,FS_BackendWindow*w){(void)i;return w?((FS_MockWindow*)w)->should_close:true;}
+static const FS_CapabilityHeader* FS_CALL mock_cap(FS_BackendInstance*i,uint32_t id,uint32_t version){(void)i;(void)id;(void)version;return NULL;}
+static const FS_AppBackendOps mock_ops={sizeof(mock_ops),FS_APP_BACKEND_ABI_VERSION,mock_create,mock_destroy,mock_create_window,mock_destroy_window,mock_pump,mock_wake,mock_metrics,mock_should_close,mock_cap};
+static const FS_AppBackendFactory mock_factory={sizeof(mock_factory),FS_APP_BACKEND_ABI_VERSION,"mock",&mock_ops};
+FS_Result FS_CALL fs_app_register_mock_backend(FS_Error*e){if(fs_app_backend_find("mock"))return FS_RESULT_OK;return fs_app_backend_register(&mock_factory,e);}
+FS_Result FS_CALL fs_mock_backend_inject_event(FS_App*a,const FS_AppEvent*event,FS_Error*e){if(!a||!event||!a->backend||!a->factory||strcmp(a->factory->name,"mock")!=0)return FS_RESULT_INVALID_ARGUMENT;return a->host.enqueue_event(&a->host,event,e);}
+FS_Result FS_CALL fs_mock_window_set_metrics(FS_AppWindow*w,const FS_AppWindowMetrics*m,FS_Error*e){if(!w||!m||!w->app||strcmp(w->app->factory->name,"mock")!=0)return FS_RESULT_INVALID_ARGUMENT;FS_MockWindow*mw=(FS_MockWindow*)w->backend_window;mw->metrics=*m;FS_AppEvent event=FS_APP_EVENT_INIT;event.type=FS_APP_EVENT_FRAMEBUFFER_RESIZED;event.window_id=w->id;event.data.window.logical_width=m->logical_width;event.data.window.logical_height=m->logical_height;event.data.window.framebuffer_width=m->framebuffer_width;event.data.window.framebuffer_height=m->framebuffer_height;event.data.window.scale_x=m->scale_x;event.data.window.scale_y=m->scale_y;return w->app->host.enqueue_event(&w->app->host,&event,e);}

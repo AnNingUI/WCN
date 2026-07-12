@@ -78,6 +78,25 @@ target_include_directories(fullstack_app_foundation
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 target_link_libraries(fullstack_app_foundation PUBLIC fullstack_result Threads::Threads)
+
+add_library(fullstack_app STATIC
+    src/app/fullstack_app_backend_registry.c
+    src/app/fullstack_app.c
+)
+target_include_directories(fullstack_app
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+)
+target_link_libraries(fullstack_app PUBLIC fullstack_app_foundation fullstack_gpu Threads::Threads)
+
+add_library(fullstack_backend_mock STATIC
+    impl/backends/mock/fullstack_mock_app_backend.c
+)
+target_include_directories(fullstack_backend_mock
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+)
+target_link_libraries(fullstack_backend_mock PUBLIC fullstack_app)
 add_subdirectory(examples)
 
 if(BUILD_TESTING)
