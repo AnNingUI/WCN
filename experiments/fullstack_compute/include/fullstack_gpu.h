@@ -1,6 +1,10 @@
 #ifndef FULLSTACK_GPU_H
 #define FULLSTACK_GPU_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "fullstack_result.h"
 #include <webgpu/wgpu.h>
 
@@ -101,5 +105,9 @@ FS_API FS_Result FS_CALL fs_gpu_submission_status(const FS_GpuContext* context,
                                                   FS_SubmissionToken token,
                                                   FS_SubmissionStatus* out_status,
                                                   FS_Error* error);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

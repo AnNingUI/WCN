@@ -1,5 +1,9 @@
-﻿#ifndef FULLSTACK_ABI_H
+#ifndef FULLSTACK_ABI_H
 #define FULLSTACK_ABI_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -75,5 +79,9 @@ FS_API FS_Result FS_CALL fs_abi_validate_header(const FS_AbiHeader* header,
 FS_API bool FS_CALL fs_abi_has_field(uint32_t struct_size,
                                      size_t field_offset,
                                      size_t field_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

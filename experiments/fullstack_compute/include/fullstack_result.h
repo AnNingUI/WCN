@@ -1,5 +1,9 @@
-﻿#ifndef FULLSTACK_RESULT_H
+#ifndef FULLSTACK_RESULT_H
 #define FULLSTACK_RESULT_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "fullstack_abi.h"
 #include <stdarg.h>
@@ -85,5 +89,9 @@ FS_API void FS_CALL fs_diagnostic_emit(const FS_DiagnosticSink* sink,
 #define FS_ERROR_SET(error, code, domain, native_code, operation, format, ...) \
     fs_error_set((error), (code), (domain), (native_code), (operation), \
                  __FILE__, (uint32_t)__LINE__, (format), ##__VA_ARGS__)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -67,6 +67,17 @@ target_include_directories(fullstack_gpu
             ${WCN_ROOT}/external/wgpu/include
 )
 target_link_libraries(fullstack_gpu PUBLIC fullstack_result PRIVATE ${WGPU_LIBRARY})
+
+find_package(Threads REQUIRED)
+add_library(fullstack_app_foundation STATIC
+    src/app/fullstack_app_event.c
+    src/app/fullstack_app_runtime.c
+)
+target_include_directories(fullstack_app_foundation
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+)
+target_link_libraries(fullstack_app_foundation PUBLIC fullstack_result Threads::Threads)
 add_subdirectory(examples)
 
 if(BUILD_TESTING)
