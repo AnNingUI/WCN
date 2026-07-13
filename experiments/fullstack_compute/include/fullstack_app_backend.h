@@ -86,8 +86,9 @@ typedef struct FS_AppWindowDesc {
     bool resizable, visible, decorated, transparent, high_dpi;
     void* native_window;
     FS_ResourceOwnership native_window_ownership;
+    FS_AppWindowId stable_id;
 } FS_AppWindowDesc;
-#define FS_APP_WINDOW_DESC_INIT { sizeof(FS_AppWindowDesc), "WCN", 1280, 720, true, true, true, false, true, NULL, FS_RESOURCE_NONE }
+#define FS_APP_WINDOW_DESC_INIT { sizeof(FS_AppWindowDesc), "WCN", 1280, 720, true, true, true, false, true, NULL, FS_RESOURCE_NONE, 0 }
 
 typedef FS_Result (FS_CALL *FS_BackendHostEnqueueFn)(FS_AppBackendHost*, const FS_AppEvent*, FS_Error*);
 typedef FS_Result (FS_CALL *FS_BackendHostPostTaskFn)(FS_AppBackendHost*, FS_AppTaskFn, void*, FS_AppTaskDestroyFn, FS_Error*);

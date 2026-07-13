@@ -122,6 +122,7 @@ FS_API uint32_t FS_CALL fs_event_queue_drain(FS_EventQueue* queue,
                                               FS_AppEvent* events,
                                               uint32_t capacity);
 FS_API void FS_CALL fs_app_event_release(FS_AppEvent* event);
+FS_API void FS_CALL fs_app_owned_bytes_release(FS_AppOwnedBytes* bytes);
 FS_API FS_Result FS_CALL fs_app_event_set_utf8(FS_AppEvent* event,
                                                 const char* utf8,
                                                 uint32_t byte_count,

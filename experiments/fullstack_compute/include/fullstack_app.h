@@ -26,11 +26,12 @@ typedef struct FS_AppDesc {
     FS_DiagnosticSink diagnostics;
     const char* backend_name;
     FS_GpuContext* gpu;
+    bool create_gpu_if_missing;
     FS_EventQueueDesc event_queue;
     bool create_default_window;
     FS_AppWindowDesc default_window;
 } FS_AppDesc;
-#define FS_APP_DESC_INIT { sizeof(FS_AppDesc), NULL, {0}, NULL, NULL, FS_EVENT_QUEUE_DESC_INIT, false, FS_APP_WINDOW_DESC_INIT }
+#define FS_APP_DESC_INIT { sizeof(FS_AppDesc), NULL, {0}, NULL, NULL, true, FS_EVENT_QUEUE_DESC_INIT, false, FS_APP_WINDOW_DESC_INIT }
 
 FS_API FS_Result FS_CALL fs_app_create(const FS_AppDesc* desc, FS_App** out_app, FS_Error* error);
 FS_API FS_Result FS_CALL fs_app_begin_destroy(FS_App* app, FS_Error* error);
@@ -45,7 +46,12 @@ FS_API uint32_t FS_CALL fs_app_window_count(const FS_App* app);
 FS_API FS_AppWindow* FS_CALL fs_app_window_at(FS_App* app, uint32_t index);
 FS_API FS_AppWindow* FS_CALL fs_app_find_window(FS_App* app, FS_AppWindowId id);
 FS_API FS_AppWindowId FS_CALL fs_app_window_id(const FS_AppWindow* window);
+FS_API FS_BackendWindow* FS_CALL fs_app_window_backend_handle(
+    FS_AppWindow* window);
+FS_API const char* FS_CALL fs_app_backend_name(const FS_App* app);
 FS_API const FS_AppWindowMetrics* FS_CALL fs_app_window_metrics(const FS_AppWindow* window);
+FS_API FS_Result FS_CALL fs_app_refresh_window_metrics(
+    FS_AppWindow* window, FS_Error* error);
 FS_API const FS_InputState* FS_CALL fs_app_window_input(const FS_AppWindow* window);
 FS_API FS_AppState FS_CALL fs_app_state(const FS_App* app);
 FS_API const FS_AppThreadRoles* FS_CALL fs_app_thread_roles(const FS_App* app);

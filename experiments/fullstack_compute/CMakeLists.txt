@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.11)
 project(wcn_fullstack_compute_experiment C CXX)
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 include(CTest)
 
 set(CMAKE_C_STANDARD 99)
@@ -84,6 +88,7 @@ add_library(fullstack_app STATIC
     src/app/fullstack_app.c
     src/app/fullstack_app_frame.c
     src/app/fullstack_app_surface.c
+    src/app/fullstack_app_services.c
 )
 target_include_directories(fullstack_app
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -99,6 +104,53 @@ target_include_directories(fullstack_backend_mock
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 target_link_libraries(fullstack_backend_mock PUBLIC fullstack_app)
+
+set(FS_GLFW_BACKEND_SOURCES
+    impl/backends/glfw/fullstack_glfw_app_backend.c
+    impl/backends/glfw/fullstack_glfw_window.c
+    impl/backends/glfw/fullstack_glfw_events.c
+    impl/backends/glfw/fullstack_glfw_surface.c
+    impl/backends/glfw/fullstack_glfw_services.c
+    third_party/libtinyfiledialogs/tinyfiledialogs.c
+)
+if(WIN32)
+    list(APPEND FS_GLFW_BACKEND_SOURCES
+        impl/backends/glfw/fullstack_glfw_surface_win32.c)
+elseif(APPLE)
+    list(APPEND FS_GLFW_BACKEND_SOURCES
+        impl/backends/glfw/fullstack_glfw_surface_macos.mm)
+elseif(UNIX)
+    list(APPEND FS_GLFW_BACKEND_SOURCES
+        impl/backends/glfw/fullstack_glfw_surface_x11.c)
+else()
+    list(APPEND FS_GLFW_BACKEND_SOURCES
+        impl/backends/glfw/fullstack_glfw_surface_stub.c)
+endif()
+add_library(fullstack_backend_glfw STATIC ${FS_GLFW_BACKEND_SOURCES})
+target_include_directories(fullstack_backend_glfw
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/impl/backends/glfw
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libtinyfiledialogs
+            ${WCN_ROOT}/external/wgpu/include
+)
+target_link_libraries(fullstack_backend_glfw PUBLIC fullstack_app PRIVATE ${WGPU_LIBRARY})
+target_link_libraries(fullstack_backend_glfw PRIVATE ${CMAKE_DL_LIBS})
+if(TARGET GLFW::GLFW)
+    target_link_libraries(fullstack_backend_glfw PRIVATE GLFW::GLFW)
+elseif(GLFW_PKG_FOUND)
+    target_include_directories(fullstack_backend_glfw PRIVATE ${GLFW_PKG_INCLUDE_DIRS})
+    target_link_directories(fullstack_backend_glfw PRIVATE ${GLFW_PKG_LIBRARY_DIRS})
+    target_link_libraries(fullstack_backend_glfw PRIVATE ${GLFW_PKG_LIBRARIES})
+else()
+    target_link_libraries(fullstack_backend_glfw PRIVATE glfw)
+endif()
+if(APPLE)
+    target_link_libraries(fullstack_backend_glfw PRIVATE
+        "-framework Cocoa" "-framework QuartzCore")
+endif()
+if(WIN32)
+    target_link_libraries(fullstack_backend_glfw PRIVATE Comdlg32 Ole32 Shell32)
+endif()
 
 
 add_library(fullstack_present STATIC
@@ -167,6 +219,16 @@ target_link_libraries(fullstack_render
     PUBLIC fullstack_core_runtime fullstack_gpu fullstack_present
     PRIVATE ${WGPU_LIBRARY}
 )
+
+add_executable(generic_glfw_app_demo examples/generic_glfw_app_demo.c)
+target_include_directories(generic_glfw_app_demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${WCN_ROOT}/external/wgpu/include)
+target_link_libraries(generic_glfw_app_demo PRIVATE
+    fullstack_backend_glfw fullstack_render)
+if(TARGET fs_wgpu_runtime)
+    add_dependencies(generic_glfw_app_demo fs_wgpu_runtime)
+endif()
 add_subdirectory(examples)
 
 if(BUILD_TESTING)

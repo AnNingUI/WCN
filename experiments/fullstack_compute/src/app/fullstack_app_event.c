@@ -66,6 +66,7 @@ void FS_CALL fs_app_event_release(FS_AppEvent* e){
     }
     memset(e,0,sizeof(*e)); e->struct_size=sizeof(*e);
 }
+void FS_CALL fs_app_owned_bytes_release(FS_AppOwnedBytes*b){if(!b)return;if(b->owner&&b->data)fs_allocator_deallocate((const FS_Allocator*)b->owner,(void*)b->data,(size_t)b->size+1u,1);memset(b,0,sizeof(*b));}
 static FS_Result fs_event_copy(FS_EventQueue*q,FS_AppEvent*dst,const FS_AppEvent*src,FS_Error*error){
     *dst=*src; dst->struct_size=sizeof(*dst);
     if(src->type==FS_APP_EVENT_TEXT_INPUT||src->type==FS_APP_EVENT_TEXT_EDITING){
