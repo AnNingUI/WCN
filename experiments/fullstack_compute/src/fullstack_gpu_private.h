@@ -10,6 +10,9 @@ typedef struct FS_GpuProcs {
     void (FS_CALL *queue_release)(WGPUQueue);
     void (FS_CALL *queue_submit)(WGPUQueue, size_t, const WGPUCommandBuffer*);
     WGPUFuture (FS_CALL *queue_work_done)(WGPUQueue, WGPUQueueWorkDoneCallbackInfo);
+    void (FS_CALL *instance_process_events)(WGPUInstance);
+    WGPUBool (FS_CALL *device_poll)(WGPUDevice, WGPUBool,
+                                    const WGPUSubmissionIndex*);
 } FS_GpuProcs;
 
 FS_Result fs_gpu_context_create_with_procs(const FS_GpuContextDesc* desc,

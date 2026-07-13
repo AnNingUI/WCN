@@ -3626,6 +3626,7 @@ bool fs_core_init(
     core->target_format = target_format;
     core->width = width;
     core->height = height;
+    core->scene_generation = 1u;
     core->render_sample_count = 1u;
     core->clip_aa_mode_override = -1;
     core->context_lost = false;
@@ -3790,81 +3791,110 @@ void fs_core_shutdown(FS_Core* core) {
     fs_release_resources(core);
 }
 
-void fs_core_resize(FS_Core* core, uint32_t width, uint32_t height) {
-    if (!core) {
-        return;
-    }
-    if (core->width == width && core->height == height) {
-        return;
-    }
-    core->width = width;
-    core->height = height;
-    if (!fs_ensure_canvas_shadow(core)) {
-        fs_mark_context_lost(core);
-        return;
-    }
-    if (core->canvas_shadow_rgba && core->canvas_shadow_size > 0u) {
-        const size_t clear_size = (size_t)core->width * (size_t)core->height * 4u;
-        memset(core->canvas_shadow_rgba, 0, clear_size);
-    }
-    core->canvas_shadow_serial = 0u;
-    core->canvas_readback_serial = 0u;
-    core->canvas_readback_submission = 0u;
-    core->canvas_readback_submission_valid = 0u;
-    if (core->canvas_readback_buffer &&
-        (core->canvas_readback_width != width || core->canvas_readback_height != height)) {
-        if (core->canvas_readback_mapped) {
-            wgpuBufferUnmap(core->canvas_readback_buffer);
-            core->canvas_readback_mapped = 0u;
-        }
+static void fs_release_resize_resource_set(FS_Core* core) {
+    if (!core) return;
+    if (core->effects) fs_effects_destroy(core);
+    if (core->render_bg) wgpuBindGroupRelease(core->render_bg);
+    if (core->clip_compute_bg) wgpuBindGroupRelease(core->clip_compute_bg);
+    if (core->clip_mask_sampler) wgpuSamplerRelease(core->clip_mask_sampler);
+    if (core->clip_mask_view) wgpuTextureViewRelease(core->clip_mask_view);
+    if (core->clip_mask_texture) wgpuTextureRelease(core->clip_mask_texture);
+    if (core->msaa_color_view) wgpuTextureViewRelease(core->msaa_color_view);
+    if (core->msaa_color_texture) wgpuTextureRelease(core->msaa_color_texture);
+    free(core->clip_mask_layer_has_data);
+    free(core->clip_mask_layer_min_x); free(core->clip_mask_layer_min_y);
+    free(core->clip_mask_layer_max_x); free(core->clip_mask_layer_max_y);
+    free(core->clip_mask_layer_hash); free(core->clip_mask_layer_hash_valid);
+    free(core->clip_mask_layer_parent); free(core->clip_mask_layer_last_used_frame);
+    free(core->canvas_shadow_rgba);
+    if (core->canvas_readback_buffer) {
+        if (core->canvas_readback_mapped) wgpuBufferUnmap(core->canvas_readback_buffer);
         wgpuBufferRelease(core->canvas_readback_buffer);
-        core->canvas_readback_buffer = NULL;
-        core->canvas_readback_buffer_size = 0u;
-        core->canvas_readback_row_bytes = 0u;
-        core->canvas_readback_padded_row_bytes = 0u;
-        core->canvas_readback_width = 0u;
-        core->canvas_readback_height = 0u;
     }
-    core->canvas_image_data_handle_valid = 0u;
-    FS_InternalState* st = fs_state(core);
-    if (!st || !core->device || !core->render_bgl || !core->clip_mask_texture) {
-        fs_mark_context_lost(core);
-        return;
-    }
-    // Remove only uploads targeting the old clip texture; keep other atlas uploads intact.
-    fs_discard_pending_uploads_for_texture(core, core->clip_mask_texture);
-    core->clip_mask_next_layer = 0u;
-    if (core->clip_mask_sampler) {
-        wgpuSamplerRelease(core->clip_mask_sampler);
-        core->clip_mask_sampler = NULL;
-    }
-    if (core->clip_mask_view) {
-        wgpuTextureViewRelease(core->clip_mask_view);
-        core->clip_mask_view = NULL;
-    }
-    if (core->clip_mask_texture) {
-        wgpuTextureRelease(core->clip_mask_texture);
-        core->clip_mask_texture = NULL;
-    }
-    if (fs_create_clip_mask(core) && fs_create_msaa_color_target(core)) {
-        if (!fs_recreate_render_bind_group(core)) {
-            fs_mark_context_lost(core);
-        }
-        if (core->clip_edge_buffer && core->clip_job_buffer && core->clip_dispatch_uniform_buffer) {
-            if (!fs_recreate_clip_compute_bind_group(core)) {
-                fs_mark_context_lost(core);
-            }
-        }
-    } else {
-        fs_mark_context_lost(core);
-    }
-    // Resize effects subsystem textures and recreate presentation pipeline
-    if (!fs_effects_resize(core, core->width, core->height)) {
-        fs_mark_context_lost(core);
-    }
-    fs_clip_reset_state(st);
 }
 
+struct FS_CoreResizeRetirement {
+    FS_Core resources;
+};
+
+void fs_core_resize_retirement_destroy(FS_CoreResizeRetirement* retirement) {
+    if (!retirement) return;
+    fs_release_resize_resource_set(&retirement->resources);
+    free(retirement);
+}
+
+bool fs_core_try_resize_deferred(FS_Core* core, uint32_t width, uint32_t height,
+                                 FS_CoreResizeRetirement** out_retirement) {
+    if (out_retirement) *out_retirement = NULL;
+    if (!core || !out_retirement || width == 0u || height == 0u) return false;
+    if (core->width == width && core->height == height) return true;
+    if ((size_t)width > SIZE_MAX / 4u / (size_t)height) return false;
+    if (core->canvas_readback_mapped || core->canvas_readback_map_in_flight)
+        return false;
+
+    FS_CoreResizeRetirement* retirement =
+        (FS_CoreResizeRetirement*)calloc(1u, sizeof(*retirement));
+    if (!retirement) return false;
+
+    FS_Core old = *core;
+    const size_t shadow_size = (size_t)width * (size_t)height * 4u;
+    uint8_t* new_shadow = (uint8_t*)calloc(1u, shadow_size);
+    if (!new_shadow) {
+        free(retirement);
+        return false;
+    }
+
+    core->width = width; core->height = height;
+    core->canvas_shadow_rgba = new_shadow; core->canvas_shadow_size = shadow_size;
+    core->canvas_shadow_serial = 0u; core->canvas_readback_serial = 0u;
+    core->canvas_readback_buffer = NULL; core->canvas_readback_buffer_size = 0u;
+    core->canvas_readback_row_bytes = core->canvas_readback_padded_row_bytes = 0u;
+    core->canvas_readback_width = core->canvas_readback_height = 0u;
+    core->canvas_readback_mapped = core->canvas_readback_map_in_flight = 0u;
+    core->canvas_readback_submission = 0u; core->canvas_readback_submission_valid = 0u;
+    core->canvas_image_data_handle_valid = 0u;
+    core->clip_mask_texture = NULL; core->clip_mask_view = NULL; core->clip_mask_sampler = NULL;
+    core->msaa_color_texture = NULL; core->msaa_color_view = NULL;
+    core->render_bg = NULL; core->clip_compute_bg = NULL; core->effects = NULL;
+    core->clip_mask_layer_has_data = NULL;
+    core->clip_mask_layer_min_x = core->clip_mask_layer_min_y = NULL;
+    core->clip_mask_layer_max_x = core->clip_mask_layer_max_y = NULL;
+    core->clip_mask_layer_hash = NULL; core->clip_mask_layer_hash_valid = NULL;
+    core->clip_mask_layer_parent = NULL; core->clip_mask_layer_last_used_frame = NULL;
+
+    bool ok = fs_create_clip_mask(core) && fs_create_msaa_color_target(core) &&
+              fs_recreate_render_bind_group(core) &&
+              (!core->clip_edge_buffer || !core->clip_job_buffer ||
+               !core->clip_dispatch_uniform_buffer || fs_recreate_clip_compute_bind_group(core)) &&
+              fs_effects_init(core);
+    if (!ok) {
+        fs_release_resize_resource_set(core);
+        *core = old;
+        free(retirement);
+        return false;
+    }
+
+    fs_discard_pending_uploads_for_texture(core, old.clip_mask_texture);
+    retirement->resources = old;
+    *out_retirement = retirement;
+    core->scene_generation = old.scene_generation + 1u;
+    core->clip_mask_next_layer = 0u;
+    FS_InternalState* st = fs_state(core);
+    if (st) fs_clip_reset_state(st);
+    return true;
+}
+
+bool fs_core_try_resize(FS_Core* core, uint32_t width, uint32_t height) {
+    FS_CoreResizeRetirement* retirement = NULL;
+    if (!fs_core_try_resize_deferred(core, width, height, &retirement))
+        return false;
+    fs_core_resize_retirement_destroy(retirement);
+    return true;
+}
+
+void fs_core_resize(FS_Core* core, uint32_t width, uint32_t height) {
+    if (core && !fs_core_try_resize(core, width, height)) fs_mark_context_lost(core);
+}
 void fs_core_begin_commands(FS_Core* core) {
     if (!core) {
         return;
@@ -4293,7 +4323,8 @@ static bool fs_core_encode_internal(
     float clear_g,
     float clear_b,
     float clear_a,
-    bool allow_presentation
+    bool allow_presentation,
+    bool apply_effects
 ) {
     if (!core || !encoder || !target_view) {
         return false;
@@ -4451,7 +4482,7 @@ static bool fs_core_encode_internal(
     wgpuRenderPassEncoderRelease(pass);
 
     // Filters transform the internal scene texture and never own presentation.
-    if (effects_active && active_chain && fx && fx->scene_texture) {
+    if (apply_effects && effects_active && active_chain && fx && fx->scene_texture) {
         if (!fs_filter_chain_execute(core, encoder, fx->scene_texture,
                                      fx->scene_view, active_chain)) {
             return false;
@@ -4486,10 +4517,23 @@ bool fs_core_encode(
     float clear_a
 ) {
     return fs_core_encode_internal(core, encoder, target_texture, target_view,
-                                   clear_r, clear_g, clear_b, clear_a, true);
+                                   clear_r, clear_g, clear_b, clear_a, true, true);
 }
 
-bool fs_core_encode_scene(
+static bool fs_core_scene_output(FS_Core* core, FS_CoreSceneOutput* out_scene) {
+    FS_EffectResources* fx = fs_core_get_effects_resources(core);
+    if (!fx || !fx->scene_texture || !fx->scene_view) return false;
+    out_scene->struct_size = sizeof(*out_scene);
+    out_scene->texture = fx->scene_texture;
+    out_scene->view = fx->scene_view;
+    out_scene->format = WGPUTextureFormat_RGBA8Unorm;
+    out_scene->width = core->width;
+    out_scene->height = core->height;
+    out_scene->generation = core->scene_generation;
+    return true;
+}
+
+bool fs_core_encode_scene_base(
     FS_Core* core,
     WGPUCommandEncoder encoder,
     float clear_r,
@@ -4503,17 +4547,36 @@ bool fs_core_encode_scene(
     FS_EffectResources* fx = fs_core_get_effects_resources(core);
     if (!fx || !fx->scene_texture || !fx->scene_view) return false;
     if (!fs_core_encode_internal(core, encoder, NULL, fx->scene_view,
-                                 clear_r, clear_g, clear_b, clear_a, false)) {
+                                 clear_r, clear_g, clear_b, clear_a,
+                                 false, false)) {
         return false;
     }
-    out_scene->struct_size = sizeof(*out_scene);
-    out_scene->texture = fx->scene_texture;
-    out_scene->view = fx->scene_view;
-    out_scene->format = WGPUTextureFormat_RGBA8Unorm;
-    out_scene->width = core->width;
-    out_scene->height = core->height;
-    out_scene->generation = (uint64_t)core->clip_frame_index;
-    return true;
+    return fs_core_scene_output(core, out_scene);
+}
+
+bool fs_core_encode_scene_effects(
+    FS_Core* core, WGPUCommandEncoder encoder, FS_CoreSceneOutput* in_out_scene
+) {
+    if (!core || !encoder || !in_out_scene) return false;
+    FS_EffectResources* fx = fs_core_get_effects_resources(core);
+    FS_InternalState* state = fs_state(core);
+    if (!fx || !state) return false;
+    if (fx->enabled && state->filter_chain && state->filter_chain->head &&
+        !fs_filter_chain_execute(core, encoder, fx->scene_texture,
+                                 fx->scene_view, state->filter_chain)) {
+        return false;
+    }
+    return fs_core_scene_output(core, in_out_scene);
+}
+
+bool fs_core_encode_scene(
+    FS_Core* core, WGPUCommandEncoder encoder,
+    float clear_r, float clear_g, float clear_b, float clear_a,
+    FS_CoreSceneOutput* out_scene
+) {
+    return fs_core_encode_scene_base(core, encoder, clear_r, clear_g, clear_b,
+                                     clear_a, out_scene) &&
+           fs_core_encode_scene_effects(core, encoder, out_scene);
 }
 bool fs_core_legacy_set_presentation_format(FS_Core* core, WGPUTextureFormat target_format) {
     if (!core) return false;
@@ -4521,7 +4584,14 @@ bool fs_core_legacy_set_presentation_format(FS_Core* core, WGPUTextureFormat tar
         fs_presenter_destroy(core->legacy_presenter);
         core->legacy_presenter = NULL;
     }
-    FS_PresenterDesc desc = { sizeof(desc), core->device, target_format };
+    FS_PresenterDesc desc = FS_PRESENTER_DESC_INIT;
+    desc.device = core->device;
+    desc.target_format = target_format;
+    desc.target_color_space =
+        (target_format == WGPUTextureFormat_RGBA8UnormSrgb ||
+         target_format == WGPUTextureFormat_BGRA8UnormSrgb)
+            ? FS_COLOR_SPACE_SRGB
+            : FS_COLOR_SPACE_LINEAR_SRGB;
     return fs_presenter_create(&desc, &core->legacy_presenter, NULL) == FS_RESULT_OK;
 }
 void fs_core_notify_submission(FS_Core* core, WGPUSubmissionIndex submission_index) {

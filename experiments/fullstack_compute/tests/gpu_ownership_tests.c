@@ -9,7 +9,7 @@ static void FS_CALL rel_a(WGPUAdapter h){(void)h;releases[1]++;}
 static void FS_CALL rel_d(WGPUDevice h){(void)h;releases[2]++;}
 static void FS_CALL rel_q(WGPUQueue h){(void)h;releases[3]++;}
 static void FS_CALL submit(WGPUQueue q,size_t n,const WGPUCommandBuffer*c){(void)q;(void)n;(void)c;submits++;}
-static FS_GpuProcs procs={fake_create,rel_i,rel_a,rel_d,rel_q,submit,NULL};
+static FS_GpuProcs procs={fake_create,rel_i,rel_a,rel_d,rel_q,submit,NULL,NULL,NULL};
 static FS_GpuContextDesc desc(FS_ResourceOwnership o){
     FS_GpuContextDesc d=FS_GPU_CONTEXT_DESC_INIT;
     d.instance=(WGPUInstance)(uintptr_t)11; d.instance_ownership=o;

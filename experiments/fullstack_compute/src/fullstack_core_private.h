@@ -446,6 +446,7 @@ struct FS_Core {
     WGPUTextureFormat target_format;
     uint32_t width;
     uint32_t height;
+    uint64_t scene_generation;
 
     WGPUBuffer command_buffer;
     size_t command_buffer_size;

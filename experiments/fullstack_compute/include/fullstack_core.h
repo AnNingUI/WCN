@@ -9,6 +9,7 @@
 #include "fullstack_backend_api.h"
 
 typedef struct FS_Core FS_Core;
+typedef struct FS_CoreResizeRetirement FS_CoreResizeRetirement;
 typedef struct FS_Path2D FS_Path2D;
 typedef struct FS_LinearGradient FS_LinearGradient;
 typedef struct FS_RadialGradient FS_RadialGradient;
@@ -218,6 +219,10 @@ bool fs_core_init(
 );
 
 void fs_core_shutdown(FS_Core* core);
+bool fs_core_try_resize_deferred(FS_Core* core, uint32_t width, uint32_t height,
+                                 FS_CoreResizeRetirement** out_retirement);
+void fs_core_resize_retirement_destroy(FS_CoreResizeRetirement* retirement);
+bool fs_core_try_resize(FS_Core* core, uint32_t width, uint32_t height);
 void fs_core_resize(FS_Core* core, uint32_t width, uint32_t height);
 void fs_core_begin_commands(FS_Core* core);
 void fs_context_reset(FS_Core* core);
@@ -241,6 +246,14 @@ bool fs_core_encode_scene(
     float clear_b,
     float clear_a,
     FS_CoreSceneOutput* out_scene
+);
+bool fs_core_encode_scene_base(
+    FS_Core* core, WGPUCommandEncoder encoder,
+    float clear_r, float clear_g, float clear_b, float clear_a,
+    FS_CoreSceneOutput* out_scene
+);
+bool fs_core_encode_scene_effects(
+    FS_Core* core, WGPUCommandEncoder encoder, FS_CoreSceneOutput* in_out_scene
 );
 
 bool fs_core_encode(

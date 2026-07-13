@@ -2,15 +2,25 @@
 #include <string.h>
 
 typedef struct FS_SubmissionRecord {
+    struct FS_GpuContext* context;
     uint64_t serial;
     FS_SubmissionStatus status;
+    bool active;
 } FS_SubmissionRecord;
+
+typedef struct FS_RetirementRecord {
+    FS_SubmissionToken token;
+    FS_GpuRetireCallback callback;
+    void* user_data;
+    bool active;
+} FS_RetirementRecord;
 
 struct FS_GpuContext {
     const FS_Allocator* allocator;
     FS_DiagnosticSink diagnostics;
     FS_GpuProcs procs;
     uint64_t context_id;
+    uint32_t references;
     uint64_t next_serial;
     FS_GpuState state;
     WGPUInstance instance;
@@ -19,9 +29,11 @@ struct FS_GpuContext {
     WGPUQueue queue;
     bool own_instance, own_adapter, own_device, own_queue;
     FS_GpuCapabilities capabilities;
-    FS_SubmissionRecord** submissions;
-    uint32_t submission_count;
+    FS_SubmissionRecord* submissions;
     uint32_t submission_capacity;
+    FS_RetirementRecord* retirements;
+    uint32_t retirement_capacity;
+    uint64_t completed_serial;
 };
 
 static uint64_t fs_next_gpu_context_id = 1;
@@ -32,10 +44,14 @@ static void FS_CALL fs_real_device_release(WGPUDevice h) { wgpuDeviceRelease(h);
 static void FS_CALL fs_real_queue_release(WGPUQueue h) { wgpuQueueRelease(h); }
 static void FS_CALL fs_real_queue_submit(WGPUQueue q, size_t n, const WGPUCommandBuffer* c) { wgpuQueueSubmit(q, n, c); }
 static WGPUFuture FS_CALL fs_real_queue_work_done(WGPUQueue q, WGPUQueueWorkDoneCallbackInfo i) { return wgpuQueueOnSubmittedWorkDone(q, i); }
+static void FS_CALL fs_real_instance_process_events(WGPUInstance instance) { wgpuInstanceProcessEvents(instance); }
+static WGPUBool FS_CALL fs_real_device_poll(WGPUDevice device, WGPUBool wait,
+                                             const WGPUSubmissionIndex* index) { return wgpuDevicePoll(device, wait, index); }
 static const FS_GpuProcs fs_real_procs = {
     fs_real_create_instance, fs_real_instance_release, fs_real_adapter_release,
     fs_real_device_release, fs_real_queue_release, fs_real_queue_submit,
-    fs_real_queue_work_done
+    fs_real_queue_work_done, fs_real_instance_process_events,
+    fs_real_device_poll
 };
 
 
@@ -46,6 +62,10 @@ static void fs_gpu_work_done(WGPUQueueWorkDoneStatus status, WGPUStringView mess
     if (!record) return;
     record->status = status == WGPUQueueWorkDoneStatus_Success
         ? FS_SUBMISSION_SUCCEEDED : FS_SUBMISSION_FAILED;
+    if (record->context && status == WGPUQueueWorkDoneStatus_Success &&
+        record->serial > record->context->completed_serial) {
+        record->context->completed_serial = record->serial;
+    }
 }
 typedef struct FS_AdapterRequestState {
     bool done;
@@ -149,7 +169,30 @@ FS_Result fs_gpu_context_create_with_procs(const FS_GpuContextDesc* d,
     FS_GpuContext* c = (FS_GpuContext*)fs_allocator_allocate(a, sizeof(*c), sizeof(void*));
     if (!c) { fs_gpu_fail(error, FS_RESULT_OUT_OF_MEMORY, "GPU context allocation failed"); return FS_RESULT_OUT_OF_MEMORY; }
     memset(c, 0, sizeof(*c)); c->allocator = a; c->diagnostics = d->diagnostics; c->procs = *p;
-    c->context_id = fs_next_gpu_context_id++; c->next_serial = 1; c->state = FS_GPU_STATE_INITIALIZING;
+    c->context_id = fs_next_gpu_context_id++; c->references = 1;
+    c->next_serial = 1; c->state = FS_GPU_STATE_INITIALIZING;
+    c->submission_capacity = fs_abi_has_field(d->struct_size,
+        offsetof(FS_GpuContextDesc, max_in_flight_submissions), sizeof(uint32_t))
+        ? d->max_in_flight_submissions : 256u;
+    c->retirement_capacity = fs_abi_has_field(d->struct_size,
+        offsetof(FS_GpuContextDesc, max_deferred_retirements), sizeof(uint32_t))
+        ? d->max_deferred_retirements : 128u;
+    if (!c->submission_capacity) c->submission_capacity = 256u;
+    if (!c->retirement_capacity) c->retirement_capacity = 128u;
+    c->submissions = (FS_SubmissionRecord*)fs_allocator_allocate(
+        a, c->submission_capacity * sizeof(*c->submissions), sizeof(void*));
+    c->retirements = (FS_RetirementRecord*)fs_allocator_allocate(
+        a, c->retirement_capacity * sizeof(*c->retirements), sizeof(void*));
+    if (!c->submissions || !c->retirements) {
+        fs_gpu_context_destroy(c);
+        fs_gpu_fail(error, FS_RESULT_OUT_OF_MEMORY,
+                    "GPU tracking arena allocation failed");
+        return FS_RESULT_OUT_OF_MEMORY;
+    }
+    memset(c->submissions, 0,
+           c->submission_capacity * sizeof(*c->submissions));
+    memset(c->retirements, 0,
+           c->retirement_capacity * sizeof(*c->retirements));
     c->instance = d->instance; c->adapter = d->adapter; c->device = d->device; c->queue = d->queue;
     c->own_instance = d->instance_ownership == FS_RESOURCE_TRANSFERRED;
     c->own_adapter = d->adapter_ownership == FS_RESOURCE_TRANSFERRED;
@@ -224,16 +267,22 @@ FS_Result fs_gpu_context_create_with_procs(const FS_GpuContextDesc* d,
 FS_Result FS_CALL fs_gpu_context_create(const FS_GpuContextDesc* d, FS_GpuContext** out, FS_Error* e) {
     return fs_gpu_context_create_with_procs(d, &fs_real_procs, out, e);
 }
-void FS_CALL fs_gpu_context_destroy(FS_GpuContext* c) {
+static void fs_gpu_context_finalize(FS_GpuContext* c) {
     if (!c) return; c->state = FS_GPU_STATE_DESTROYING;
-    if (c->device && c->procs.queue_work_done) {
-        (void)wgpuDevicePoll(c->device, true, NULL);
-        if (c->instance) wgpuInstanceProcessEvents(c->instance);
+    if (c->device && c->procs.device_poll) {
+        (void)c->procs.device_poll(c->device, true, NULL);
+        if (c->instance && c->procs.instance_process_events)
+            c->procs.instance_process_events(c->instance);
     }
-    for (uint32_t i = 0; i < c->submission_count; ++i) {
-        fs_allocator_deallocate(c->allocator, c->submissions[i],
-                                sizeof(FS_SubmissionRecord), sizeof(void*));
+    fs_gpu_collect_retired(c);
+    for (uint32_t i = 0; i < c->retirement_capacity; ++i) {
+        if (c->retirements && c->retirements[i].active) {
+            c->retirements[i].callback(c->retirements[i].user_data);
+            c->retirements[i].active = false;
+        }
     }
+    if (c->retirements) fs_allocator_deallocate(c->allocator, c->retirements,
+        c->retirement_capacity * sizeof(*c->retirements), sizeof(void*));
     if (c->submissions) fs_allocator_deallocate(c->allocator, c->submissions,
         c->submission_capacity * sizeof(*c->submissions), sizeof(void*));
     if (c->own_queue && c->queue) c->procs.queue_release(c->queue);
@@ -242,7 +291,18 @@ void FS_CALL fs_gpu_context_destroy(FS_GpuContext* c) {
     if (c->own_instance && c->instance) c->procs.instance_release(c->instance);
     fs_allocator_deallocate(c->allocator, c, sizeof(*c), sizeof(void*));
 }
-FS_Result FS_CALL fs_gpu_context_poll(FS_GpuContext* c, FS_Error* e) { (void)e; if (!c) return FS_RESULT_INVALID_ARGUMENT; if (c->instance) wgpuInstanceProcessEvents(c->instance); return FS_RESULT_OK; }
+void FS_CALL fs_gpu_context_retain(FS_GpuContext* c) {
+    if (c && c->state != FS_GPU_STATE_DESTROYING) c->references++;
+}
+void FS_CALL fs_gpu_context_release(FS_GpuContext* c) {
+    if (!c || !c->references) return;
+    c->references--;
+    if (!c->references) fs_gpu_context_finalize(c);
+}
+void FS_CALL fs_gpu_context_destroy(FS_GpuContext* c) {
+    fs_gpu_context_release(c);
+}
+FS_Result FS_CALL fs_gpu_context_poll(FS_GpuContext* c, FS_Error* e) { (void)e; if (!c) return FS_RESULT_INVALID_ARGUMENT; if (c->instance && c->procs.instance_process_events) c->procs.instance_process_events(c->instance); fs_gpu_collect_retired(c); return FS_RESULT_OK; }
 FS_GpuState FS_CALL fs_gpu_context_state(const FS_GpuContext* c) { return c ? c->state : FS_GPU_STATE_LOST; }
 uint64_t FS_CALL fs_gpu_context_id(const FS_GpuContext* c) { return c ? c->context_id : 0; }
 WGPUInstance FS_CALL fs_gpu_instance(const FS_GpuContext* c) { return c ? c->instance : NULL; }
@@ -260,8 +320,10 @@ FS_Result FS_CALL fs_gpu_context_replace_device(
         !fs_valid_ownership(queue_ownership, true)) {
         return FS_RESULT_INVALID_ARGUMENT;
     }
-    for (uint32_t i = 0; i < c->submission_count; ++i) {
-        if (c->submissions[i]->status == FS_SUBMISSION_PENDING) {
+    fs_gpu_collect_retired(c);
+    for (uint32_t i = 0; i < c->submission_capacity; ++i) {
+        if (c->submissions[i].active &&
+            c->submissions[i].status == FS_SUBMISSION_PENDING) {
             FS_ERROR_SET(error, FS_RESULT_PENDING, FS_ERROR_DOMAIN_GPU, 0,
                          "fs_gpu_context_replace_device",
                          "pending submissions must retire before Device replacement");
@@ -284,31 +346,27 @@ FS_Result FS_CALL fs_gpu_submit(FS_GpuContext* c, uint32_t count,
     if (out) memset(out, 0, sizeof(*out));
     if (!c || !out || (count && !commands)) return FS_RESULT_INVALID_ARGUMENT;
     if (c->state != FS_GPU_STATE_READY) return FS_RESULT_INVALID_STATE;
-    if (c->submission_count == c->submission_capacity) {
-        uint32_t next = c->submission_capacity ? c->submission_capacity * 2u : 16u;
-        size_t old_n = c->submission_capacity * sizeof(*c->submissions);
-        size_t new_n = next * sizeof(*c->submissions);
-        void* array = fs_allocator_reallocate(c->allocator, c->submissions,
-                                               old_n, new_n, sizeof(void*));
-        if (!array) {
-            FS_ERROR_SET(e, FS_RESULT_OUT_OF_MEMORY, FS_ERROR_DOMAIN_GPU, 0,
-                         "fs_gpu_submit", "submission array allocation failed");
-            return FS_RESULT_OUT_OF_MEMORY;
+    fs_gpu_collect_retired(c);
+    FS_SubmissionRecord* record = NULL;
+    for (uint32_t i = 0; i < c->submission_capacity; ++i) {
+        if (!c->submissions[i].active ||
+            c->submissions[i].status != FS_SUBMISSION_PENDING) {
+            record = &c->submissions[i];
+            break;
         }
-        c->submissions = (FS_SubmissionRecord**)array;
-        c->submission_capacity = next;
     }
-    FS_SubmissionRecord* record = (FS_SubmissionRecord*)fs_allocator_allocate(
-        c->allocator, sizeof(*record), sizeof(void*));
     if (!record) {
-        FS_ERROR_SET(e, FS_RESULT_OUT_OF_MEMORY, FS_ERROR_DOMAIN_GPU, 0,
-                     "fs_gpu_submit", "submission record allocation failed");
-        return FS_RESULT_OUT_OF_MEMORY;
+        FS_ERROR_SET(e, FS_RESULT_QUEUE_PRESSURE, FS_ERROR_DOMAIN_GPU, 0,
+                     "fs_gpu_submit", "in-flight submission arena is full");
+        return FS_RESULT_QUEUE_PRESSURE;
     }
+    record->context = c;
     record->serial = c->next_serial++;
     record->status = c->procs.queue_work_done
         ? FS_SUBMISSION_PENDING : FS_SUBMISSION_SUCCEEDED;
-    c->submissions[c->submission_count++] = record;
+    record->active = true;
+    if (record->status == FS_SUBMISSION_SUCCEEDED)
+        c->completed_serial = record->serial;
     c->procs.queue_submit(c->queue, count, commands);
     if (c->procs.queue_work_done) {
         (void)c->procs.queue_work_done(c->queue,
@@ -325,6 +383,53 @@ FS_Result FS_CALL fs_gpu_submit(FS_GpuContext* c, uint32_t count,
 FS_Result FS_CALL fs_gpu_submission_status(const FS_GpuContext* c, FS_SubmissionToken t,
                                             FS_SubmissionStatus* out, FS_Error* e) {
     (void)e; if (!c || !out || t.context_id != c->context_id || !t.serial) return FS_RESULT_INVALID_ARGUMENT;
-    for (uint32_t i=0;i<c->submission_count;i++) if (c->submissions[i]->serial==t.serial) { *out=c->submissions[i]->status; return FS_RESULT_OK; }
+    for (uint32_t i=0;i<c->submission_capacity;i++) if (c->submissions[i].active&&c->submissions[i].serial==t.serial) { *out=c->submissions[i].status; return FS_RESULT_OK; }
+    if (t.serial <= c->completed_serial) { *out=FS_SUBMISSION_SUCCEEDED; return FS_RESULT_OK; }
     *out=FS_SUBMISSION_UNKNOWN; return FS_RESULT_SKIP;
+}
+
+FS_Result FS_CALL fs_gpu_retire_after(
+    FS_GpuContext* c, FS_SubmissionToken token,
+    FS_GpuRetireCallback callback, void* user_data, FS_Error* error) {
+    if (!c || !callback || token.context_id != c->context_id || !token.serial)
+        return FS_RESULT_INVALID_ARGUMENT;
+    FS_SubmissionStatus status = FS_SUBMISSION_UNKNOWN;
+    FS_Result result = fs_gpu_submission_status(c, token, &status, error);
+    if (result == FS_RESULT_SKIP) return FS_RESULT_INVALID_ARGUMENT;
+    if (result != FS_RESULT_OK) return result;
+    if (status != FS_SUBMISSION_PENDING) {
+        callback(user_data);
+        return FS_RESULT_OK;
+    }
+    for (uint32_t i = 0; i < c->retirement_capacity; ++i) {
+        if (!c->retirements[i].active) {
+            c->retirements[i] = (FS_RetirementRecord){
+                token, callback, user_data, true};
+            return FS_RESULT_OK;
+        }
+    }
+    FS_ERROR_SET(error, FS_RESULT_QUEUE_PRESSURE, FS_ERROR_DOMAIN_GPU, 0,
+                 "fs_gpu_retire_after", "deferred retirement arena is full");
+    return FS_RESULT_QUEUE_PRESSURE;
+}
+
+uint32_t FS_CALL fs_gpu_collect_retired(FS_GpuContext* c) {
+    if (!c || !c->retirements) return 0;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < c->retirement_capacity; ++i) {
+        FS_RetirementRecord* retirement = &c->retirements[i];
+        if (!retirement->active) continue;
+        FS_SubmissionStatus status = FS_SUBMISSION_UNKNOWN;
+        if (fs_gpu_submission_status(c, retirement->token, &status, NULL) ==
+                FS_RESULT_OK && status != FS_SUBMISSION_PENDING) {
+            FS_GpuRetireCallback callback = retirement->callback;
+            void* user_data = retirement->user_data;
+            retirement->active = false;
+            retirement->callback = NULL;
+            retirement->user_data = NULL;
+            callback(user_data);
+            ++count;
+        }
+    }
+    return count;
 }

@@ -8,7 +8,7 @@ extern "C" {
 #include "fullstack_result.h"
 #include <webgpu/wgpu.h>
 
-#define FS_GPU_ABI_VERSION FS_ABI_VERSION(1, 0)
+#define FS_GPU_ABI_VERSION FS_ABI_VERSION(1, 1)
 
 typedef uint32_t FS_ResourceOwnership;
 #define FS_RESOURCE_NONE        ((FS_ResourceOwnership)0u)
@@ -38,6 +38,8 @@ typedef struct FS_SubmissionToken {
     uint64_t serial;
 } FS_SubmissionToken;
 
+typedef void (FS_CALL *FS_GpuRetireCallback)(void* user_data);
+
 typedef struct FS_GpuContextDesc {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -58,13 +60,15 @@ typedef struct FS_GpuContextDesc {
     WGPUPowerPreference power_preference;
     const WGPUDeviceDescriptor* device_descriptor;
     bool allow_offscreen_orphan_device_bundle;
+    uint32_t max_in_flight_submissions;
+    uint32_t max_deferred_retirements;
 } FS_GpuContextDesc;
 
 #define FS_GPU_CONTEXT_DESC_INIT { \
     sizeof(FS_GpuContextDesc), FS_GPU_ABI_VERSION, NULL, {0}, \
     NULL, FS_RESOURCE_NONE, NULL, FS_RESOURCE_NONE, \
     NULL, FS_RESOURCE_NONE, NULL, FS_RESOURCE_NONE, {0,0,0}, \
-    NULL, WGPUPowerPreference_Undefined, NULL, false }
+    NULL, WGPUPowerPreference_Undefined, NULL, false, 256, 128 }
 
 typedef struct FS_GpuCapabilities {
     uint32_t struct_size;
@@ -81,6 +85,8 @@ typedef struct FS_GpuContext FS_GpuContext;
 FS_API FS_Result FS_CALL fs_gpu_context_create(const FS_GpuContextDesc* desc,
                                                 FS_GpuContext** out_context,
                                                 FS_Error* error);
+FS_API void FS_CALL fs_gpu_context_retain(FS_GpuContext* context);
+FS_API void FS_CALL fs_gpu_context_release(FS_GpuContext* context);
 FS_API void FS_CALL fs_gpu_context_destroy(FS_GpuContext* context);
 FS_API FS_Result FS_CALL fs_gpu_context_poll(FS_GpuContext* context,
                                               FS_Error* error);
@@ -105,6 +111,10 @@ FS_API FS_Result FS_CALL fs_gpu_submission_status(const FS_GpuContext* context,
                                                   FS_SubmissionToken token,
                                                   FS_SubmissionStatus* out_status,
                                                   FS_Error* error);
+FS_API FS_Result FS_CALL fs_gpu_retire_after(
+    FS_GpuContext* context, FS_SubmissionToken token,
+    FS_GpuRetireCallback callback, void* user_data, FS_Error* error);
+FS_API uint32_t FS_CALL fs_gpu_collect_retired(FS_GpuContext* context);
 
 #ifdef __cplusplus
 }

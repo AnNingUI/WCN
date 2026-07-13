@@ -149,6 +149,22 @@ endif()
 if(NOT MSVC)
     target_link_libraries(fullstack_core_runtime PRIVATE m)
 endif()
+
+add_library(fullstack_render STATIC
+    src/render/fullstack_render_context.c
+    src/render/fullstack_render_target.c
+    src/render/fullstack_render_frame.c
+    src/render/fullstack_frame_graph.c
+)
+target_include_directories(fullstack_render
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/render
+            ${WCN_ROOT}/external/wgpu/include
+)
+target_link_libraries(fullstack_render
+    PUBLIC fullstack_core_runtime fullstack_gpu fullstack_present
+    PRIVATE ${WGPU_LIBRARY}
+)
 add_subdirectory(examples)
 
 if(BUILD_TESTING)
