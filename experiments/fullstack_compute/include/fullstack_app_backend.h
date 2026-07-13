@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define FS_APP_BACKEND_ABI_VERSION FS_ABI_VERSION(1, 0)
+#define FS_APP_BACKEND_ABI_VERSION FS_ABI_VERSION(1, 1)
 
 typedef struct FS_App FS_App;
 typedef struct FS_AppWindow FS_AppWindow;
@@ -39,6 +39,46 @@ typedef struct FS_AppWindowMetrics {
     uint32_t orientation;
 } FS_AppWindowMetrics;
 
+typedef uint32_t FS_AppFrameState;
+#define FS_APP_FRAME_EMPTY     ((FS_AppFrameState)0u)
+#define FS_APP_FRAME_ACQUIRED  ((FS_AppFrameState)1u)
+#define FS_APP_FRAME_SUBMITTED ((FS_AppFrameState)2u)
+#define FS_APP_FRAME_PRESENTED ((FS_AppFrameState)3u)
+#define FS_APP_FRAME_CANCELLED ((FS_AppFrameState)4u)
+
+typedef uint32_t FS_AppFrameAcquireStatus;
+#define FS_APP_FRAME_ACQUIRE_AVAILABLE    ((FS_AppFrameAcquireStatus)0u)
+#define FS_APP_FRAME_ACQUIRE_ZERO_SIZE    ((FS_AppFrameAcquireStatus)1u)
+#define FS_APP_FRAME_ACQUIRE_TIMEOUT      ((FS_AppFrameAcquireStatus)2u)
+#define FS_APP_FRAME_ACQUIRE_OCCLUDED     ((FS_AppFrameAcquireStatus)3u)
+#define FS_APP_FRAME_ACQUIRE_SUSPENDED    ((FS_AppFrameAcquireStatus)4u)
+#define FS_APP_FRAME_ACQUIRE_OUTDATED     ((FS_AppFrameAcquireStatus)5u)
+#define FS_APP_FRAME_ACQUIRE_SURFACE_LOST ((FS_AppFrameAcquireStatus)6u)
+#define FS_APP_FRAME_ACQUIRE_DEVICE_LOST  ((FS_AppFrameAcquireStatus)7u)
+#define FS_APP_FRAME_ACQUIRE_FATAL        ((FS_AppFrameAcquireStatus)8u)
+#define FS_APP_FRAME_ACQUIRE_SUBOPTIMAL   ((FS_AppFrameAcquireStatus)9u)
+
+struct FS_AppFrame {
+    uint32_t struct_size;
+    FS_AppFrameState state;
+    FS_AppFrameAcquireStatus acquire_status;
+    uint32_t reserved;
+    uint64_t frame_id;
+    FS_AppWindowId window_id;
+    uint64_t surface_generation;
+    uint32_t width;
+    uint32_t height;
+    WGPUTextureFormat format;
+    WGPUTexture texture;
+    WGPUTextureView view;
+    FS_SubmissionToken submission;
+    uint64_t backend_token[4];
+    uint64_t internal_token[4];
+};
+#define FS_APP_FRAME_INIT { sizeof(FS_AppFrame), FS_APP_FRAME_EMPTY, \
+    FS_APP_FRAME_ACQUIRE_AVAILABLE, 0, 0, 0, 0, 0, 0, \
+    WGPUTextureFormat_Undefined, NULL, NULL, {0,0}, {0,0,0,0}, {0,0,0,0} }
+
 typedef struct FS_AppWindowDesc {
     uint32_t struct_size;
     const char* title;
@@ -62,6 +102,7 @@ struct FS_AppBackendHost {
     FS_BackendHostPostTaskFn post_task;
     FS_BackendHostWakeFn wake;
     FS_BackendHostSetThreadRolesFn set_thread_roles;
+    FS_GpuContext* gpu;
     void* private_data;
 };
 
@@ -83,6 +124,9 @@ typedef struct FS_AppBackendOps {
     FS_Result (FS_CALL *get_window_metrics)(FS_BackendInstance*, FS_BackendWindow*, FS_AppWindowMetrics*, FS_Error*);
     bool (FS_CALL *window_should_close)(FS_BackendInstance*, FS_BackendWindow*);
     const FS_CapabilityHeader* (FS_CALL *query_capability)(FS_BackendInstance*, uint32_t, uint32_t);
+    FS_Result (FS_CALL *acquire_frame)(FS_BackendInstance*, FS_BackendWindow*, FS_AppFrame*, FS_Error*);
+    FS_Result (FS_CALL *present_frame)(FS_BackendInstance*, FS_BackendWindow*, FS_AppFrame*, FS_Error*);
+    void (FS_CALL *cancel_frame)(FS_BackendInstance*, FS_BackendWindow*, FS_AppFrame*);
 } FS_AppBackendOps;
 
 typedef struct FS_AppBackendFactory {

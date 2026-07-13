@@ -82,6 +82,8 @@ target_link_libraries(fullstack_app_foundation PUBLIC fullstack_result Threads::
 add_library(fullstack_app STATIC
     src/app/fullstack_app_backend_registry.c
     src/app/fullstack_app.c
+    src/app/fullstack_app_frame.c
+    src/app/fullstack_app_surface.c
 )
 target_include_directories(fullstack_app
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

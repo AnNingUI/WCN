@@ -302,7 +302,7 @@ void FS_CALL fs_gpu_context_release(FS_GpuContext* c) {
 void FS_CALL fs_gpu_context_destroy(FS_GpuContext* c) {
     fs_gpu_context_release(c);
 }
-FS_Result FS_CALL fs_gpu_context_poll(FS_GpuContext* c, FS_Error* e) { (void)e; if (!c) return FS_RESULT_INVALID_ARGUMENT; if (c->instance && c->procs.instance_process_events) c->procs.instance_process_events(c->instance); fs_gpu_collect_retired(c); return FS_RESULT_OK; }
+FS_Result FS_CALL fs_gpu_context_poll(FS_GpuContext* c, FS_Error* e) { (void)e; if (!c) return FS_RESULT_INVALID_ARGUMENT; if (c->device && c->procs.device_poll) (void)c->procs.device_poll(c->device,false,NULL); if (c->instance && c->procs.instance_process_events) c->procs.instance_process_events(c->instance); fs_gpu_collect_retired(c); return FS_RESULT_OK; }
 FS_GpuState FS_CALL fs_gpu_context_state(const FS_GpuContext* c) { return c ? c->state : FS_GPU_STATE_LOST; }
 uint64_t FS_CALL fs_gpu_context_id(const FS_GpuContext* c) { return c ? c->context_id : 0; }
 WGPUInstance FS_CALL fs_gpu_instance(const FS_GpuContext* c) { return c ? c->instance : NULL; }
