@@ -106,9 +106,10 @@ The repeating combat loop is:
 
 1. The director spends a threat budget on a window role, spawn location, and
    complementary enemy group.
-2. A desktop-space warning previews the future window bounds and role.
-3. The coordinator creates the window hidden, applies appearance and geometry,
-   renders its initial frame, and shows it.
+2. The coordinator reserves a slot, creates the future window hidden, and
+   applies its safe geometry and appearance.
+3. The coordinator shows the inactive window as a low-opacity outline and role
+   glyph that previews activation for 0.8 to 1.2 seconds.
 4. Combat generates experience fragments and rewards inside the owner window.
 5. An overlap with the main window creates a visible siphon lane that transfers
    fragments over time.
@@ -261,6 +262,15 @@ child windows. The main window shows three non-duplicate eligible choices.
 Keyboard keys 1, 2, and 3 and pointer selection are supported. Reroll and skip
 uses are finite run resources. After selection, the world resumes and grants
 0.8 seconds of player invulnerability.
+
+The offer builder first selects eligible non-maxed content. If fewer than three
+unique items are eligible, it fills the remaining cards with repeatable fallback
+descriptors: Emergency Repair restores 20 percent maximum health or grants a
+10-second shield at full health; Field Cache grants one reroll up to the run
+cap and grants score at the cap; Limit Break names one deterministic maxed
+weapon and one exact damage, rate, or area increase. The builder never repeats
+a card. If content validation leaves no valid card, it automatically applies
+Field Cache and resumes the run instead of entering a pause deadlock.
 
 ## Build system
 
@@ -419,12 +429,13 @@ the title screen does not create child windows.
 The completed content scope contains four operators, eight weapons, eight
 systems, eight evolutions, eight enemies, five role windows, three biomes, five
 elite modifiers, three base bosses, three alternate boss spell sets, four
-starting loadout presets, eight endless modifiers, and 24 challenges. Vector,
-Pulse Lance, Scatter Array, Overclocker, Resonance Lens, Nest, Battery, Shards,
-Trackers, and standard expedition are available in a new profile. Challenges
-unlock the remaining content through explicit stable content IDs. Endless mode
-unlocks after the first standard victory. Each base boss unlocks its alternate
-spell set after its related challenge is completed.
+starting loadout presets, eight endless modifiers, and 24 challenges. A new
+profile includes Vector; Pulse Lance, Scatter Array, Orbit Drones, and Arc
+Relay; Overclocker, Resonance Lens, Link Amplifier, and Magnet Core; all eight
+base enemies; all five role windows; Ember Protocol; all three base bosses; one
+Vector and Pulse Lance loadout; and standard expedition. This pool can fill all
+4+4 slots during the first run. Endless mode unlocks after the first standard
+victory.
 
 The four operators are Vector, which has neutral aiming bonuses; Bastion, which
 favors defense and window stability; Relay, which favors overlap and chaining;
@@ -434,10 +445,23 @@ no extra run items.
 
 Small convenience upgrades may affect initial rerolls, fragment visibility, or
 starting health, but the profile does not contain an unbounded permanent damage
-ladder. The 24 challenges are partitioned into eight combat challenges, six
-window and siphon challenges, three boss challenges, three operator challenges,
-and four mode or exploration challenges. Every challenge has exactly one
-content or archive reward in the descriptor table.
+ladder. Every challenge grants exactly one descriptor-defined reward bundle,
+and a bundle may contain multiple stable content IDs. The 24 bundles are mapped
+as follows:
+
+- Eight combat challenges unlock the remaining four weapons and four systems,
+  one item per bundle.
+- Six window and siphon challenges unlock Frost Protocol, Void Protocol, all
+  five elite modifiers, and one archive group. Two bundles contain two related
+  IDs.
+- Three boss challenges unlock one alternate spell set per base boss.
+- Three operator challenges each unlock one operator and its matching starting
+  loadout in the same bundle.
+- Four mode and exploration challenges each unlock two endless modifiers.
+
+This map accounts for every locked gameplay item. Archive-only discoveries such
+as evolution records are recorded when observed and do not consume challenge
+reward slots.
 
 The versioned profile stores unlock bits, challenge progress, settings, and
 statistics under the user's data directory. Windows uses:
