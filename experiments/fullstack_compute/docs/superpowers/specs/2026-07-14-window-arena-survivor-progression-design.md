@@ -119,7 +119,11 @@ The repeating combat loop is:
 
 ## Run modes and pacing
 
-Standard expedition lasts 25 minutes and uses five acts.
+Standard expedition uses five timed acts. At 25:00, the director stops ordinary
+spawns, locks the displayed act timer at 25:00, clears non-critical spawn
+requests, and starts the final boss. The run enters `VICTORY` only after the
+final boss is defeated and its layout recovery completes. Time spent fighting
+the final boss does not create a sixth act.
 
 ### Act I: Intrusion, 00:00 to 05:00
 
@@ -151,11 +155,16 @@ The player must usually establish a first weapon combination in the opening
 three minutes, complete a first evolution between 10 and 15 minutes, and
 stabilize a full build before the final act.
 
-Endless mode treats the opening 25 minutes as protocol cycle one. Each later
-cycle increases health, speed, density, and window-spell budget, and selects a
-global modifier such as Rift Multiplication, Projectile Refraction, Persistent
-Biome, or Fragment Decay. Bosses combine unlocked spells instead of replaying
-an unchanged script.
+Endless mode treats the opening 25 timed minutes as protocol cycle one. At the
+cycle boundary, ordinary spawning stops and a cycle boss begins. Defeating it
+starts a five-second recovery, awards one evolution-core choice, increments the
+cycle, resets the cycle timer to 00:00, and resumes Act I using the next cycle's
+scaling. The HUD retains a separate total-run timer. A later cycle increases
+health, speed, density, and window-spell budget, and selects one of eight
+validated global modifiers. The initial modifier set is Rift Multiplication,
+Projectile Refraction, Persistent Biome, Fragment Decay, Armored Front,
+Accelerated Siphon, Unstable Geometry, and Elite Convergence. Bosses combine
+unlocked spells instead of replaying an unchanged script.
 
 ## Run director
 
@@ -171,10 +180,11 @@ requires it.
 
 The placement solver receives current work areas and observed game-window
 geometry. It samples positions around the main window, rejects positions that
-would be fully hidden, mostly cover the main window, leave the work area, or
-repeat the recent spawn region, and selects the highest-scoring valid result.
-If no candidate exists, the encounter becomes an event inside an existing
-window instead of failing the run.
+would be fully hidden, cover more than 45 percent of the main window, leave a
+24-logical-pixel work-area margin, or reuse either of the two most recent spawn
+quadrants, and selects the highest-scoring valid result. If no candidate
+exists, the encounter becomes an event inside an existing window instead of
+failing the run.
 
 The director may reduce cosmetic density and ordinary spawn budget when frame
 time or active-window count exceeds a configured limit. It must not remove a
@@ -187,6 +197,13 @@ may lower the child limit to two or three on a small work area. A boss can
 temporarily exceed the normal limit with up to three small, short-lived summon
 windows. Summon windows collapse immediately when cleared or when their spell
 ends.
+
+An encounter reserves a child slot before warning begins. The coordinator
+creates that future encounter window hidden, configures it, shows only a
+low-opacity outline and role glyph for 0.8 to 1.2 seconds, and then activates
+enemies and input. The reserved telegraph window counts against the child
+limit. If native creation fails, the main canvas displays an edge-direction
+warning and the encounter degrades to an existing-window event.
 
 ### Role windows
 
@@ -224,6 +241,19 @@ and then move toward the player. Link Amplifier, Magnet Core, biome rules, and
 enemy disruption can change transfer rate. Clearing a window awards its
 remaining fragments immediately so the player is not required to preserve an
 empty window.
+
+Each fragment stores an integer experience value. When the 512-fragment pool is
+full, a new drop deterministically merges into the nearest fragment with the
+same owner, with ties resolved by object ID. If that owner has no fragment, the
+value enters its integer pending-fragment bank and materializes when a slot is
+available. Experience is never discarded because of pool pressure.
+
+Manual close or prolonged minimization does not settle fragments to the player.
+Owned fragments and pending value migrate unchanged to the same destination as
+the encounter's remaining threat. If no eligible child window exists, the
+director stores both in a pending encounter bank and attaches them to the next
+eligible encounter. A normal clear is the only window-destruction path that
+immediately awards all remaining fragments.
 
 Level-up changes the world to `LEVEL_UP_PAUSED`, freezes fixed-step simulation,
 native window spells, opacity transitions, and hostile movement, and dims all
@@ -272,6 +302,16 @@ or boss evolution core can transform them. The initial evolutions are:
 - Boundary Saw plus Stabilizer becomes Boundary Engine.
 - Rift Beam plus Magnet Core becomes Siphon Ray.
 - Sentry Node plus Salvage Protocol becomes Replicator Node.
+
+Evolution cores are run-only consumables with a capacity of two. Picking up a
+core while one or more pairs are eligible enters `LEVEL_UP_PAUSED` and shows up
+to three eligible evolutions. The player selects the transformation; the core
+is consumed. If no pair is eligible, the core remains stored and the choice
+opens immediately after a later upgrade creates an eligible pair. If core
+capacity is already full, the new core converts to experience using a
+descriptor-defined value. An evolved weapon replaces its base weapon in the
+same weapon slot. Its paired system remains equipped, is not consumed, and can
+continue receiving normal levels. Unused cores disappear when the run ends.
 
 ## Enemy roster
 
@@ -341,17 +381,23 @@ world.
 
 The runtime enforces these invariants:
 
-- The main window remains at or above the safe combat size.
-- Every game window retains a visible recovery or grab area.
+- The main window remains at or above 360 by 260 logical pixels.
+- Every child window retains at least a 48 by 48 logical-pixel visible region
+  and at least 32 logical pixels of its drag strip inside the work area.
 - No game window leaves its selected work area or covers reserved taskbar
   bounds.
 - Game code never activates, focuses, or raises a window as part of an attack.
-- Native geometry writes have speed and frequency limits.
+- Native geometry writes occur at no more than 30 Hz. Translation is limited
+  to 900 logical pixels per second, and each dimension changes by no more than
+  700 logical pixels per second.
+- A boss spell may cover at most 55 percent of the main window with other game
+  windows after its telegraph completes.
 - Manual or window-manager-adjusted geometry is authoritative.
 - A failed solve cancels or degrades the spell; it never applies a partial
   unsafe layout.
-- Reduced native window motion replaces large translations with canvas motion
-  and slower, smaller geometry changes.
+- Reduced native window motion limits a spell's native translation to 48
+  logical pixels, limits geometry speed to 240 logical pixels per second, and
+  replaces the remaining displacement with canvas-local motion.
 
 ## Interface
 
@@ -370,10 +416,28 @@ the title screen does not create child windows.
 
 ## Meta progression and profile
 
-Challenges unlock operators, weapons, systems, biomes, elite modifiers, boss
-variants, starting loadouts, rerolls, and archive entries. Small convenience
-upgrades may affect initial rerolls, fragment visibility, or starting health,
-but the profile does not contain an unbounded permanent damage ladder.
+The completed content scope contains four operators, eight weapons, eight
+systems, eight evolutions, eight enemies, five role windows, three biomes, five
+elite modifiers, three base bosses, three alternate boss spell sets, four
+starting loadout presets, eight endless modifiers, and 24 challenges. Vector,
+Pulse Lance, Scatter Array, Overclocker, Resonance Lens, Nest, Battery, Shards,
+Trackers, and standard expedition are available in a new profile. Challenges
+unlock the remaining content through explicit stable content IDs. Endless mode
+unlocks after the first standard victory. Each base boss unlocks its alternate
+spell set after its related challenge is completed.
+
+The four operators are Vector, which has neutral aiming bonuses; Bastion, which
+favors defense and window stability; Relay, which favors overlap and chaining;
+and Scavenger, which favors fragments and offer economy. The four starting
+loadout presets pair one operator with one unlocked initial weapon and contain
+no extra run items.
+
+Small convenience upgrades may affect initial rerolls, fragment visibility, or
+starting health, but the profile does not contain an unbounded permanent damage
+ladder. The 24 challenges are partitioned into eight combat challenges, six
+window and siphon challenges, three boss challenges, three operator challenges,
+and four mode or exploration challenges. Every challenge has exactly one
+content or archive reward in the descriptor table.
 
 The versioned profile stores unlock bits, challenge progress, settings, and
 statistics under the user's data directory. Windows uses:
@@ -454,9 +518,10 @@ The implementation handles expected failure without corrupting the run:
   into recovery.
 - Display topology changes cancel active native movement, clamp all windows,
   and resume only after observed geometry stabilizes.
-- Minimizing the main window pauses the world. Minimizing or manually closing
-  an enemy window grants no clear reward and migrates remaining threat after a
-  grace period.
+- Minimizing the main window pauses the world. Minimizing an enemy window for
+  longer than 1.5 seconds or manually closing it grants no clear reward and
+  migrates remaining threat, fragments, and pending fragment value as defined
+  by the experience rules.
 - Capacity pressure removes decorative particles first, then ordinary hostile
   projectiles according to deterministic priority. It never silently removes
   the player, boss, warning, upgrade, or critical spell state.
@@ -489,23 +554,34 @@ gameplay-critical entities and deterministic selection order.
 The complete scope is delivered through three continuously playable milestones.
 The milestones are sequencing boundaries, not reductions in final scope.
 
-### Milestone A: complete run loop
+### Milestone 1: system foundation, route A
 
-Add title and result states, both run modes, the director, automatic window
-placement, experience siphoning, level-up, the 4+4 build, content descriptors,
-the base roster, responsive HUD, profile foundation, and accelerated run tests.
+Add title and result states, standard mode, the five-act director, automatic
+placement, fragment overflow and siphoning, level-up, evolution-core rules, the
+4+4 inventory, profile foundation, and responsive HUD. This milestone ships a
+playable 25-minute standard run using four weapons, four systems, four enemy
+roles, three role windows, one biome, and temporary canvas-only elite encounters
+at the three boss timestamps. Its acceptance test reaches `VICTORY` through the
+same final-boss state transition later bosses use. The title shows endless mode
+as locked rather than starting an incomplete mode.
 
-### Milestone C: boss window stage system
+### Milestone 2: boss window stage system, route C
 
-Add the reusable spell lifecycle, safety solver, native geometry reconciliation,
-reduced-motion behavior, temporary summon windows, and the three complete boss
-encounters.
+Add the reusable spell lifecycle, quantified safety solver, native geometry
+reconciliation, reduced-motion behavior, temporary summon windows, and the
+three complete boss encounters. Replace the temporary milestone-one elites at
+10:00, 20:00, and 25:00. This milestone is accepted when a complete standard
+run executes and recovers every boss phase with both GLFW and SDL3.
 
-### Milestone B: full content and progression
+### Milestone 3: full content and endless progression, route B
 
 Complete all eight weapons, eight systems, eight evolutions, eight enemy roles,
-five role windows, three biomes, five elite modifiers, operators, challenges,
-archive, procedural audio, balance passes, and endless combinations.
+five role windows, three biomes, five elite modifiers, four operators, 24
+challenges, four loadouts, three alternate boss spell sets, archive, procedural
+audio, and all eight endless modifiers. Unlock endless after a standard victory
+and add multi-cycle boss composition and balance passes. This milestone is the
+definition of done for the all-in scope and is accepted only after both a full
+standard run and two accelerated endless cycles pass.
 
 ## Verification
 
