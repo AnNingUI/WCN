@@ -360,8 +360,11 @@ The initial compatibility profile is pinned to the authoritative
 `a2ui-project/a2ui` repository commit
 `0190314c56eb136bb2b1541d8385d18c1131b9fe`, observed on July 17, 2026.
 Implementations vendor the v0.9.1 and v1.0 schema trees from that commit under
-`app/impl/a2ui/schema/`. A manifest records each file's SHA-256 hash. Builds and
-tests never consume a floating `main` branch or fetch schemas at runtime.
+`third_party/a2ui/specification/`. The adapter and a manifest containing each
+schema file's SHA-256 hash live under `app/impl/a2ui/`. Builds and tests never
+consume a floating `main` branch or fetch schemas at runtime. The vendored tree
+is marked in `.gitattributes` with the same policy as other root third-party
+sources.
 
 Each adapter version has normative fixtures for message ordering, validation
 order, unknown fields, unsupported components, default values, action mapping,
