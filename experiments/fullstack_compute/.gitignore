@@ -38,3 +38,9 @@ test-script/*
 
 build_*/*
 build*/*
+/compile_commands.json
+
+.playwright-mcp
+.superpowers
+.tmp-tinyfiledialogs
+/dist/

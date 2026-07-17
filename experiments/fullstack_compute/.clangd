@@ -1,0 +1,11 @@
+CompileFlags:
+  CompilationDatabase: build
+  Compiler: D:/Software/Dev/msys64/ucrt64/bin/cc.exe
+  Add:
+    - --target=x86_64-w64-mingw32
+    - -ID:/Software/Dev/msys64/ucrt64/include
+  Remove:
+    - -DGLFW_DLL
+    - -DGLFW_DLL=*
+    - /DGLFW_DLL
+    - -I${workspaceFolder}/*

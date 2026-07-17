@@ -1,1 +1,11 @@
+third_party/libtinyfiledialogs/** linguist-vendored
+third_party/material_color_utilities/** linguist-vendored
+third_party/taffy.hpp/** linguist-vendored
+third_party/clay/** linguist-vendored
+third_party/miniaudio/** linguist-vendored
+third_party/utf8proc/** linguist-vendored
+examples/assets/window_arena/Oxanium-VariableFont_wght.ttf linguist-vendored
+examples/assets/window_arena/OFL.txt linguist-vendored
 third_party/libtinyfiledialogs/** whitespace=-trailing-space,-space-before-tab
+tools/packaging/*.sh text eol=lf
+tools/packaging/*.ps1 text eol=crlf
